@@ -47,10 +47,12 @@ One user, on this Mac. Telegram is the only push channel.
 | Layer | Repo | Store (verified 2026-10-13) | Access |
 |---|---|---|---|
 | 0, 2, 3, 4 | sec-edgar (usfin) | `data/usfin.duckdb`: FRED `fred_observation_latest`, `fred_as_of(DATE)` (layers 0, 2); TIC `tic_observation_latest`, `/series/tic?country=…` (layer 3); US fundamentals (layer 4) | HTTP `?format=csv` from `usfin serve` (127.0.0.1:8660), because `serve` holds the DuckDB lock; read-only `ATTACH` when no lock is held |
+| 0, 2 | bisfetcher | `warehouse.duckdb` (`$BISFETCHER_DB`): `series`, `observations`, `datasets` (contract block in its `PLAN.md`); `WS_EER` (layer 0), `WS_CBPOL` incl. BI rate `WS_CBPOL.M.ID`/`.D.ID`, `WS_CREDIT_GAP`, `WS_SPP`, `WS_DSR` (layer 2) | Read-only `ATTACH`, or its `serve` API while a refresh holds the lock. In progress (`feat/bis-fetcher`, S2 done) |
 | 1 | worldbankscape | `out/{SUBJECT}/{asset_class}.json` + `out/index.json` | Files (JSON Schema contract) |
 | 2 | bps-looker | Postgres (`DATABASE_URL`) | Read-only role |
 | 2 | ausdata | `warehouse.duckdb` | Read-only `ATTACH` |
 | 2 | singstat (sgecon) | `data/sgecon.duckdb` | Read-only `ATTACH` |
+| 2, 3 | dbnomics | `data/dbnomics.duckdb` (`$DBN_DB`): `series`, `observations`, `series_latest`, `series_status`; OECD CLI/BCI/CCI/CPI/rates, China `cn.*`, Eurozone (layer 2); `damodaran_erp`, `damodaran_crp`, `shiller` (layer 3). Ids and units in `docs/HANDOFF.md` | HTTP `?format=csv` from `dbn serve` (127.0.0.1:8770) first; its lock is mutual (a reader blocks `dbn refresh`), so a direct read opens, queries and closes |
 | 2 | satudatascape | No store yet (`README.md`, `docs/`, `scripts/` only) | Planned; doctor reports it missing until a store exists |
 | 2, 3, 4 | jquantster | `data/jquantster.db` (SQLite): macro (layer 2), TSE investor flows (layer 3), prices, EPS, EDINET (layer 4) | DuckDB `sqlite` extension, read-only |
 | 3 | idxscape | `data/idxscape.duckdb`: `stock_summary`, `broker_summary`, `fx_rate` (JISDOR), `sbn_ownership`, `corporate_action`; PHEI curve after idxscape J4 | Read-only `ATTACH` |
@@ -113,7 +115,7 @@ real stores → record numbers in the Progress table → commit. One slice per c
 
 - [ ] **S0 Skeleton + doctor.** uv project, `assist` CLI, `config/sources.yaml`, socket guard.
   `assist doctor` lists each source: present / missing / locked / newest date, never fails the run.
-  *Done when:* live doctor shows all 12 sources with their newest data date (satudatascape
+  *Done when:* live doctor shows all 14 sources with their newest data date (satudatascape
   reported missing until it has a store).
 - [ ] **S1 Adapter contract + worldbankscape.** `Source` protocol → tidy rows. worldbankscape
   adapter reads `out/` and validates against its schema. *Done when:* live run loads every
@@ -143,8 +145,8 @@ real stores → record numbers in the Progress table → commit. One slice per c
 
 ### Phase B — Indonesia
 
-- [ ] **S7 IDN overrides (layer 2).** bps-looker CPI, trade and GDP (satudatascape once it has a store); BI rate via worldbankscape's
-  BIS series until a BI fetcher exists. Momentum shifts the layer-1 score by at most ±10 points.
+- [ ] **S7 IDN overrides (layer 2).** bps-looker CPI, trade and GDP (satudatascape once it has a store); BI rate from bisfetcher
+  `WS_CBPOL.M.ID` (worldbankscape's BIS series until bisfetcher has data). Momentum shifts the layer-1 score by at most ±10 points.
 - [ ] **S8 IDN market signals (layer 3).** idxscape foreign net flow (IDR and USD via JISDOR),
   DJPPR non-resident SBN holdings change; kseistat foreign share trend; sec-edgar TIC US investor
   net purchases of Indonesian equities and bonds (`us_*_42218`).
@@ -175,8 +177,6 @@ real stores → record numbers in the Progress table → commit. One slice per c
   risk limits and the benchmark choice confirmed.
 - Which SBN index for the benchmark (the 40% leg): pick once the PHEI parser shows what's
   available.
-- China and Eurozone monthly fetchers belong in new or existing fetcher repos, not here
-  (see `CLAUDE.md` coverage gaps).
 
 ## Progress
 
