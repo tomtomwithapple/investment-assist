@@ -6,5 +6,5 @@ internet and never writes into another repo.
 
 Heuristic context, **not investment advice**.
 
-- Decision flow: [`../CLAUDE.md`](../CLAUDE.md), section *Investment decision flow*.
+- Decision flow: [`CLAUDE.md`](CLAUDE.md), section *Investment decision flow*.
 - Build plan and progress: [`PLAN.md`](PLAN.md). Nothing is built yet; start at S0.

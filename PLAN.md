@@ -2,13 +2,13 @@
 
 The entry point that reads the sibling fetcher repos and turns their data into a **stance and an
 entry plan per country × asset class** for an IDR-based investor. The decision flow it implements
-is in `../CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
+is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ---
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-10-13, plan written, nothing built. **Next up:** S0.
+**Last updated:** 2026-10-14, sources synced with `CLAUDE.md` (TIC, satudatascape, layer-0 series), nothing built. **Next up:** S0.
 
 | Phase | Slices | Done |
 |---|---|---|
@@ -46,12 +46,13 @@ One user, on this Mac. Telegram is the only push channel.
 
 | Layer | Repo | Store (verified 2026-10-13) | Access |
 |---|---|---|---|
-| 0 | sec-edgar (usfin) | `data/usfin.duckdb`, `fred_observation_latest`, `fred_as_of(DATE)` | HTTP `?format=csv` from `usfin serve` (127.0.0.1:8660), because `serve` holds the DuckDB lock; read-only `ATTACH` when no lock is held |
+| 0, 2, 3, 4 | sec-edgar (usfin) | `data/usfin.duckdb`: FRED `fred_observation_latest`, `fred_as_of(DATE)` (layers 0, 2); TIC `tic_observation_latest`, `/series/tic?country=…` (layer 3); US fundamentals (layer 4) | HTTP `?format=csv` from `usfin serve` (127.0.0.1:8660), because `serve` holds the DuckDB lock; read-only `ATTACH` when no lock is held |
 | 1 | worldbankscape | `out/{SUBJECT}/{asset_class}.json` + `out/index.json` | Files (JSON Schema contract) |
 | 2 | bps-looker | Postgres (`DATABASE_URL`) | Read-only role |
 | 2 | ausdata | `warehouse.duckdb` | Read-only `ATTACH` |
 | 2 | singstat (sgecon) | `data/sgecon.duckdb` | Read-only `ATTACH` |
-| 2 | jquantster | `data/jquantster.db` (SQLite) | DuckDB `sqlite` extension, read-only |
+| 2 | satudatascape | No store yet (`README.md`, `docs/`, `scripts/` only) | Planned; doctor reports it missing until a store exists |
+| 2, 3, 4 | jquantster | `data/jquantster.db` (SQLite): macro (layer 2), TSE investor flows (layer 3), prices, EPS, EDINET (layer 4) | DuckDB `sqlite` extension, read-only |
 | 3 | idxscape | `data/idxscape.duckdb`: `stock_summary`, `broker_summary`, `fx_rate` (JISDOR), `sbn_ownership`, `corporate_action`; PHEI curve after idxscape J4 | Read-only `ATTACH` |
 | 3 | kseistat | `data/ksei.duckdb`: `v_market_composition`, `v_type_composition` | Read-only `ATTACH` |
 | 4 | idx-method | `store/data/stockbiter.db` (SQLite), `data/*.json`, paper books | Read-only, files |
@@ -112,15 +113,18 @@ real stores → record numbers in the Progress table → commit. One slice per c
 
 - [ ] **S0 Skeleton + doctor.** uv project, `assist` CLI, `config/sources.yaml`, socket guard.
   `assist doctor` lists each source: present / missing / locked / newest date, never fails the run.
-  *Done when:* live doctor shows all 11 sources with their newest data date.
+  *Done when:* live doctor shows all 12 sources with their newest data date (satudatascape
+  reported missing until it has a store).
 - [ ] **S1 Adapter contract + worldbankscape.** `Source` protocol → tidy rows. worldbankscape
   adapter reads `out/` and validates against its schema. *Done when:* live run loads every
   country × asset score with its confidence and flags.
 - [ ] **S2 FRED adapter (usfin).** CSV over HTTP when `serve` is up, read-only `ATTACH` otherwise;
   same rows either way (one test asserts it). Reads `fred_observation_latest`, and `fred_as_of`
-  for backtests. *Done when:* the 22 series load live by both paths.
+  for backtests. *Done when:* every layer-0 series listed in `CLAUDE.md` (25 today; `fred.yaml`
+  holds 34 incl. layer-2 macro) loads live by both paths.
 - [ ] **S3 Regime (layer 0).** Hand-set rule on VIX level, HY OAS 13-week change, DTWEXBGS 13-week
-  change, DFII10, NFCI → `risk_on | neutral | risk_off` + dollar direction. Placebo: the same rule
+  change, DFII10, NFCI (deliberately small; net liquidity, EM OAS, term premium and STLFSI4 are
+  candidates to add only if they beat the placebo) → `risk_on | neutral | risk_off` + dollar direction. Placebo: the same rule
   on shuffled dates. Walk-forward test: does `risk_off` precede weaker JCI and IDR returns
   (JCI from idx-method, IDR from JISDOR)? *Done when:* verdict and t-stat recorded here, with the
   control.
@@ -139,10 +143,11 @@ real stores → record numbers in the Progress table → commit. One slice per c
 
 ### Phase B — Indonesia
 
-- [ ] **S7 IDN overrides (layer 2).** bps-looker CPI, trade and GDP; BI rate via worldbankscape's
+- [ ] **S7 IDN overrides (layer 2).** bps-looker CPI, trade and GDP (satudatascape once it has a store); BI rate via worldbankscape's
   BIS series until a BI fetcher exists. Momentum shifts the layer-1 score by at most ±10 points.
 - [ ] **S8 IDN market signals (layer 3).** idxscape foreign net flow (IDR and USD via JISDOR),
-  DJPPR non-resident SBN holdings change; kseistat foreign share trend.
+  DJPPR non-resident SBN holdings change; kseistat foreign share trend; sec-edgar TIC US investor
+  net purchases of Indonesian equities and bonds (`us_*_42218`).
 - [ ] **S9 IDN bonds rule.** Real yield, curve slope, foreign SBN flow, JISDOR trend, regime.
   **Blocked on idxscape J4 (PHEI parser).**
 - [ ] **S10 IDN stocks rule + candidates (layer 4).** JCI earnings yield vs SBN yield (as in
@@ -151,7 +156,8 @@ real stores → record numbers in the Progress table → commit. One slice per c
 
 ### Phase C — foreign markets
 
-- [ ] **S11 Foreign overrides.** sec-edgar (BLS, FRED macro), jquantster macro, singstat, ausdata,
+- [ ] **S11 Foreign overrides.** sec-edgar (BLS, FRED macro, TIC foreign holdings and net purchases
+  of US securities), jquantster (macro, TSE investor flows), singstat, ausdata,
   worldbankscape ECB/BIS for the EU. Returns converted to IDR, hedged vs unhedged.
 - [ ] **S12 Foreign candidates.** Index-level only at first (US, JP, AU, SG); openkrx for KR/TW.
 
@@ -170,7 +176,7 @@ real stores → record numbers in the Progress table → commit. One slice per c
 - Which SBN index for the benchmark (the 40% leg): pick once the PHEI parser shows what's
   available.
 - China and Eurozone monthly fetchers belong in new or existing fetcher repos, not here
-  (see `../CLAUDE.md` coverage gaps).
+  (see `CLAUDE.md` coverage gaps).
 
 ## Progress
 
