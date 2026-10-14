@@ -1,8 +1,15 @@
 # investment-assist
 
-The entry point of the **investment data repos**, all siblings in `../`: ausdata, bisfetcher,
-bps-looker, dbnomics, financer, geospacer, idx-method, idxscape, jquantster, kseistat, openkrx,
-satudatascape, sec-edgar (usfin), singstat (sgecon), worldbankscape (wbs). Paths below are relative to this repo.
+The **parent** and entry point of the investment data repos, all siblings in `../`: ausdata,
+bisfetcher, bps-looker, dbnomics, financer, geospacer, idx-method, idxscape, jquantster, kseistat,
+openkrx, satudatascape, sec-edgar (usfin), singstat (sgecon), worldbankscape (wbs). Paths below are
+relative to this repo.
+
+The children stay where they are as independent repos (own remote, store, launchd jobs). This repo
+is their parent by ownership, not by folder: it holds the decision flow, the cross-repo coverage
+gaps and build order, and the read-only registry of their stores. Each child's `CLAUDE.md` has a
+*Parent: investment-assist* section pointing back here. Cross-repo progress is checked from here;
+start a session in this repo for anything that spans more than one child.
 
 ## Investment decision flow
 
@@ -35,7 +42,7 @@ a disclaimer and source attribution.
 
 | Layer | Question | Source repos |
 |---|---|---|
-| **0. Global regime** | Risk-on, neutral or risk-off? Dollar up or down? | sec-edgar job `fred` (`config/fred.yaml`, point in time via `fred_as_of(DATE)`): VIXCLS, BAMLH0A0HYM2, T10Y2Y, WALCL, M2SL, DFF, SOFR, DGS2, DGS10, DTWEXBGS (broad dollar), DFII10 (10Y real yield), NFCI, DCOILBRENTEU; net liquidity = WALCL − WTREGEN − RRPONTSYD (RRP in $bn, the others in $mn); EM corporate OAS BAMLEMCBPIOAS, BAMLEMHBHYCRPIOAS (from 2023-10-10 only); nowcasts GDPNOW, WEI; THREEFYTP10 (term premium), T5YIE, T10YIE (breakevens), STLFSI4 (stress), USEPUINDXD (policy uncertainty); CCUSMA02IDM618N (IDR per USD monthly, cross-check vs JISDOR). · bisfetcher (BIS SDMX: `WS_EER` broad real and nominal effective exchange rates, M and D, incl. IDR REER; in progress on `feat/bis-fetcher`). Read current values from `fred_observation_latest`: NFCI (~930k rows) and STLFSI4 (~310k) are large, because each weekly release revises the whole history |
+| **0. Global regime** | Risk-on, neutral or risk-off? Dollar up or down? | sec-edgar job `fred` (`config/fred.yaml`, point in time via `fred_as_of(DATE)`): VIXCLS, BAMLH0A0HYM2, T10Y2Y, WALCL, M2SL, DFF, SOFR, DGS2, DGS10, DTWEXBGS (broad dollar), DFII10 (10Y real yield), NFCI, DCOILBRENTEU; net liquidity = WALCL − WTREGEN − RRPONTSYD (RRP in $bn, the others in $mn); EM corporate OAS BAMLEMCBPIOAS, BAMLEMHBHYCRPIOAS (from 2023-10-10 only); nowcasts GDPNOW, WEI; THREEFYTP10 (term premium), T5YIE, T10YIE (breakevens), STLFSI4 (stress), USEPUINDXD (policy uncertainty); CCUSMA02IDM618N (IDR per USD monthly, cross-check vs JISDOR). · bisfetcher (BIS SDMX: `WS_EER` broad real and nominal effective exchange rates, M and D, incl. IDR REER; done, S1–S13 on main). Read current values from `fred_observation_latest`: NFCI (~930k rows) and STLFSI4 (~310k) are large, because each weekly release revises the whole history |
 | **1. Country × asset score** | Structural macro tailwind or headwind (0–100, 50 neutral) | worldbankscape (`out/{SUBJECT}/{asset_class}.json`, 27 countries + 14 commodities) |
 | **2. Fresh macro overrides** | Is the economy speeding up or slowing now? Adjusts the layer-1 score | bps-looker, satudatascape (IDN) · sec-edgar (US CPI/PPI/jobs/Treasury; FRED GDP, GDPC1, PCE, INDPRO, retail, housing, UMich sentiment) · jquantster macro (JGB, BOJ, Tankan, USD/JPY) · singstat (MAS SORA, SGS, FX) · ausdata (RBA, ABS, AOFM) · dbnomics (OECD CLI, BCI, CCI, CPI, rates, unemployment for IDN, CHN, USA, JPN, KOR, AUS, EA20/G4E; China monthly `cn.*` with NBS fallback; Eurozone monthly via ECB) · bisfetcher (`WS_CBPOL` policy rates incl. BI rate `WS_CBPOL.M.ID`/`.D.ID`; credit-to-GDP gap `WS_CREDIT_GAP`, property prices `WS_SPP`, debt-service ratios `WS_DSR`) |
 | **3. Market signals** | Who's buying, what does the curve say, is it cheap? | idxscape (IDX foreign flow, broker summary, JISDOR, PHEI curve, DJPPR SBN ownership) · kseistat (local/foreign ownership) · jquantster (TSE investor flows) · sec-edgar job `tic` (TIC/CSLT monthly by country: foreign holdings and net purchases of US securities `for_*`, US investors in foreign bonds and equities `us_*`, e.g. `us_lt_eqty_net_42218` for Indonesia; `tic_observation_latest`, `/series/tic?country=…&format=csv`) · dbnomics valuation (Damodaran implied ERP US monthly and CRP per country, `damodaran_erp`, `damodaran_crp`; Shiller CAPE `shiller`), for the IDN equity hurdle (US ERP + IDN CRP) vs JCI earnings yield |
@@ -91,7 +98,7 @@ geospacer (alternative data) is for theme research only and does not feed the fl
 4. ~~Eurozone monthly~~ (done 2026-10-14: dbnomics via ECB; no Bund 2Y, the euro-area 2Y
    benchmark stands in; unemployment from OECD).
 5. ~~OECD leading indicators~~ (done 2026-10-14: dbnomics; no CLI for SGP or EA20).
-6. BI rate: bisfetcher `WS_CBPOL` (in progress). SEKI money/credit still missing. Index-level
+6. ~~BI rate~~ (done 2026-10-14: bisfetcher `WS_CBPOL.M.ID`/`.D.ID`). SEKI money/credit still missing. Index-level
    ERP and US CAPE done in dbnomics; JCI P/E from idx-method still to wire.
 
 Also missing: a cross-country release calendar (only US BLS has one). (US TIC flows done 2026-10-14: sec-edgar S43.)
