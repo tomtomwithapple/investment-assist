@@ -1,8 +1,8 @@
 # investment-assist
 
-The entry point of the **investment data repos**, all siblings in `../`: ausdata, bps-looker,
-financer, geospacer, idx-method, idxscape, jquantster, kseistat, openkrx, satudatascape,
-sec-edgar (usfin), singstat (sgecon), worldbankscape (wbs). Paths below are relative to this repo.
+The entry point of the **investment data repos**, all siblings in `../`: ausdata, bisfetcher,
+bps-looker, dbnomics, financer, geospacer, idx-method, idxscape, jquantster, kseistat, openkrx,
+satudatascape, sec-edgar (usfin), singstat (sgecon), worldbankscape (wbs). Paths below are relative to this repo.
 
 ## Investment decision flow
 
@@ -21,10 +21,13 @@ a disclaimer and source attribution.
   the fetcher repo it belongs to (as the FRED layer-0 series went into sec-edgar), then
   investment-assist reads it.
 - One DuckDB process attaches the stores read-only: DuckDB files (idxscape, kseistat, ausdata,
-  singstat, worldbankscape), SQLite (jquantster, financer `~/.financer/financer.db`, idx-method
+  singstat, worldbankscape, bisfetcher `warehouse.duckdb`, dbnomics `data/dbnomics.duckdb`), SQLite (jquantster, financer `~/.financer/financer.db`, idx-method
   `store/data/stockbiter.db`) and Postgres (bps-looker, openkrx). worldbankscape is read from its
   `out/*.json` contract. sec-edgar is read over HTTP (`usfin serve`, `?format=csv`) because
-  `serve` holds the DuckDB lock.
+  `serve` holds the DuckDB lock. dbnomics' lock is mutual (a reader blocks `dbn refresh`), so
+  prefer its API (`dbn serve`, 127.0.0.1:8770, `?format=csv`) or open-query-close; its tables,
+  ids and units are in `../dbnomics/docs/HANDOFF.md`. bisfetcher's tables are locked by the
+  `contract` block in its `PLAN.md`.
 - A fetcher that adds or renames a table another layer reads should note it in its own plan, so
   the matching adapter in investment-assist can be updated.
 
@@ -32,10 +35,10 @@ a disclaimer and source attribution.
 
 | Layer | Question | Source repos |
 |---|---|---|
-| **0. Global regime** | Risk-on, neutral or risk-off? Dollar up or down? | sec-edgar job `fred` (`config/fred.yaml`, point in time via `fred_as_of(DATE)`): VIXCLS, BAMLH0A0HYM2, T10Y2Y, WALCL, M2SL, DFF, SOFR, DGS2, DGS10, DTWEXBGS (broad dollar), DFII10 (10Y real yield), NFCI, DCOILBRENTEU; net liquidity = WALCL − WTREGEN − RRPONTSYD (RRP in $bn, the others in $mn); EM corporate OAS BAMLEMCBPIOAS, BAMLEMHBHYCRPIOAS (from 2023-10-10 only); nowcasts GDPNOW, WEI; THREEFYTP10 (term premium), T5YIE, T10YIE (breakevens), STLFSI4 (stress), USEPUINDXD (policy uncertainty); CCUSMA02IDM618N (IDR per USD monthly, cross-check vs JISDOR). Read current values from `fred_observation_latest`: NFCI (~930k rows) and STLFSI4 (~310k) are large, because each weekly release revises the whole history |
+| **0. Global regime** | Risk-on, neutral or risk-off? Dollar up or down? | sec-edgar job `fred` (`config/fred.yaml`, point in time via `fred_as_of(DATE)`): VIXCLS, BAMLH0A0HYM2, T10Y2Y, WALCL, M2SL, DFF, SOFR, DGS2, DGS10, DTWEXBGS (broad dollar), DFII10 (10Y real yield), NFCI, DCOILBRENTEU; net liquidity = WALCL − WTREGEN − RRPONTSYD (RRP in $bn, the others in $mn); EM corporate OAS BAMLEMCBPIOAS, BAMLEMHBHYCRPIOAS (from 2023-10-10 only); nowcasts GDPNOW, WEI; THREEFYTP10 (term premium), T5YIE, T10YIE (breakevens), STLFSI4 (stress), USEPUINDXD (policy uncertainty); CCUSMA02IDM618N (IDR per USD monthly, cross-check vs JISDOR). · bisfetcher (BIS SDMX: `WS_EER` broad real and nominal effective exchange rates, M and D, incl. IDR REER; in progress on `feat/bis-fetcher`). Read current values from `fred_observation_latest`: NFCI (~930k rows) and STLFSI4 (~310k) are large, because each weekly release revises the whole history |
 | **1. Country × asset score** | Structural macro tailwind or headwind (0–100, 50 neutral) | worldbankscape (`out/{SUBJECT}/{asset_class}.json`, 27 countries + 14 commodities) |
-| **2. Fresh macro overrides** | Is the economy speeding up or slowing now? Adjusts the layer-1 score | bps-looker, satudatascape (IDN) · sec-edgar (US CPI/PPI/jobs/Treasury; FRED GDP, GDPC1, PCE, INDPRO, retail, housing, UMich sentiment) · jquantster macro (JGB, BOJ, Tankan, USD/JPY) · singstat (MAS SORA, SGS, FX) · ausdata (RBA, ABS, AOFM) |
-| **3. Market signals** | Who's buying, what does the curve say, is it cheap? | idxscape (IDX foreign flow, broker summary, JISDOR, PHEI curve, DJPPR SBN ownership) · kseistat (local/foreign ownership) · jquantster (TSE investor flows) · sec-edgar job `tic` (TIC/CSLT monthly by country: foreign holdings and net purchases of US securities `for_*`, US investors in foreign bonds and equities `us_*`, e.g. `us_lt_eqty_net_42218` for Indonesia; `tic_observation_latest`, `/series/tic?country=…&format=csv`) |
+| **2. Fresh macro overrides** | Is the economy speeding up or slowing now? Adjusts the layer-1 score | bps-looker, satudatascape (IDN) · sec-edgar (US CPI/PPI/jobs/Treasury; FRED GDP, GDPC1, PCE, INDPRO, retail, housing, UMich sentiment) · jquantster macro (JGB, BOJ, Tankan, USD/JPY) · singstat (MAS SORA, SGS, FX) · ausdata (RBA, ABS, AOFM) · dbnomics (OECD CLI, BCI, CCI, CPI, rates, unemployment for IDN, CHN, USA, JPN, KOR, AUS, EA20/G4E; China monthly `cn.*` with NBS fallback; Eurozone monthly via ECB) · bisfetcher (`WS_CBPOL` policy rates incl. BI rate `WS_CBPOL.M.ID`/`.D.ID`; credit-to-GDP gap `WS_CREDIT_GAP`, property prices `WS_SPP`, debt-service ratios `WS_DSR`) |
+| **3. Market signals** | Who's buying, what does the curve say, is it cheap? | idxscape (IDX foreign flow, broker summary, JISDOR, PHEI curve, DJPPR SBN ownership) · kseistat (local/foreign ownership) · jquantster (TSE investor flows) · sec-edgar job `tic` (TIC/CSLT monthly by country: foreign holdings and net purchases of US securities `for_*`, US investors in foreign bonds and equities `us_*`, e.g. `us_lt_eqty_net_42218` for Indonesia; `tic_observation_latest`, `/series/tic?country=…&format=csv`) · dbnomics valuation (Damodaran implied ERP US monthly and CRP per country, `damodaran_erp`, `damodaran_crp`; Shiller CAPE `shiller`), for the IDN equity hurdle (US ERP + IDN CRP) vs JCI earnings yield |
 | **4. Candidates** | Which instruments to buy | idx-method (dividend / value / momentum books, cost model, entry levels) · sec-edgar (US fundamentals) · jquantster (prices, EPS, EDINET) · openkrx (KR/TW) |
 | **5. Portfolio fit** | What I already hold → how much to add or trim | financer (broker, bank and RDN statements → SQLite) |
 | **Output** | Stance + entry plan | Weekly Markdown brief + Telegram (reuse the idx-method pattern), plus one JSON per country × asset class |
@@ -80,19 +83,20 @@ geospacer (alternative data) is for theme research only and does not feed the fl
 - Paper-track stances against a fixed IDR 60/40 benchmark (60% JCI, 40% SBN index) before
   acting with real money.
 
-### Coverage gaps, in priority order (as of 2026-10-13)
+### Coverage gaps, in priority order (as of 2026-10-14)
 
 1. ~~Finish layer 0~~ (done 2026-10-13: DTWEXBGS, DFII10, NFCI, DCOILBRENTEU added to `../sec-edgar/config/fred.yaml`).
 2. idxscape J4: PHEI parser. Raw pages are captured daily, but there's no IDN yield curve yet.
-3. China monthly (NBS: PMI, IP, retail, CPI, credit). Only annual WB/IMF data today.
-4. Eurozone monthly (ECB portal: HICP, deposit rate, Bund 2Y/10Y, unemployment). worldbankscape
-   already has an ECB client.
-5. OECD leading indicators as a free PMI substitute, for all countries.
-6. BI rate and SEKI money/credit; index-level P/E and ERP (JCI from idx-method, US CAPE).
+3. ~~China monthly~~ (done 2026-10-14: dbnomics `cn.*`; NBS mirror stale since 2026-03, no TSF/credit).
+4. ~~Eurozone monthly~~ (done 2026-10-14: dbnomics via ECB; no Bund 2Y, the euro-area 2Y
+   benchmark stands in; unemployment from OECD).
+5. ~~OECD leading indicators~~ (done 2026-10-14: dbnomics; no CLI for SGP or EA20).
+6. BI rate: bisfetcher `WS_CBPOL` (in progress). SEKI money/credit still missing. Index-level
+   ERP and US CAPE done in dbnomics; JCI P/E from idx-method still to wire.
 
 Also missing: a cross-country release calendar (only US BLS has one). (US TIC flows done 2026-10-14: sec-edgar S43.)
 
 ### Build order
 
 1. ~~FRED global block~~ (done, sec-edgar S42 + 4 layer-0 series) → 2. idxscape J4 → 3. investment-assist phase A, S0–S6 (layers 0, 1, 5 + weekly brief) →
-4. layers 2–3 → 5. China and EU monthly fetchers → 6. paper tracking.
+4. layers 2–3 → 5. ~~China and EU monthly fetchers~~ (dbnomics) → 6. paper tracking.
