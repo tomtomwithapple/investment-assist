@@ -46,9 +46,9 @@ a disclaimer and source attribution.
 | **1. Country × asset score** | Structural macro tailwind or headwind (0–100, 50 neutral) | worldbankscape (`out/{SUBJECT}/{asset_class}.json`, 27 countries + 14 commodities) |
 | **2. Fresh macro overrides** | Is the economy speeding up or slowing now? Adjusts the layer-1 score | bps-looker, satudatascape (IDN) · sec-edgar (US CPI/PPI/jobs/Treasury; FRED GDP, GDPC1, PCE, INDPRO, retail, housing, UMich sentiment) · jquantster macro (JGB, BOJ, Tankan, USD/JPY) · singstat (MAS SORA, SGS, FX) · ausdata (RBA, ABS, AOFM) · dbnomics (OECD CLI, BCI, CCI, CPI, rates, unemployment for IDN, CHN, USA, JPN, KOR, AUS, EA20/G4E; China monthly `cn.*` with NBS fallback; Eurozone monthly via ECB) · bisfetcher (`WS_CBPOL` policy rates incl. BI rate `WS_CBPOL.M.ID`/`.D.ID`; credit-to-GDP gap `WS_CREDIT_GAP`, property prices `WS_SPP`, debt-service ratios `WS_DSR`) |
 | **3. Market signals** | Who's buying, what does the curve say, is it cheap? | idxscape (IDX foreign flow, broker summary, JISDOR, PHEI curve, DJPPR SBN ownership) · kseistat (local/foreign ownership) · jquantster (TSE investor flows) · sec-edgar job `tic` (TIC/CSLT monthly by country: foreign holdings and net purchases of US securities `for_*`, US investors in foreign bonds and equities `us_*`, e.g. `us_lt_eqty_net_42218` for Indonesia; `tic_observation_latest`, `/series/tic?country=…&format=csv`) · dbnomics valuation (Damodaran implied ERP US monthly and CRP per country, `damodaran_erp`, `damodaran_crp`; Shiller CAPE `shiller`), for the IDN equity hurdle (US ERP + IDN CRP) vs JCI earnings yield |
-| **4. Candidates** | Which instruments to buy | idx-method (dividend / value / momentum books, cost model, entry levels) · sec-edgar (US fundamentals) · jquantster (prices, EPS, EDINET) · openkrx (KR/TW) |
+| **4. Candidates** | Which instruments to buy | idx-method (data only since 2026-10-14: Stockbit screener factors, consensus, shareholder composition, daily history with net foreign flow, dividends, quarterly statements, IDX index series, `stockbiter.db`); the screens, books, cost model and entry levels are built here from that data · sec-edgar (US fundamentals) · jquantster (prices, EPS, EDINET) · openkrx (KR/TW) |
 | **5. Portfolio fit** | What I already hold → how much to add or trim | financer (broker, bank and RDN statements → SQLite) |
-| **Output** | Stance + entry plan | Weekly Markdown brief + Telegram (reuse the idx-method pattern), plus one JSON per country × asset class |
+| **Output** | Stance + entry plan | Weekly Markdown brief + Telegram (never-fail, send-once, as idx-method's former paper daemon did), plus one JSON per country × asset class |
 
 geospacer (alternative data) is for theme research only and does not feed the flow.
 
@@ -59,8 +59,8 @@ geospacer (alternative data) is for theme research only and does not feed the fl
   foreign holdings are stable or rising and USD/IDR isn't breaking out. Ladder the entry when the
   regime is risk-off.
 - **IDN stocks:** macro score + IDX foreign flow + KSEI foreign share + JCI earnings yield vs
-  SBN yield (`../idx-method/dividend_vs_bonds.py`). Market stance first, then names from the
-  idx-method books.
+  SBN yield, computed here (idx-method's `dividend_vs_bonds.py` is gone). Market stance first,
+  then names from screens built here on idx-method data.
 - **Foreign stocks and bonds (US, JP, EU, AU, SG):** macro score, local curve and inflation,
   valuation, with **returns converted to IDR** (hedged vs unhedged). Overweight only if the edge
   survives the expected FX move.
@@ -81,7 +81,7 @@ geospacer (alternative data) is for theme research only and does not feed the fl
 
 `stance` is one of `overweight | neutral | underweight | avoid`.
 
-### Rules (from idx-method)
+### Rules (carried over from idx-method's former paper engine)
 
 - Every rule carries a **placebo control** before it may change a stance; a rule that also
   improves the control is fitting noise.
@@ -100,6 +100,10 @@ geospacer (alternative data) is for theme research only and does not feed the fl
 5. ~~OECD leading indicators~~ (done 2026-10-14: dbnomics; no CLI for SGP or EA20).
 6. ~~BI rate~~ (done 2026-10-14: bisfetcher `WS_CBPOL.M.ID`/`.D.ID`). SEKI money/credit still missing. Index-level
    ERP and US CAPE done in dbnomics; JCI P/E from idx-method still to wire.
+7. IDN stock screens and books: idx-method stopped picking stocks on 2026-10-14 (it only fetches
+   now). The dividend / value / momentum books, cost model and entry levels move into
+   investment-assist (S10); `vol_1y`, `amihud`, `med_value_60d`, `days_traded_60`, `mom_12_1`
+   and `near_52w_high` are derived here from its `cache/history/`.
 
 Also missing: a cross-country release calendar (only US BLS has one). (US TIC flows done 2026-10-14: sec-edgar S43.)
 

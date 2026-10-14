@@ -57,7 +57,7 @@ One user, on this Mac. Telegram is the only push channel.
 | 2, 3, 4 | jquantster | `data/jquantster.db` (SQLite): macro (layer 2), TSE investor flows (layer 3), prices, EPS, EDINET (layer 4) | DuckDB `sqlite` extension, read-only |
 | 3 | idxscape | `data/idxscape.duckdb`: `stock_summary`, `broker_summary`, `fx_rate` (JISDOR), `sbn_ownership`, `corporate_action`; PHEI curve after idxscape J4 | Read-only `ATTACH` |
 | 3 | kseistat | `data/ksei.duckdb`: `v_market_composition`, `v_type_composition` | Read-only `ATTACH` |
-| 4 | idx-method | `store/data/stockbiter.db` (SQLite), `data/*.json`, paper books | Read-only, files |
+| 3, 4 | idx-method | Fetcher only since 2026-10-14 (no books or screens; see its README, *Changes the parent must follow*). `store/data/stockbiter.db` (SQLite); `data/factors.json`, `consensus.json`, `composition.json`, `universe.json`, `sectors.json`, `special_boards.json`, `data/snapshots/<date>.json.gz`; `data/*_daily.csv`, `*_weekly.csv` (IHSG, LQ45, XIHD, IDX indices); `cache/history/` (OHLC, value, net foreign flow), `cache/dividends/`, `cache/fundamentals/` | Read-only, files |
 | 4 | openkrx | Postgres | Read-only role (phase C) |
 | 5 | financer | `~/.financer/financer.db` (SQLite): `holdings`, `trades`, `transactions` | `mode=ro` URI |
 
@@ -128,7 +128,7 @@ real stores → record numbers in the Progress table → commit. One slice per c
   change, DFII10, NFCI (deliberately small; net liquidity, EM OAS, term premium and STLFSI4 are
   candidates to add only if they beat the placebo) → `risk_on | neutral | risk_off` + dollar direction. Placebo: the same rule
   on shuffled dates. Walk-forward test: does `risk_off` precede weaker JCI and IDR returns
-  (JCI from idx-method, IDR from JISDOR)? *Done when:* verdict and t-stat recorded here, with the
+  (JCI from idx-method `data/jkse_daily.csv`, IDR from JISDOR)? *Done when:* verdict and t-stat recorded here, with the
   control.
 - [ ] **S4 Portfolio (layer 5).** financer `holdings` latest `as_of` per account → weights by
   country × asset class. Mapping: IDX tickers → IDN stocks; SBN/ORI/SR/FR codes → IDN bonds;
@@ -140,7 +140,7 @@ real stores → record numbers in the Progress table → commit. One slice per c
   writes valid JSON for every in-scope subject and a rerun with unchanged inputs writes identical
   files.
 - [ ] **S6 Brief + Telegram.** Markdown brief (regime, stance table, changes since last run,
-  stale inputs, disclaimer); Telegram summary; same never-fail and send-once rules as idx-method.
+  stale inputs, disclaimer); Telegram summary; same never-fail and send-once rules as idx-method's former paper daemon.
   *Done when:* a live brief is sent and a second send the same day is skipped.
 
 ### Phase B — Indonesia
@@ -152,9 +152,14 @@ real stores → record numbers in the Progress table → commit. One slice per c
   net purchases of Indonesian equities and bonds (`us_*_42218`).
 - [ ] **S9 IDN bonds rule.** Real yield, curve slope, foreign SBN flow, JISDOR trend, regime.
   **Blocked on idxscape J4 (PHEI parser).**
-- [ ] **S10 IDN stocks rule + candidates (layer 4).** JCI earnings yield vs SBN yield (as in
-  `idx-method/dividend_vs_bonds.py`); candidates read from the idx-method paper books, not
-  recomputed.
+- [ ] **S10 IDN stocks rule + candidates (layer 4).** JCI earnings yield vs SBN yield, computed
+  here (idx-method's `dividend_vs_bonds.py` was removed 2026-10-14). Candidates are built here:
+  idx-method no longer picks stocks, so the dividend / value / momentum screens, cost model and
+  entry levels move into investment-assist, read from its `factors.json`, `consensus.json`,
+  `cache/history/`, `cache/dividends/` and `cache/fundamentals/`. Liquidity and momentum columns
+  (`vol_1y`, `amihud`, `med_value_60d`, `days_traded_60`, `mom_12_1`, `near_52w_high`) are
+  derived here from `cache/history/`. Each screen carries a placebo control before it may name a
+  candidate. May split into S10a (market rule) and S10b (screens) when started.
 
 ### Phase C — foreign markets
 
