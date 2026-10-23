@@ -1,0 +1,8 @@
+series_id,title,measure,kind,country_code,country,active,units,frequency,transmitted_at,raw_id
+us_lt_eqty_net_42218,U.S. net transactions of foreign equity securities: Indonesia,us_lt_eqty,net,42218,Indonesia,true,Millions of Dollars,M,2026-09-18 16:00:00,2
+us_lt_eqty_pos_42218,U.S. portfolio holdings of foreign equity securities: Indonesia,us_lt_eqty,pos,42218,Indonesia,true,Millions of Dollars,M,2026-09-18 16:00:00,2
+us_lt_bond_net_42218,U.S. net transactions of foreign long-term corporate and government bonds: Indonesia,us_lt_bond,net,42218,Indonesia,true,Millions of Dollars,M,2026-09-18 16:00:00,2
+for_treas_pos_42218,Foreign portfolio holdings of U.S. long-term and short-term Treasury securities: Indonesia,for_treas,pos,42218,Indonesia,true,Millions of Dollars,M,2026-09-18 16:00:00,2
+for_lt_eqty_net_42218,Foreign net transactions of U.S. equity securities: Indonesia,for_lt_eqty,net,42218,Indonesia,true,Millions of Dollars,M,2026-09-18 16:00:00,2
+for_treas_pos_99996,Foreign portfolio holdings of U.S. long-term and short-term Treasury securities: Grand Total,for_treas,pos,99996,Grand Total,true,Millions of Dollars,M,2026-09-18 16:00:00,2
+us_lt_eqty_net_49999,U.S. net transactions of foreign equity securities: Total Asia,us_lt_eqty,net,49999,Total Asia,true,Millions of Dollars,M,2026-09-18 16:00:00,2
