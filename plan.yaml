@@ -43,7 +43,7 @@ slices:
                Weights, Candidate, stance.schema.json]
     owns: ["src/assist/sources/__init__.py", "src/assist/sources/base.py",
            "src/assist/layers/__init__.py", "src/assist/layers/types.py", "schema/**",
-           "tests/fixtures/stance/**", "tests/helpers/**", "tests/test_contracts.py"]
+           "tests/fixtures/stance/**", "tests/helpers/**", "tests/test_contracts.py", "docs/results/S1-contracts.md"]
     accept: uv run pytest -q tests/test_contracts.py && uv run ruff check src/assist/sources/base.py src/assist/layers/types.py
     estimate: 1.5
     notes: >-
@@ -109,7 +109,7 @@ slices:
   - id: P5-journal
     title: "Journal + model fingerprint (hash of rules, weights, config)"
     depends_on: [S1-contracts]
-    owns: ["src/assist/journal.py", "tests/test_journal.py"]
+    owns: ["src/assist/journal.py", "tests/test_journal.py", "docs/results/P5-journal.md"]
     accept: uv run pytest -q tests/test_journal.py && uv run ruff check src/assist/journal.py
     estimate: 1
     notes: >-
@@ -118,7 +118,7 @@ slices:
   - id: P6-brief
     title: "PLAN S6a: Markdown brief from stance JSONs (regime, table, changes, stale, disclaimer)"
     depends_on: [S1-contracts]
-    owns: ["src/assist/brief.py", "tests/test_brief.py", "tests/fixtures/brief/**"]
+    owns: ["src/assist/brief.py", "tests/test_brief.py", "tests/fixtures/brief/**", "docs/results/P6-brief.md"]
     accept: uv run pytest -q tests/test_brief.py && uv run ruff check src/assist/brief.py
     estimate: 1.5
     notes: >-
@@ -127,7 +127,7 @@ slices:
   - id: P7-notify
     title: "PLAN S6b: Telegram notify, never-fail + send-once"
     depends_on: [S1-contracts]
-    owns: ["src/assist/notify.py", "tests/test_notify.py"]
+    owns: ["src/assist/notify.py", "tests/test_notify.py", "docs/results/P7-notify.md"]
     accept: uv run pytest -q tests/test_notify.py && uv run ruff check src/assist/notify.py
     estimate: 1.5
     notes: >-
@@ -138,7 +138,7 @@ slices:
   - id: P9-placebo
     title: "Placebo-control walk-forward harness (shuffled-date control, t-stat, verdict)"
     depends_on: [S1-contracts]
-    owns: ["src/assist/eval/**", "tests/eval/**"]
+    owns: ["src/assist/eval/**", "tests/eval/**", "docs/results/P9-placebo.md"]
     accept: uv run pytest -q tests/eval && uv run ruff check src/assist/eval
     estimate: 1.5
     notes: >-
@@ -147,7 +147,7 @@ slices:
   - id: P10-stance
     title: "PLAN S5: stance v0 from layers 0+1+5 (bands, delta, entry style), schema-valid"
     depends_on: [S1-contracts]
-    owns: ["src/assist/stance.py", "tests/test_stance.py"]
+    owns: ["src/assist/stance.py", "tests/test_stance.py", "docs/results/P10-stance.md"]
     accept: uv run pytest -q tests/test_stance.py && uv run ruff check src/assist/stance.py
     estimate: 2
     notes: >-
@@ -182,7 +182,7 @@ slices:
     title: "bps-looker (Postgres, read-only) + satudatascape stub adapters"
     depends_on: [S1-contracts]
     owns: ["src/assist/sources/bpslooker.py", "src/assist/sources/satudatascape.py",
-           "tests/sources/test_bpslooker.py", "tests/fixtures/bpslooker/**"]
+           "tests/sources/test_bpslooker.py", "tests/fixtures/bpslooker/**", "docs/results/P11-bps.md"]
     accept: uv run pytest -q tests/sources/test_bpslooker.py && uv run ruff check src/assist/sources/bpslooker.py src/assist/sources/satudatascape.py
     estimate: 1.5
     notes: >-
@@ -192,7 +192,7 @@ slices:
     title: "bisfetcher adapter (WS_CBPOL incl. BI rate, WS_EER, WS_CREDIT_GAP, WS_SPP, WS_DSR)"
     depends_on: [S1-contracts]
     owns: ["src/assist/sources/bisfetcher.py", "tests/sources/test_bisfetcher.py",
-           "tests/fixtures/bisfetcher/**"]
+           "tests/fixtures/bisfetcher/**", "docs/results/P12-bisfetcher.md"]
     accept: uv run pytest -q tests/sources/test_bisfetcher.py && uv run ruff check src/assist/sources/bisfetcher.py
     estimate: 1
     notes: >-
@@ -202,7 +202,7 @@ slices:
     title: "idxscape foreign flow (stock_summary), broker summary, DJPPR sbn_ownership"
     depends_on: [P3-idn-prices]
     owns: ["src/assist/sources/idxscape.py", "tests/sources/test_idxscape_flows.py",
-           "tests/fixtures/idxscape_flows/**"]
+           "tests/fixtures/idxscape_flows/**", "docs/results/P13-idx-flows.md"]
     accept: uv run pytest -q tests/sources/test_idxscape_flows.py && uv run ruff check src/assist/sources/idxscape.py
     estimate: 1.5
     notes: >-
@@ -211,14 +211,14 @@ slices:
   - id: P14-kseistat
     title: "kseistat adapter (v_market_composition, v_type_composition)"
     depends_on: [S1-contracts]
-    owns: ["src/assist/sources/kseistat.py", "tests/sources/test_kseistat.py", "tests/fixtures/kseistat/**"]
+    owns: ["src/assist/sources/kseistat.py", "tests/sources/test_kseistat.py", "tests/fixtures/kseistat/**", "docs/results/P14-kseistat.md"]
     accept: uv run pytest -q tests/sources/test_kseistat.py && uv run ruff check src/assist/sources/kseistat.py
     estimate: 1
 
   - id: P15-tic
     title: "sec-edgar TIC adapter (tic_observation_latest, us_*_42218 for Indonesia, for_*)"
     depends_on: [P2-usfin-fred]
-    owns: ["src/assist/sources/usfin_tic.py", "tests/sources/test_usfin_tic.py", "tests/fixtures/usfin_tic/**"]
+    owns: ["src/assist/sources/usfin_tic.py", "tests/sources/test_usfin_tic.py", "tests/fixtures/usfin_tic/**", "docs/results/P15-tic.md"]
     accept: uv run pytest -q tests/sources/test_usfin_tic.py && uv run ruff check src/assist/sources/usfin_tic.py
     estimate: 1
     notes: >-
@@ -227,7 +227,7 @@ slices:
   - id: P16-dbnomics
     title: "dbnomics adapter (OECD CLI/BCI/CCI/CPI/rates, cn.*, EA; damodaran_erp/crp, shiller)"
     depends_on: [S1-contracts]
-    owns: ["src/assist/sources/dbnomics.py", "tests/sources/test_dbnomics.py", "tests/fixtures/dbnomics/**"]
+    owns: ["src/assist/sources/dbnomics.py", "tests/sources/test_dbnomics.py", "tests/fixtures/dbnomics/**", "docs/results/P16-dbnomics.md"]
     accept: uv run pytest -q tests/sources/test_dbnomics.py && uv run ruff check src/assist/sources/dbnomics.py
     estimate: 1.5
     notes: >-
@@ -254,7 +254,7 @@ slices:
     depends_on: [S1-contracts]
     owns: ["src/assist/sources/idxmethod_stocks.py", "src/assist/candidates/__init__.py",
            "src/assist/candidates/factors.py", "tests/candidates/test_factors.py",
-           "tests/fixtures/idxmethod/stocks/**"]
+           "tests/fixtures/idxmethod/stocks/**", "docs/results/P19-factors.md"]
     accept: uv run pytest -q tests/candidates/test_factors.py && uv run ruff check src/assist/sources/idxmethod_stocks.py src/assist/candidates
     estimate: 2
     notes: >-
@@ -272,7 +272,7 @@ slices:
   - id: P21-cost-entry
     title: "PLAN S10b: IDX cost model + entry levels"
     depends_on: [P19-factors]
-    owns: ["src/assist/candidates/costs.py", "src/assist/candidates/entry.py", "tests/candidates/test_costs_entry.py"]
+    owns: ["src/assist/candidates/costs.py", "src/assist/candidates/entry.py", "tests/candidates/test_costs_entry.py", "docs/results/P21-cost-entry.md"]
     accept: uv run pytest -q tests/candidates/test_costs_entry.py && uv run ruff check src/assist/candidates/costs.py src/assist/candidates/entry.py
     estimate: 1.5
     notes: >-
@@ -331,28 +331,28 @@ slices:
   - id: P23-jquantster
     title: "jquantster adapter (macro: JGB, BOJ, Tankan, USD/JPY; TSE flows; prices, EPS)"
     depends_on: [S1-contracts]
-    owns: ["src/assist/sources/jquantster.py", "tests/sources/test_jquantster.py", "tests/fixtures/jquantster/**"]
+    owns: ["src/assist/sources/jquantster.py", "tests/sources/test_jquantster.py", "tests/fixtures/jquantster/**", "docs/results/P23-jquantster.md"]
     accept: uv run pytest -q tests/sources/test_jquantster.py && uv run ruff check src/assist/sources/jquantster.py
     estimate: 1.5
 
   - id: P24-singstat
     title: "singstat adapter (MAS SORA, SGS, FX)"
     depends_on: [S1-contracts]
-    owns: ["src/assist/sources/singstat.py", "tests/sources/test_singstat.py", "tests/fixtures/singstat/**"]
+    owns: ["src/assist/sources/singstat.py", "tests/sources/test_singstat.py", "tests/fixtures/singstat/**", "docs/results/P24-singstat.md"]
     accept: uv run pytest -q tests/sources/test_singstat.py && uv run ruff check src/assist/sources/singstat.py
     estimate: 1
 
   - id: P25-ausdata
     title: "ausdata adapter (RBA, ABS, AOFM)"
     depends_on: [S1-contracts]
-    owns: ["src/assist/sources/ausdata.py", "tests/sources/test_ausdata.py", "tests/fixtures/ausdata/**"]
+    owns: ["src/assist/sources/ausdata.py", "tests/sources/test_ausdata.py", "tests/fixtures/ausdata/**", "docs/results/P25-ausdata.md"]
     accept: uv run pytest -q tests/sources/test_ausdata.py && uv run ruff check src/assist/sources/ausdata.py
     estimate: 1
 
   - id: P26-openkrx
     title: "openkrx adapter (KR/TW, DuckDB read-only over data/parquet)"
     depends_on: [S1-contracts]
-    owns: ["src/assist/sources/openkrx.py", "tests/sources/test_openkrx.py", "tests/fixtures/openkrx/**"]
+    owns: ["src/assist/sources/openkrx.py", "tests/sources/test_openkrx.py", "tests/fixtures/openkrx/**", "docs/results/P26-openkrx.md"]
     accept: uv run pytest -q tests/sources/test_openkrx.py && uv run ruff check src/assist/sources/openkrx.py
     estimate: 1
     notes: >-
@@ -361,7 +361,7 @@ slices:
   - id: P27-fx-idr
     title: "IDR return conversion, hedged vs unhedged (carry from rate differential)"
     depends_on: [S1-contracts]
-    owns: ["src/assist/fx.py", "tests/test_fx.py"]
+    owns: ["src/assist/fx.py", "tests/test_fx.py", "docs/results/P27-fx-idr.md"]
     accept: uv run pytest -q tests/test_fx.py && uv run ruff check src/assist/fx.py
     estimate: 1.5
     notes: >-
@@ -379,7 +379,7 @@ slices:
   - id: P29-candidates-foreign
     title: "PLAN S12: foreign candidates, index-level (US, JP, AU, SG; KR/TW via openkrx)"
     depends_on: [P16-dbnomics, P23-jquantster, P26-openkrx, P27-fx-idr]
-    owns: ["src/assist/layers/candidates_foreign.py", "tests/layers/test_candidates_foreign.py"]
+    owns: ["src/assist/layers/candidates_foreign.py", "tests/layers/test_candidates_foreign.py", "docs/results/P29-candidates-foreign.md"]
     accept: uv run pytest -q tests/layers/test_candidates_foreign.py && uv run ruff check src/assist/layers/candidates_foreign.py
     estimate: 1.5
 
@@ -395,7 +395,7 @@ slices:
   - id: P30-paper
     title: "PLAN S13: paper tracking vs IDR 60/40 (JCI / SBN leg), segmented by fingerprint"
     depends_on: [P3-idn-prices, P5-journal, P16-dbnomics, P32-phei]
-    owns: ["src/assist/paper.py", "tests/test_paper.py"]
+    owns: ["src/assist/paper.py", "tests/test_paper.py", "docs/results/P30-paper.md"]
     accept: uv run pytest -q tests/test_paper.py && uv run ruff check src/assist/paper.py
     estimate: 2
     notes: >-
