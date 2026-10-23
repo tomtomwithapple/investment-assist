@@ -2,10 +2,11 @@
 __pycache__/
 *.pyc
 .env
-out/
-data/
-journal/
+/out/
+/data/
+/journal/
 .slicer/
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
+.claude/worktrees/
