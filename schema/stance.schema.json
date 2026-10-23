@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tomtomtomdev/investment-assist/schema/stance.schema.json",
+  "title": "investment-assist stance payload",
+  "description": "Stance and entry plan for one subject (country or commodity) and one asset class, for an IDR-based investor. Extends worldbankscape's score.schema.json (vendored in schema/worldbankscape/): same score, confidence, flags, stale_inputs and disclaimer semantics, its date/semver/flag definitions by $ref; `sources` plays the part of its `attribution`. Heuristic context, not investment advice.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "subject", "asset", "as_of", "model_fingerprint",
+    "stance", "score", "confidence", "regime", "drivers", "risks", "watch",
+    "entry", "portfolio", "stale_inputs", "sources", "disclaimer"
+  ],
+  "properties": {
+    "schema_version": {"$ref": "https://github.com/tomtomtomdev/worldbankscape/schema/score.schema.json#/$defs/semver", "description": "Version of this contract (1.0.0 frozen by slice S1-contracts)."},
+    "subject": {"type": "string", "pattern": "^[A-Z0-9_]+$", "description": "ISO3 code (country) or worldbankscape commodity code."},
+    "subject_type": {"enum": ["country", "commodity"]},
+    "asset": {"enum": ["stocks", "bonds", "currency", "commodities"]},
+    "as_of": {"$ref": "https://github.com/tomtomtomdev/worldbankscape/schema/score.schema.json#/$defs/date", "description": "Date the stance was computed (YYYY-MM-DD)."},
+    "model_version": {"$ref": "https://github.com/tomtomtomdev/worldbankscape/schema/score.schema.json#/$defs/semver"},
+    "model_fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$", "description": "Hash of rules + weights + config; a change segments the journal and the paper record."},
+    "stance": {"enum": ["overweight", "neutral", "underweight", "avoid"]},
+    "score": {"type": "number", "minimum": 0, "maximum": 100, "description": "50 = neutral. Layer-1 score after regime shift and layer-2 overrides."},
+    "layer1_score": {"type": "number", "minimum": 0, "maximum": 100, "description": "worldbankscape score before adjustments."},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1, "description": "Lowered for every stale or missing input."},
+    "regime": {"enum": ["risk_on", "neutral", "risk_off"], "description": "Layer-0 global regime."},
+    "dollar": {"enum": ["up", "flat", "down"], "description": "Layer-0 broad dollar direction."},
+    "drivers": {"$ref": "#/$defs/texts"},
+    "risks": {"$ref": "#/$defs/texts"},
+    "watch": {"$ref": "#/$defs/texts"},
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["style", "tranches", "spacing_days"],
+      "properties": {
+        "style": {"enum": ["lump", "ladder", "none"], "description": "ladder when the regime is risk_off; none when nothing is to be bought."},
+        "tranches": {"type": "integer", "minimum": 0},
+        "spacing_days": {"type": "integer", "minimum": 0}
+      }
+    },
+    "portfolio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current_pct", "target_pct", "delta"],
+      "properties": {
+        "current_pct": {"type": ["number", "null"], "minimum": 0, "maximum": 100, "description": "null when holdings are unavailable (financer listed in stale_inputs)."},
+        "target_pct": {"type": "number", "minimum": 0, "maximum": 100},
+        "delta": {"type": "string", "minLength": 1}
+      }
+    },
+    "flags": {"type": "array", "items": {"$ref": "https://github.com/tomtomtomdev/worldbankscape/schema/score.schema.json#/$defs/flag"}},
+    "stale_inputs": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "sources": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "description": "Attribution of every source that fed this stance."},
+    "disclaimer": {"type": "string", "pattern": "[Nn]ot investment advice"}
+  },
+  "$defs": {
+    "texts": {"type": "array", "items": {"type": "string", "minLength": 1}}
+  }
+}
