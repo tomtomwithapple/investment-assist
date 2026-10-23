@@ -1,6 +1,7 @@
 # investment-assist build DAG. Slice numbers in titles map to PLAN.md (S0–S14).
-# Not in this graph: PLAN S9 (IDN bonds rule), blocked on idxscape J4 (PHEI parser).
-# Add it as P31-idn-bonds when the PHEI curve table lands (keep existing ids stable).
+# Sources re-synced 2026-10-23 (CLAUDE.md, PLAN.md *Where*): idxscape PHEI landed (J4), so PLAN S9
+# is P31-idn-bonds; idx-method index CSVs are frozen at 2026-09-30; openkrx is Parquet, not Postgres;
+# satudatascape is a SQLite catalogue. Keep existing ids stable.
 #
 # Conventions every slice follows (PLAN.md, Per-slice workflow):
 # - red → green; tests never touch the network or the real stores (socket guard in tests/conftest.py)
@@ -32,7 +33,7 @@ slices:
       (duckdb|sqlite|postgres|http|files) and a newest-date probe. Doctor reports
       present/missing/locked/stale per source and never exits non-zero for a missing source.
       Socket guard: autouse fixture refusing non-localhost sockets. Add .slicer/ to .gitignore.
-      Live: assist doctor shows all 14 (satudatascape missing).
+      Access kinds as of 2026-10-23: satudatascape is SQLite data/satudata.db (absent on this Mac, so reported missing); openkrx is DuckDB over data/parquet, NOT Postgres; idxscape's PHEI tables may be absent here (migration 9 not applied on this Mac); idx-method data/*_daily.csv is frozen at 2026-09-30, so doctor must show it stale. Live: assist doctor shows all 14 with newest dates.
 
   - id: S1-contracts
     kind: contract
@@ -90,7 +91,7 @@ slices:
     accept: uv run pytest -q tests/sources/test_idxscape_prices.py tests/sources/test_idxmethod_index.py && uv run ruff check src/assist/sources/idxscape.py src/assist/sources/idxmethod.py
     estimate: 1
     notes: >-
-      Needed by the regime walk-forward (JCI and IDR returns). idxmethod.py here is index series only; stock-level reads are P19's file.
+      Needed by the regime walk-forward (JCI and IDR returns). idxmethod.py here is index series only; stock-level reads are P19's file. idx-method stopped updating data/*_daily.csv on 2026-10-19 (frozen at 2026-09-30, see its README *Changes the parent must follow*): read them, carry the real last date in as_of so staleness shows, and keep the JCI reader behind one function so a future JCI fetcher swaps in.
 
   - id: P4-portfolio
     title: "PLAN S4: financer adapter + layer 5 weights by country × asset class"
@@ -185,7 +186,7 @@ slices:
     accept: uv run pytest -q tests/sources/test_bpslooker.py && uv run ruff check src/assist/sources/bpslooker.py src/assist/sources/satudatascape.py
     estimate: 1.5
     notes: >-
-      CPI, trade, GDP. Tests use a DuckDB fixture standing in for the Postgres tables (no live Postgres in tests). satudatascape raises SourceUnavailable until it has a store.
+      CPI, trade, GDP. Tests use a DuckDB fixture standing in for the Postgres tables (no live Postgres in tests). satudatascape is now a data.go.id catalogue in SQLite data/satudata.db (tables listed in ../satudatascape/docs/PLAN.md *Tables read by investment-assist*): read runs (freshness) and tables (extracted Parquet, grade) read-only; it holds no ready macro series, and the file is absent on this Mac, so live it raises SourceUnavailable.
 
   - id: P12-bisfetcher
     title: "bisfetcher adapter (WS_CBPOL incl. BI rate, WS_EER, WS_CREDIT_GAP, WS_SPP, WS_DSR)"
@@ -279,23 +280,52 @@ slices:
 
   - id: P22-idn-stocks-rule
     title: "PLAN S10a: IDN stocks market rule (JCI EY vs SBN yield, US ERP + IDN CRP hurdle, flows)"
-    depends_on: [P16-dbnomics, P17-overrides-idn, P18-signals-idn, P19-factors]
+    depends_on: [P16-dbnomics, P17-overrides-idn, P18-signals-idn, P19-factors, P32-phei]
     owns: ["src/assist/layers/rules/**", "tests/layers/rules/**", "docs/results/P22-idn-stocks-rule.md"]
     accept: uv run pytest -q tests/layers/rules && uv run ruff check src/assist/layers/rules
     estimate: 1.5
     notes: >-
-      SBN yield from dbnomics IDN long-term rate as a proxy until the PHEI curve exists (say so in drivers). JCI P/E from idx-method. Market stance first; names come from P20.
+      SBN 10Y yield from the IGSYC curve (P32), falling back to dbnomics' IDN long-term rate when PHEI is unavailable (say which in drivers). JCI P/E from idx-method; the JCI level is frozen at 2026-09-30 (no fetcher), so flag it in stale_inputs. Market stance first; names come from P20.
 
   - id: F2-idn
     kind: integration
     title: "Phase B fan-in: wire layers 2–4 into stance + pipeline; layer-4 candidate list"
-    depends_on: [F1-run, P17-overrides-idn, P18-signals-idn, P20-screens, P21-cost-entry, P22-idn-stocks-rule]
+    depends_on: [F1-run, P17-overrides-idn, P18-signals-idn, P20-screens, P21-cost-entry, P22-idn-stocks-rule, P31-idn-bonds]
     owns: ["src/assist/cli.py", "src/assist/pipeline.py", "src/assist/stance.py",
            "src/assist/layers/candidates.py", "tests/test_run_idn.py", "PLAN.md"]
     accept: uv run pytest -q && uv run ruff check .
     estimate: 1.5
     notes: >-
-      Live assist run for IDN stocks with overrides, signals and candidates in the JSON; update PLAN.md for S7, S8, S10.
+      Live assist run for IDN stocks and IDN bonds with overrides, signals and candidates in the JSON; update PLAN.md for S7, S8, S9, S10.
+
+  - id: P32-phei
+    title: "idxscape PHEI adapter (igsyc_point curve, phei_bond_quote, credit_curve_point)"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/sources/idxscape_phei.py", "tests/sources/test_idxscape_phei.py",
+           "tests/fixtures/idxscape_phei/**", "docs/results/P32-phei.md"]
+    accept: uv run pytest -q tests/sources/test_idxscape_phei.py && uv run ruff check src/assist/sources/idxscape_phei.py
+    estimate: 1.5
+    notes: >-
+      Schema in ../idxscape/docs/storage.md (PHEI, J4). igsyc_point keyed (as_of, tenor_y), default
+      tenors <= 30Y (beyond is extrapolated); phei_bond_quote keyed (as_of, series_code, grp) with grp
+      SBN_BENCHMARK|SBSN_BENCHMARK|RETAIL; benchmark membership rotates, so never treat a series as
+      "the 10Y benchmark", take tenors from the curve. Percent DECIMAL as printed. Keep
+      from_yesterday_column as a flag. PHEI is for the owner's local use only: never put raw quotes
+      in anything sent off this Mac (Telegram gets derived numbers only). Separate file from
+      idxscape.py on purpose. This Mac's idxscape.duckdb may lack migration 9: missing tables raise
+      SourceUnavailable; record that in docs/results.
+
+  - id: P31-idn-bonds
+    title: "PLAN S9: IDN bonds rule (real yield, IGSYC slope, foreign SBN flow, JISDOR trend, regime)"
+    depends_on: [P32-phei, P17-overrides-idn, P18-signals-idn, P9-placebo]
+    owns: ["src/assist/layers/bonds/**", "tests/layers/bonds/**", "docs/results/P31-idn-bonds.md"]
+    accept: uv run pytest -q tests/layers/bonds && uv run ruff check src/assist/layers/bonds
+    estimate: 2
+    notes: >-
+      Real yield = IGSYC 10Y − CPI y/y (bps-looker via P17's overrides inputs); slope 10Y−2Y as
+      idxscape J8 does; foreign SBN holdings change from sbn_ownership (P18); JISDOR trend; ladder
+      when regime is risk_off. Enter when real yield is high, foreign holdings stable or rising and
+      USD/IDR isn't breaking out. Rule gated by the placebo harness before it may change a stance.
 
   # ---------------- phase C: foreign markets ----------------
   - id: P23-jquantster
@@ -320,13 +350,13 @@ slices:
     estimate: 1
 
   - id: P26-openkrx
-    title: "openkrx adapter (KR/TW, Postgres read-only)"
+    title: "openkrx adapter (KR/TW, DuckDB read-only over data/parquet)"
     depends_on: [S1-contracts]
     owns: ["src/assist/sources/openkrx.py", "tests/sources/test_openkrx.py", "tests/fixtures/openkrx/**"]
     accept: uv run pytest -q tests/sources/test_openkrx.py && uv run ruff check src/assist/sources/openkrx.py
     estimate: 1
     notes: >-
-      DuckDB fixture stands in for Postgres in tests.
+      Not Postgres (that holds only ops tables): DuckDB read-only over ../openkrx/data/parquet. Follow ../openkrx/docs/HANDOFF.md if it exists, else the R1-read-contract notes in ../openkrx/plan.yaml (TW tw_* incl. tw_adjusted_daily; KR dart_* with current_fs_lines semantics: newest rcept_no per corp/year/reprt_code/fs_div). Index-level use only for now. Parquet fixtures in tests.
 
   - id: P27-fx-idr
     title: "IDR return conversion, hedged vs unhedged (carry from rate differential)"
@@ -364,12 +394,12 @@ slices:
   # ---------------- phase D: track record and ops ----------------
   - id: P30-paper
     title: "PLAN S13: paper tracking vs IDR 60/40 (JCI / SBN leg), segmented by fingerprint"
-    depends_on: [P3-idn-prices, P5-journal, P16-dbnomics]
+    depends_on: [P3-idn-prices, P5-journal, P16-dbnomics, P32-phei]
     owns: ["src/assist/paper.py", "tests/test_paper.py"]
     accept: uv run pytest -q tests/test_paper.py && uv run ruff check src/assist/paper.py
     estimate: 2
     notes: >-
-      SBN index for the 40% leg is an OPEN QUESTION (PHEI); make the bond leg pluggable with a labelled proxy from dbnomics IDN long rate. Reads journal records only; marks weekly.
+      SBN index for the 40% leg is an OPEN QUESTION; make the bond leg pluggable, default a labelled synthetic from the IGSYC 10Y yield, else dbnomics IDN long rate. The JCI leg reads P3's JCI function, frozen at 2026-09-30 until a JCI fetcher exists: marks after that date are reported stale, not invented. Reads journal records only; marks weekly.
 
   - id: F4-ops
     kind: integration

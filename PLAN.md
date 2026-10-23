@@ -8,7 +8,7 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-10-14, sources synced with `CLAUDE.md` (TIC, satudatascape, layer-0 series), nothing built. **Next up:** S0.
+**Last updated:** 2026-10-23, sources re-synced with the siblings (idxscape PHEI done so S9 is unblocked; idx-method index CSVs frozen at 2026-09-30; openkrx read as Parquet; satudatascape SQLite). Build runs from `plan.yaml` (slicer worker loop). **Next up:** S0.
 
 | Phase | Slices | Done |
 |---|---|---|
@@ -53,12 +53,12 @@ One user, on this Mac. Telegram is the only push channel.
 | 2 | ausdata | `warehouse.duckdb` | Read-only `ATTACH` |
 | 2 | singstat (sgecon) | `data/sgecon.duckdb` | Read-only `ATTACH` |
 | 2, 3 | dbnomics | `data/dbnomics.duckdb` (`$DBN_DB`): `series`, `observations`, `series_latest`, `series_status`; OECD CLI/BCI/CCI/CPI/rates, China `cn.*`, Eurozone (layer 2); `damodaran_erp`, `damodaran_crp`, `shiller` (layer 3). Ids and units in `docs/HANDOFF.md` | HTTP `?format=csv` from `dbn serve` (127.0.0.1:8770) first; its lock is mutual (a reader blocks `dbn refresh`), so a direct read opens, queries and closes |
-| 2 | satudatascape | No store yet (`README.md`, `docs/`, `scripts/` only) | Planned; doctor reports it missing until a store exists |
+| 2 | satudatascape | `data/satudata.db` (SQLite): data.go.id catalogue `packages`, `resources`, `tables` (extracted Parquet, grade A/B/C), `runs` (freshness); list in its `docs/PLAN.md` *Tables read by investment-assist*. Not on this Mac yet | `mode=ro` URI; doctor reports it missing until the file exists |
 | 2, 3, 4 | jquantster | `data/jquantster.db` (SQLite): macro (layer 2), TSE investor flows (layer 3), prices, EPS, EDINET (layer 4) | DuckDB `sqlite` extension, read-only |
-| 3 | idxscape | `data/idxscape.duckdb`: `stock_summary`, `broker_summary`, `fx_rate` (JISDOR), `sbn_ownership`, `corporate_action`; PHEI curve after idxscape J4 | Read-only `ATTACH` |
+| 3 | idxscape | `data/idxscape.duckdb`: `stock_summary`, `broker_summary`, `fx_rate` (JISDOR), `sbn_ownership`, `corporate_action`; PHEI (J4 done 2026-10-22, migration 9): `igsyc_point` (as_of, tenor_y), `phei_bond_quote` (as_of, series_code, grp; never read a series as "the 10Y benchmark"), `credit_curve_point`, local use only (`docs/storage.md`). This Mac's copy lacks migration 9 until idxscape is pulled and loaded here | Read-only `ATTACH` |
 | 3 | kseistat | `data/ksei.duckdb`: `v_market_composition`, `v_type_composition` | Read-only `ATTACH` |
-| 3, 4 | idx-method | Fetcher only since 2026-10-14 (no books or screens; see its README, *Changes the parent must follow*). `store/data/stockbiter.db` (SQLite); `data/factors.json`, `consensus.json`, `composition.json`, `universe.json`, `sectors.json`, `special_boards.json`, `data/snapshots/<date>.json.gz`; `data/*_daily.csv`, `*_weekly.csv` (IHSG, LQ45, XIHD, IDX indices); `cache/history/` (OHLC, value, net foreign flow), `cache/dividends/`, `cache/fundamentals/` | Read-only, files |
-| 4 | openkrx | Postgres | Read-only role (phase C) |
+| 3, 4 | idx-method | Fetcher only since 2026-10-14 (no books or screens; see its README, *Changes the parent must follow*). `store/data/stockbiter.db` (SQLite); `data/factors.json`, `consensus.json`, `composition.json`, `universe.json`, `sectors.json`, `special_boards.json`, `data/snapshots/<date>.json.gz`; `data/*_daily.csv`, `*_weekly.csv` (IHSG, LQ45, XIHD, IDX indices) **frozen at 2026-09-30, no longer updated since 2026-10-19: JCI needs another fetcher**; `cache/history/` (OHLC, value, net foreign flow), `cache/dividends/`, `cache/fundamentals/` | Read-only, files |
+| 4 | openkrx | `data/parquet` (KR: `dart_*`, TW: `tw_*` incl. `tw_adjusted_daily`); Postgres holds only ops tables. Read contract = its `docs/HANDOFF.md` (slice R1, pending 2026-10-23; table changes listed in its `plan.yaml` R1 notes) | DuckDB read-only over Parquet (phase C) |
 | 5 | financer | `~/.financer/financer.db` (SQLite): `holdings`, `trades`, `transactions` | `mode=ro` URI |
 
 Every path lives in `config/sources.yaml` (relative to `../`, overridable by env). A source that
@@ -151,7 +151,7 @@ real stores → record numbers in the Progress table → commit. One slice per c
   DJPPR non-resident SBN holdings change; kseistat foreign share trend; sec-edgar TIC US investor
   net purchases of Indonesian equities and bonds (`us_*_42218`).
 - [ ] **S9 IDN bonds rule.** Real yield, curve slope, foreign SBN flow, JISDOR trend, regime.
-  **Blocked on idxscape J4 (PHEI parser).**
+  idxscape J4 done 2026-10-22: read the IGSYC curve and `phei_bond_quote`.
 - [ ] **S10 IDN stocks rule + candidates (layer 4).** JCI earnings yield vs SBN yield, computed
   here (idx-method's `dividend_vs_bonds.py` was removed 2026-10-14). Candidates are built here:
   idx-method no longer picks stocks, so the dividend / value / momentum screens, cost model and
