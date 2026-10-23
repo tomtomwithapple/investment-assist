@@ -411,7 +411,7 @@ slices:
     kind: integration
     title: "PLAN S14: launchd jobs (weekly brief Mon 07:00 WIB, daily regime), doctor in brief header, README"
     depends_on: [F3-foreign, P30-paper]
-    owns: ["launchd/**", "README.md", "src/assist/cli.py", "src/assist/pipeline.py", "src/assist/brief.py", "PLAN.md"]
+    owns: ["launchd/**", "tests/test_ops.py", "README.md", "src/assist/cli.py", "src/assist/pipeline.py", "src/assist/brief.py", "PLAN.md"]
     accept: uv run pytest -q && uv run ruff check . && plutil -lint launchd/*.plist
     estimate: 1
     notes: >-
