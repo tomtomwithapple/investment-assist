@@ -20,7 +20,7 @@ slices:
     kind: contract
     title: "PLAN S0: uv project, assist CLI, config/sources.yaml, socket guard, doctor"
     produces: [pyproject, sources.yaml, socket-guard, "assist doctor"]
-    owns: ["pyproject.toml", "uv.lock", ".gitignore", "config/**", "src/assist/__init__.py",
+    owns: ["pyproject.toml", "uv.lock", ".python-version", ".gitignore", "config/**", "src/assist/__init__.py",
            "src/assist/cli.py", "src/assist/doctor.py", "tests/conftest.py", "tests/test_doctor.py",
            "docs/results/S0-skeleton.md"]
     accept: uv sync && uv run pytest -q tests/test_doctor.py && uv run ruff check .
