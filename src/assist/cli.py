@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 
-from assist import brief, doctor, journal, notify, pipeline
+from assist import brief, doctor, journal, notify, pipeline, stance
 from assist.layers import regime as regime_layer
 
 
@@ -63,6 +63,8 @@ def _run(args: argparse.Namespace) -> int:
             print(f"  {res.idn.candidates.headline()}")
             for c in res.idn.candidates.candidates:
                 print(f"    {c.symbol:<5} {c.screen}: {c.detail}")
+        if res.foreign is not None:
+            _print_foreign(res)
     else:
         print("no stance written: layer 1 (worldbankscape) unavailable; out/ left as it was")
     for s in res.stale_inputs:
@@ -76,6 +78,33 @@ def _run(args: argparse.Namespace) -> int:
     else:
         print("telegram: not sent (no stances)")
     return 0 if res.ok else 1
+
+
+def _print_foreign(res: pipeline.RunResult) -> None:
+    """Phase C: each P28 market's shifts, the bands they were held at, P29's index candidates
+    and each foreign stance that is not neutral."""
+    f = res.foreign
+    for m in f.overrides.markets:
+        shifts = ", ".join(f"{o.asset} {o.delta:+.0f}" for o in m.overrides)
+        print(f"foreign overrides {m.subject}: {shifts}")
+    print("  KOR, TWN: no layer-2 overrides (P28 covers USA, JPN, EMU, AUS, SGP); layer-1 score"
+          " stands")
+    foreign = [s for s in res.stances if s["subject"] in pipeline.FOREIGN
+               and s["asset"] in pipeline.FOREIGN_ASSETS]
+    held = [f"{s['subject']} {s['asset']} ({s['score']:.1f})" for s in foreign
+            if stance.stance_for(s["score"]) != s["stance"]]
+    if held:
+        print(f"  band held until the overrides beat a placebo: {', '.join(held)}")
+    vals = f.candidates.valuations
+    passing = sum(v.passes for v in vals)
+    print(f"foreign layer 4: {len(vals)} index candidate(s), {passing} passing. Context only:"
+          " no stance change")
+    for v in vals:
+        print(f"    {v.market.symbol:<6} score {v.score:.1f}: {v.detail()}")
+    for s in foreign:
+        if s["stance"] != "neutral":
+            print(f"{s['subject']} {s['asset']}: {s['stance']} (score {s['score']:.1f},"
+                  f" confidence {s['confidence']:.2f})")
 
 
 def _brief(args: argparse.Namespace) -> int:

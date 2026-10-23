@@ -8,20 +8,22 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-10-23, phase B done (F2-idn): `assist run` reads layers 0, 1 and 5 for
-every subject and Indonesia's layers 2–4 (overrides, signals, the IDN bonds and stocks rules,
-layer-4 candidates), writes 49 stance JSONs to `out/`, journals them with each rule's call,
-placebo verdict and the candidate list, writes the brief and sends one Telegram summary a day.
-Both IDN rules make **no call** on this Mac (no PHEI tables yet; the OECD 10Y proxy ends
-2024-12), so no IDN stance moved. Build runs from `plan.yaml` (slicer worker loop). Phase C–D
-slices have landed as modules but are not wired yet. **Next up:** F3 (foreign subjects in
-stance + pipeline).
+**Last updated:** 2026-10-23, phase C done (F3-foreign): `assist run` reads layers 0, 1 and 5
+for every subject, Indonesia's layers 2–4 (overrides, signals, the IDN bonds and stocks rules,
+layer-4 candidates) and the foreign subjects' layer 2 (P28 overrides: USA, JPN, euro area, AUS,
+SGP) and layer 4 (P29 index candidates), writes 49 stance JSONs to `out/` (each foreign one
+names its IDR edge, hedged vs unhedged), journals them with every rule call, override and
+candidate decision, writes the brief and sends one Telegram summary a day. No stance moved in
+phase B or C: the IDN rules make no call on this Mac and the foreign overrides and candidates
+are hand-set, so they move scores but not bands until they beat a placebo. Build runs from
+`plan.yaml` (slicer worker loop). Phase D slices (P30 paper) have landed as modules but are not
+wired yet. **Next up:** F4.
 
 | Phase | Slices | Done |
 |---|---|---|
 | A. Skeleton + base layers (0, 1, 5) | S0–S6 | 7 / 7 |
 | B. Indonesia overrides and rules (2, 3, 4) | S7–S10 | 4 / 4 |
-| C. Foreign markets | S11–S12 | 0 / 2 |
+| C. Foreign markets | S11–S12 | 2 / 2 |
 | D. Track record and ops | S13–S14 | 0 / 2 |
 
 ---
@@ -171,10 +173,10 @@ real stores → record numbers in the Progress table → commit. One slice per c
 
 ### Phase C — foreign markets
 
-- [ ] **S11 Foreign overrides.** sec-edgar (BLS, FRED macro, TIC foreign holdings and net purchases
+- [x] **S11 Foreign overrides.** sec-edgar (BLS, FRED macro, TIC foreign holdings and net purchases
   of US securities), jquantster (macro, TSE investor flows), singstat, ausdata,
   worldbankscape ECB/BIS for the EU. Returns converted to IDR, hedged vs unhedged.
-- [ ] **S12 Foreign candidates.** Index-level only at first (US, JP, AU, SG); openkrx for KR/TW.
+- [x] **S12 Foreign candidates.** Index-level only at first (US, JP, AU, SG); openkrx for KR/TW.
 
 ### Phase D — track record and ops
 
@@ -208,6 +210,56 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S8 IDN signals (P18-signals-idn, with P13-idx-flows, P14-kseistat, P15-tic) | done | 2026-10-23 | `ae39827` (`ba7a89e`, `71fc424`, `5984ef6`) | 31 signals, 12 idx flows, 13 kseistat, 29 TIC | IDX foreign 20d −IDR 16.09T (−US$616m, 3 JISDOR gaps) −1; non-resident SBN +IDR 5.74T/4w (IDR 914T, 13.02%) +1; KSEI foreign 31.32% −4.27pt/3m −1; TIC US equity −US$1,577m −1, bonds +US$921m +1 → stocks −3, bonds +2 |
 | S9 IDN bonds rule (P31-idn-bonds, with P32-phei, F2-idn) | done | 2026-10-23 | `06c0591` (`96043c1`) | 39 bonds rule, 20 PHEI | **no call**: no PHEI tables here (idxscape at migration 8), OECD 10Y proxy ends 2024-12; real yield 3.73% (34th pct, 101 months); JISDOR +1.7%/20d; placebo walk-forward 2021-11..2025-03 insufficient sample; stance neutral (score 56.0) |
 | S10 IDN stocks rule + candidates (P22-idn-stocks-rule, P19-factors, P20-screens, P21-cost-entry, F2-idn) | done | 2026-10-23 | `1d4151e` (`8767171`, `a0b07b9`, `558b744`) | 49 stocks rule, 18 factors, 34 screens, 35 cost/entry, 23 F2 run | stocks rule **no call** (10Y proxy too old): JCI EY 6.02% (P/E 16.6), implied ERP 4.29% vs hurdle 6.16% (rich), flows −1, macro 48.6; stance neutral (score 48.6); screens: momentum passes (t 2.62, p 0.004), dividend and value blocked; 20 momentum candidates at an IDR 10m tranche, 0 dropped on cost or capacity (round trips 67–172bp vs 224bp/mo edge) |
+| S11 foreign overrides (P28-overrides-foreign, with P23-jquantster, P24-singstat, P25-ausdata, P27-fx-idr, F3-foreign) | done | 2026-10-23 | `9bd100d` (`3f5d1c4`, `c985760`, `7111371`, `4b45770`), F3 this commit | 30 foreign overrides, 19 jquantster, 20 singstat, 19 ausdata, 22 fx, 18 F3 run | shifts s/b/c: USA +3/−4/+3, JPN −2/−1/+4, EMU +2/−9/−1 (on DEU, FRA, ITA, ESP, NLD), AUS −2/−3/+1, SGP 0/−7/+1; all five markets hiked over 6 months, so bonds negative everywhere; KOR/TWN none. Bands held: AUS bonds 58.2, NLD bonds 54.5, SGP bonds 53.1 (stay overweight). Hedge carry USD +1.81%/y, JPY +4.44%, EUR +3.17%; MAS (SGP, EUR leg) stale since 2026-10-07 |
+| S12 foreign candidates (P29-candidates-foreign, with P26-openkrx, P27-fx-idr, F3-foreign) | done | 2026-10-23 | `cb996f1` (`6ebb2b5`, `4b45770`), F3 this commit | 22 foreign candidates, 12 openkrx, 18 F3 run | 1 index candidate (S&P 500, CAPE EY 2.46% vs 10Y 4.99%, edge −6.47%, score 17.7, does not pass; IDR test survives hedged +8.11% vs IDN 10Y 7.01%); no JP/AU/SG/KR/TW index valuation in any store; openkrx index Parquet not on disk. Context only: no stance moved |
+
+**F3-foreign notes (2026-10-23).** `assist run` now gathers the foreign layers
+(`pipeline.ForeignSources`, `gather_foreign`) for the 11 foreign countries × stocks, bonds and
+currency (33 stances; model 0.3.0).
+- **Overrides (P28)** shift USA, JPN, AUS and SGP, and the `EMU` shift is copied to each
+  worldbankscape member (DEU, FRA, ITA, ESP, NLD) under its own subject. As for IDN, a shift that
+  alone would cross a band is held at the band without it until the overrides beat a placebo.
+  KOR and TWN have no overrides: their score stays at layer 1 and a driver says so.
+- **Layer 4 (P29)** reaches each foreign stocks stance as a driver and a watch line (no
+  candidates slot in the schema). Its scoring is hand-set, so it never moves a stance. Only the
+  US has an index valuation.
+- **IDR edge.** Every foreign stance names it in its drivers, over 1 year, hedged against
+  unhedged (P27 `fx_edge`, P29's adverse 5th-percentile FX move and policy-rate hedge):
+  - stocks: P29's IDR test;
+  - bonds: the local 10Y against the IDN 10Y;
+  - currency: local cash against the BI rate, unhedged only, because hedged it earns the BI rate
+    exactly.
+  Where an input is missing the edge reads n/a. Euro members show P28's IDR terms (FX move, hedge
+  carry) instead, because P29 has no euro-area market. An edge that does not survive goes into
+  `risks`. CLAUDE.md's "overweight only if the edge survives" is not enforced before a placebo.
+- **Journal.** Each run adds one `overrides` record per P28 market (shift per asset, and per
+  stance reached whether its band was held), one `candidates` record per P29 market (`moves_stance`
+  false) and one `idr_edges` record: 65 records per run, up from 53.
+- **Live** (`--no-send`, because today's Telegram had already gone): 49 stances, still 15
+  overweight, 31 neutral, 2 underweight and 1 avoid. **No stance changed.**
+  - Bands held: AUS bonds (61.2 → 58.2), NLD bonds (63.5 → 54.5) and SGP bonds (60.1 → 53.1)
+    stay overweight.
+  - Scores that moved inside their band: euro bonds −9 (DEU 47.3, FRA 40.1, ITA 42.2, ESP 45.7),
+    USA bonds 44.1, USA stocks 64.3 and JPN currency 56.1.
+  - Confidence fell where the new inputs are stale or missing. SGP fell the most (bonds
+    0.32 → 0.19), from MAS data last updated 2026-10-07 and the IDN 10Y proxy last dated 2024-12.
+  - The rerun was byte-identical. Telegram is still one part, but its stale line grew (2.8k chars).
+- **IDR edges live:**
+  - USA stocks +1.10% (survives hedged: +8.11% vs IDN 10Y 7.01%);
+  - bonds: JPN +0.48%, KOR +0.23%, SGP +0.04% (all survive hedged only), USA −0.12% and AUS −0.54%
+    (neither survives);
+  - every currency is negative (JPY −14.3%, KRW −8.1%, AUD −4.2%, SGD −2.9%, USD −2.6%).
+  - Two overweight stances carry the "does not survive" risk: AUS bonds and SGP currency. SGP
+    stocks, TWN bonds and TWN stocks are overweight with the edge n/a.
+- **Stale inputs added:** the singstat MAS series (`mas:fx:eursgd`, `idrsgd`, `sgs:2y`, `sgs:10y`,
+  `sora:comp3m`; last 2026-10-06/07), `dbnomics idn.rate.long` (2024-12, used as the IDR
+  alternative while PHEI is missing here), `openkrx (missing)`, and P29's per-market "no source"
+  gaps (JPN/AUS/SGP/KOR/TWN valuation, JPN and TWN CPI, TWN 10Y and policy rate).
+- **For later slices.**
+  - Every IDR edge uses the IDN 10Y. Once PHEI lands here (idxscape migration 9) that input stops
+    being stale, and the bonds edges near zero (SGP +0.04%, USA −0.12%) may flip.
+  - If F4 or the user wants CLAUDE.md's rule enforced, an overweight that fails its IDR edge
+    would need a placebo-gated rule, like IDN's `gated_stance`.
 
 **F2-idn notes (2026-10-23).** `assist run` now gathers Indonesia's layers 2–4 (`pipeline.IdnSources`,
 `gather_idn`) and passes P8's live regime, P17's overrides and P18's signals into both IDN rules.

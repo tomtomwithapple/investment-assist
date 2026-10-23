@@ -15,6 +15,10 @@ the band stance. The layer-2 overrides shift the score, but a shift that alone w
 stance into another band is held at the band without it until the overrides beat a placebo
 (CLAUDE.md: a rule changes a stance only after its placebo control); the driver says so.
 
+Phase C (F3): the foreign subjects get the same treatment. Their layer-2 overrides (P28) shift
+the score under the same band hold, and their `RuleView` carries context only (the IDR edge,
+hedged against unhedged, and P29's index candidate) with no stance of its own.
+
 Every number below is hand-set and stays so until a rule using it beats its placebo control.
 TODO(PLAN.md, Open questions): the target weight bands (`TILT_PT`, `BENCHMARK_PCT`) need the
 user's risk limits and benchmark choice confirmed. Until then the tilts are placeholders, no
@@ -59,7 +63,7 @@ __all__ = [
 ]
 
 SCHEMA_VERSION = "1.0.0"
-MODEL_VERSION = "0.2.0"  # 0.2: phase B (F2), IDN rules and layer 4 wired
+MODEL_VERSION = "0.3.0"  # 0.2: phase B (F2), IDN rules and layer 4; 0.3: phase C (F3) foreign
 
 # Layer-0 shift of the layer-1 score, in points (same for every asset in v0).
 REGIME_SHIFT = {"risk_on": 5.0, "neutral": 0.0, "risk_off": -5.0}
