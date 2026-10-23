@@ -17,6 +17,11 @@ $SLICER_OWNS
 - Do not edit PLAN.md, CLAUDE.md, plan.yaml, slicer.py, worker.sh or integrate.sh unless owned above.
 - The sibling repos in ../ are READ-ONLY: never write into them, never run their fetchers or
   refresh jobs. This repo never fetches from the internet.
+- The siblings keep changing. Before reading a sibling store, check that repo's recent git log and
+  its own docs (CLAUDE.md, PLAN.md, README *Changes the parent must follow*, docs/HANDOFF.md,
+  docs/storage.md) and inspect the real schema read-only. Where they disagree with CLAUDE.md,
+  PLAN.md or the slice notes here, follow the sibling and say so in your final message (and in
+  docs/results/$SLICER_ID.md if you own it).
 - Work test-first: write the tests, run them and confirm they fail for the right reason, then write
   the minimum code to pass, then tidy up. Tests never touch the network or the real stores; use
   small fixtures under tests/fixtures/ (inspect the real store's schema read-only to build them).
