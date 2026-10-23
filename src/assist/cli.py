@@ -50,6 +50,19 @@ def _run(args: argparse.Namespace) -> int:
         print(f"{len(res.stances)} stance(s) → {paths.out} ({mix})")
         print(f"model {res.fingerprint}")
         print(f"brief {res.brief_path}")
+        for s in res.stances:
+            if s["subject"] == pipeline.HOME and s["asset"] in pipeline.RULE_ASSETS:
+                print(f"{s['subject']} {s['asset']}: {s['stance']} (score {s['score']:.1f},"
+                      f" confidence {s['confidence']:.2f})")
+        if res.idn is not None:
+            for asset in pipeline.RULE_ASSETS:
+                rule, verdict = res.idn.rule(asset), res.idn.verdicts.get(asset)
+                v = "none" if verdict is None else verdict.reason
+                print(f"  {asset} rule: {rule.call}, proposes {rule.proposed_stance};"
+                      f" verdict: {v}")
+            print(f"  {res.idn.candidates.headline()}")
+            for c in res.idn.candidates.candidates:
+                print(f"    {c.symbol:<5} {c.screen}: {c.detail}")
     else:
         print("no stance written: layer 1 (worldbankscape) unavailable; out/ left as it was")
     for s in res.stale_inputs:

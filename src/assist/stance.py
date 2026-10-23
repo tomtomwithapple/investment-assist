@@ -8,6 +8,13 @@ is risk_off. A missing regime or holdings is named in `stale_inputs` and lowers 
 never raises. `dumps` writes sorted keys and rounded floats, so identical inputs give identical
 bytes.
 
+Phase B (F2): an asset rule (layers 2–4, e.g. the IDN bonds and stocks rules) reaches the stance
+as a `RuleView`: its drivers, risks, watch items, stale inputs and sources, plus the stance it
+proposes after its placebo gate (`gated_stance`). Only a gated stance that passed may replace
+the band stance. The layer-2 overrides shift the score, but a shift that alone would move the
+stance into another band is held at the band without it until the overrides beat a placebo
+(CLAUDE.md: a rule changes a stance only after its placebo control); the driver says so.
+
 Every number below is hand-set and stays so until a rule using it beats its placebo control.
 TODO(PLAN.md, Open questions): the target weight bands (`TILT_PT`, `BENCHMARK_PCT`) need the
 user's risk limits and benchmark choice confirmed. Until then the tilts are placeholders, no
@@ -20,6 +27,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date
 
 from assist.layers.types import (
@@ -42,6 +50,8 @@ __all__ = [
     "STALE_PENALTY",
     "STANCE_BANDS",
     "TILT_PT",
+    "RuleView",
+    "base_stance",
     "build_stance",
     "dumps",
     "model_fingerprint",
@@ -49,7 +59,7 @@ __all__ = [
 ]
 
 SCHEMA_VERSION = "1.0.0"
-MODEL_VERSION = "0.1.0"
+MODEL_VERSION = "0.2.0"  # 0.2: phase B (F2), IDN rules and layer 4 wired
 
 # Layer-0 shift of the layer-1 score, in points (same for every asset in v0).
 REGIME_SHIFT = {"risk_on": 5.0, "neutral": 0.0, "risk_off": -5.0}
@@ -75,7 +85,26 @@ MODEL_CONFIG = {
     "ladder": {"tranches": LADDER_TRANCHES, "spacing_days": LADDER_SPACING_DAYS},
     "stale_penalty": STALE_PENALTY,
     "max_override": MAX_OVERRIDE,
+    "override_moves_stance": False,  # held at the band without overrides until a placebo passes
 }
+
+
+@dataclass(frozen=True)
+class RuleView:
+    """What an asset rule (layers 2–4) adds to one stance. `stance` is the gated stance when the
+    rule's placebo verdict passed (it then replaces the band stance and `entry` is used), None
+    otherwise; `note` is the gate's sentence for the drivers and the journal."""
+
+    subject: str
+    asset: str
+    note: str
+    stance: str | None = None
+    entry: Mapping | None = None
+    drivers: tuple[str, ...] = ()
+    risks: tuple[str, ...] = ()
+    watch: tuple[str, ...] = ()
+    stale_inputs: tuple[str, ...] = ()
+    sources: tuple[str, ...] = ()
 
 
 def model_fingerprint(config: Mapping | None = None) -> str:
@@ -100,6 +129,18 @@ def _r(x: float, nd: int = 1) -> float:
     return float(round(x, nd)) + 0.0  # + 0.0 turns -0.0 into 0.0
 
 
+def _override_shift(key: tuple[str, str], overrides: Sequence[Override]) -> float:
+    mine = [o for o in overrides if (o.subject, o.asset) == key]
+    return _clip(sum(o.delta for o in mine), -MAX_OVERRIDE, MAX_OVERRIDE)
+
+
+def base_stance(score: AssetScore, regime: Regime | None) -> str:
+    """The band stance `build_stance` gives before any asset rule: layer 1 + regime. The
+    overrides may move the score but not the band (see the module notes)."""
+    shift = REGIME_SHIFT[regime.state if regime is not None else "neutral"]
+    return stance_for(_r(_clip(score.score + shift)))
+
+
 def build_stance(
     *,
     score: AssetScore,
@@ -111,6 +152,7 @@ def build_stance(
     asset: str | None = None,
     as_of: date | None = None,
     fingerprint: str | None = None,
+    rule: RuleView | None = None,
 ) -> dict:
     """Stance payload (schema/stance.schema.json) for `score.subject` × `score.asset`.
 
@@ -145,12 +187,28 @@ def build_stance(
         drivers.append(f"{o.reason} ({o.delta:+.1f}pt)")
         stale.update(o.stale_inputs)
         sources.update(o.sources)
-    override = _clip(sum(o.delta for o in mine), -MAX_OVERRIDE, MAX_OVERRIDE)
+    override = _override_shift(key, overrides)
     if regime is not None:
         drivers.extend(regime.drivers)
 
     final = _r(_clip(score.score + shift + override))
-    stance = stance_for(final)
+    stance = base_stance(score, regime)
+    if stance_for(final) != stance:
+        drivers.append(f"layer-2 overrides would move the stance to {stance_for(final)};"
+                       f" held at {stance} until they beat a placebo")
+
+    watch: list[str] = []
+    if rule is not None:
+        if (rule.subject, rule.asset) != key:
+            raise ValueError(f"rule is for {(rule.subject, rule.asset)}, stance for {key}")
+        if rule.stance is not None:
+            stance = rule.stance
+        drivers.append(rule.note)
+        drivers.extend(d for d in rule.drivers if d not in drivers)
+        risks.extend(r for r in rule.risks if r not in risks)
+        watch.extend(rule.watch)
+        stale.update(rule.stale_inputs)
+        sources.update(rule.sources)
 
     current: float | None = None
     if weights is None:
@@ -175,6 +233,12 @@ def build_stance(
             delta_text = f"+{gap:.1f}pt over {LADDER_TRANCHES} tranches"
             entry = {"style": "ladder", "tranches": LADDER_TRANCHES,
                      "spacing_days": LADDER_SPACING_DAYS}
+        elif (gap > 0 and rule is not None and rule.stance is not None and rule.entry
+              and rule.entry.get("style") != "none"):
+            entry = {k: int(rule.entry[k]) if k != "style" else rule.entry[k]
+                     for k in ("style", "tranches", "spacing_days")}
+            delta_text = (f"+{gap:.1f}pt over {entry['tranches']} tranches"
+                          if entry["style"] == "ladder" else f"+{gap:.1f}pt lump")
         elif gap > 0:
             delta_text = f"+{gap:.1f}pt lump"
             entry = {"style": "lump", "tranches": 1, "spacing_days": 0}
@@ -197,7 +261,7 @@ def build_stance(
         "regime": state,
         "drivers": drivers,
         "risks": risks,
-        "watch": [],
+        "watch": watch,
         "entry": entry,
         "portfolio": {"current_pct": current, "target_pct": target, "delta": delta_text},
         "flags": [dict(f) for f in score.flags],

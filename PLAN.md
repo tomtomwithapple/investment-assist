@@ -8,16 +8,19 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-10-23, phase A wired (F1-run): `assist run` reads layers 0, 1 and 5,
-writes 49 stance JSONs to `out/`, journals them, writes the brief and sends one Telegram summary a
-day. Build runs from `plan.yaml` (slicer worker loop). Phase B–D slices have landed as modules
-but are not wired into `assist run` yet. **Next up:** F2 (wire layers 2–4 and the IDN rules into
-`src/assist/pipeline.py`).
+**Last updated:** 2026-10-23, phase B done (F2-idn): `assist run` reads layers 0, 1 and 5 for
+every subject and Indonesia's layers 2–4 (overrides, signals, the IDN bonds and stocks rules,
+layer-4 candidates), writes 49 stance JSONs to `out/`, journals them with each rule's call,
+placebo verdict and the candidate list, writes the brief and sends one Telegram summary a day.
+Both IDN rules make **no call** on this Mac (no PHEI tables yet; the OECD 10Y proxy ends
+2024-12), so no IDN stance moved. Build runs from `plan.yaml` (slicer worker loop). Phase C–D
+slices have landed as modules but are not wired yet. **Next up:** F3 (foreign subjects in
+stance + pipeline).
 
 | Phase | Slices | Done |
 |---|---|---|
 | A. Skeleton + base layers (0, 1, 5) | S0–S6 | 7 / 7 |
-| B. Indonesia overrides and rules (2, 3, 4) | S7–S10 | 0 / 4 |
+| B. Indonesia overrides and rules (2, 3, 4) | S7–S10 | 4 / 4 |
 | C. Foreign markets | S11–S12 | 0 / 2 |
 | D. Track record and ops | S13–S14 | 0 / 2 |
 
@@ -150,14 +153,14 @@ real stores → record numbers in the Progress table → commit. One slice per c
 
 ### Phase B — Indonesia
 
-- [ ] **S7 IDN overrides (layer 2).** bps-looker CPI, trade and GDP (satudatascape once it has a store); BI rate from bisfetcher
+- [x] **S7 IDN overrides (layer 2).** bps-looker CPI, trade and GDP (satudatascape once it has a store); BI rate from bisfetcher
   `WS_CBPOL.M.ID` (worldbankscape's BIS series until bisfetcher has data). Momentum shifts the layer-1 score by at most ±10 points.
-- [ ] **S8 IDN market signals (layer 3).** idxscape foreign net flow (IDR and USD via JISDOR),
+- [x] **S8 IDN market signals (layer 3).** idxscape foreign net flow (IDR and USD via JISDOR),
   DJPPR non-resident SBN holdings change; kseistat foreign share trend; sec-edgar TIC US investor
   net purchases of Indonesian equities and bonds (`us_*_42218`).
-- [ ] **S9 IDN bonds rule.** Real yield, curve slope, foreign SBN flow, JISDOR trend, regime.
+- [x] **S9 IDN bonds rule.** Real yield, curve slope, foreign SBN flow, JISDOR trend, regime.
   idxscape J4 done 2026-10-22: read the IGSYC curve and `phei_bond_quote`.
-- [ ] **S10 IDN stocks rule + candidates (layer 4).** JCI earnings yield vs SBN yield, computed
+- [x] **S10 IDN stocks rule + candidates (layer 4).** JCI earnings yield vs SBN yield, computed
   here (idx-method's `dividend_vs_bonds.py` was removed 2026-10-14). Candidates are built here:
   idx-method no longer picks stocks, so the dividend / value / momentum screens, cost model and
   entry levels move into investment-assist, read from its `factors.json`, `consensus.json`,
@@ -201,6 +204,38 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S4 portfolio (P4-portfolio) | done | 2026-10-23 | `4443214` | 34 | IDN stocks 60.36%, IDN cash 39.64% (Rp29.6 M, statements 2026-09-30); Ajaib total matches its lines; 0 unmapped |
 | S5 stance v0 + journal (P10-stance, P5-journal, F1-run) | done | 2026-10-23 | `031d079`, `5b0f99d`, `e8662dd` | 30 stance, 18 journal, 9 e2e | `assist run`: 49 schema-valid stances (12 countries × in-scope assets + 14 commodities): 15 overweight, 31 neutral, 2 underweight, 1 avoid; IDN stocks/bonds/currency all neutral; rerun byte-identical; journal chain ok |
 | S6 brief + Telegram (P6-brief, P7-notify, F1-run) | done | 2026-10-23 | `a6da657`, `e5868f7`, `e8662dd` | 20 brief, 26 notify | live 2026-10-23: brief written, Telegram summary sent (1 part, ~1.7 k chars), second run the same day skipped (`already sent`), out/ byte-identical (49 files) |
+| S7 IDN overrides (P17-overrides-idn, with P11-bps, P12-bisfetcher, P16-dbnomics, F2-idn) | done | 2026-10-23 | `cfcf606` (`75b60ba`, `3e77b08`, `c110f2d`) | 21 overrides, 17 bps-looker, 18 bisfetcher, 25 dbnomics | GDP 5.29% flat (0), OECD CLI 98.63 −0.64 (−1), CPI 3.28% inside target (0), trade +US$1.42bn (0), BI rate 5.75% +1.00 since Mar (hiking, +1) → stocks −5, bonds −2, currency 0; no shift crosses a band; satudatascape missing |
+| S8 IDN signals (P18-signals-idn, with P13-idx-flows, P14-kseistat, P15-tic) | done | 2026-10-23 | `ae39827` (`ba7a89e`, `71fc424`, `5984ef6`) | 31 signals, 12 idx flows, 13 kseistat, 29 TIC | IDX foreign 20d −IDR 16.09T (−US$616m, 3 JISDOR gaps) −1; non-resident SBN +IDR 5.74T/4w (IDR 914T, 13.02%) +1; KSEI foreign 31.32% −4.27pt/3m −1; TIC US equity −US$1,577m −1, bonds +US$921m +1 → stocks −3, bonds +2 |
+| S9 IDN bonds rule (P31-idn-bonds, with P32-phei, F2-idn) | done | 2026-10-23 | `06c0591` (`96043c1`) | 39 bonds rule, 20 PHEI | **no call**: no PHEI tables here (idxscape at migration 8), OECD 10Y proxy ends 2024-12; real yield 3.73% (34th pct, 101 months); JISDOR +1.7%/20d; placebo walk-forward 2021-11..2025-03 insufficient sample; stance neutral (score 56.0) |
+| S10 IDN stocks rule + candidates (P22-idn-stocks-rule, P19-factors, P20-screens, P21-cost-entry, F2-idn) | done | 2026-10-23 | `1d4151e` (`8767171`, `a0b07b9`, `558b744`) | 49 stocks rule, 18 factors, 34 screens, 35 cost/entry, 23 F2 run | stocks rule **no call** (10Y proxy too old): JCI EY 6.02% (P/E 16.6), implied ERP 4.29% vs hurdle 6.16% (rich), flows −1, macro 48.6; stance neutral (score 48.6); screens: momentum passes (t 2.62, p 0.004), dividend and value blocked; 20 momentum candidates at an IDR 10m tranche, 0 dropped on cost or capacity (round trips 67–172bp vs 224bp/mo edge) |
+
+**F2-idn notes (2026-10-23).** `assist run` now gathers Indonesia's layers 2–4 (`pipeline.IdnSources`,
+`gather_idn`) and passes P8's live regime, P17's overrides and P18's signals into both IDN rules.
+- **Gates.** Each rule's proposal goes through its `gated_stance` with a verdict built from the
+  rule's own journalled calls (`journalled_verdict`): only calls journalled before the run day
+  count, judged on the forward 3-month JCI return (stocks) or the 10Y return proxy (bonds), so the
+  verdict never looks ahead and a same-day rerun gives the same bytes. Today both are
+  `insufficient sample (on 0, off 0)`: no calls yet, JCI frozen at 2026-09-30. Every run journals
+  a `rule` record per rule (call, proposal, stance written, verdict, inputs) and a `candidates`
+  record (names, drops, every screen's verdict): 53 records per run (49 stances + regime + 2 + 1).
+- **Overrides** shift the IDN scores (schema `score`), but a shift that alone would cross a band
+  is held at the band without it until the overrides beat a placebo; the driver says so. Live,
+  none crosses (stocks 53.6 → 48.6, bonds 58.0 → 56.0, currency 52.5).
+- **Layer 4** (`layers/candidates.py`): the passing screen's monthly top − bottom spread (224bp
+  for momentum) minus each name's `Cost.round_trip_bps` at the IDR 10m tranche; names flagged
+  `over_participation` or `below_one_lot`, or whose cost eats the edge, are dropped; entry level
+  = `entry_typical`, else `entry_deep`. The stance schema has no candidates slot (schema/ was not
+  this slice's), so the headline goes into the IDN stocks `drivers` and one line per name into
+  `watch`. Context only: candidates never move a stance.
+- **Live** (`--no-send`; today's Telegram had already gone): 49 stances (15 overweight, 31
+  neutral, 2 underweight, 1 avoid), IDN bonds neutral 56.0 (confidence 0.34), IDN stocks neutral
+  48.6 (0.28), IDN currency neutral 52.5; rerun byte-identical; Telegram text still one part
+  (1.9 k chars). Top names: BSML, MMIX, TINS, AADI, MARK, DEWI, AUTO, HRTA, ERAA, SRSN.
+- **For later slices.** P21's entry levels are degenerate for momentum names at fresh 3-year
+  highs: BSML (575, high 575) reads a typical correction of −96% → entry 21, DEWI −86% → 35, so
+  read `entry_typical` with care there (a short, unadjusted history; P21's notes). PHEI landing
+  on this Mac (idxscape migration 9) turns both rules from no call into calls, which then start
+  building their journalled verdict.
 
 **F1-run notes (2026-10-23).** In scope: IDN, USA, JPN, DEU, FRA, ITA, ESP, NLD (the EU as its
 members; worldbankscape has no euro-area aggregate), SGP, AUS, KOR, TWN × stocks, bonds,
