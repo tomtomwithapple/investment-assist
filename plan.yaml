@@ -1,0 +1,382 @@
+# investment-assist build DAG. Slice numbers in titles map to PLAN.md (S0–S14).
+# Not in this graph: PLAN S9 (IDN bonds rule), blocked on idxscape J4 (PHEI parser).
+# Add it as P31-idn-bonds when the PHEI curve table lands (keep existing ids stable).
+#
+# Conventions every slice follows (PLAN.md, Per-slice workflow):
+# - red → green; tests never touch the network or the real stores (socket guard in tests/conftest.py)
+# - fixtures are tiny DuckDB/SQLite/JSON/CSV files under tests/fixtures/<source>/
+# - after accept passes, do the live run named in notes and write the numbers to
+#   docs/results/<slice-id>.md (owned by that slice); integration slices copy them into PLAN.md
+# - adapters read stores READ-ONLY and never write into ../<repo>
+
+settings:
+  state: local:.slicer/state.json
+  lease_minutes: 120
+  max_attempts: 3
+
+slices:
+  # ---------------- serial spine ----------------
+  - id: S0-skeleton
+    kind: contract
+    title: "PLAN S0: uv project, assist CLI, config/sources.yaml, socket guard, doctor"
+    produces: [pyproject, sources.yaml, socket-guard, "assist doctor"]
+    owns: ["pyproject.toml", "uv.lock", ".gitignore", "config/**", "src/assist/__init__.py",
+           "src/assist/cli.py", "src/assist/doctor.py", "tests/conftest.py", "tests/test_doctor.py",
+           "docs/results/S0-skeleton.md"]
+    accept: uv sync && uv run pytest -q tests/test_doctor.py && uv run ruff check .
+    estimate: 2
+    notes: >-
+      Python 3.12, deps frozen here for the whole build: duckdb, httpx, jsonschema, pyyaml, typer
+      (or argparse), pytest, ruff. No psycopg: Postgres is read through DuckDB's postgres extension.
+      sources.yaml lists all 14 sources with path relative to ../, env override, access kind
+      (duckdb|sqlite|postgres|http|files) and a newest-date probe. Doctor reports
+      present/missing/locked/stale per source and never exits non-zero for a missing source.
+      Socket guard: autouse fixture refusing non-localhost sockets. Add .slicer/ to .gitignore.
+      Live: assist doctor shows all 14 (satudatascape missing).
+
+  - id: S1-contracts
+    kind: contract
+    title: "Source protocol + tidy Row, layer output types, stance schema, placebo-free fixtures"
+    depends_on: [S0-skeleton]
+    produces: [Source, Row, SourceStatus, open_ro helpers, Regime, AssetScore, Override, Signal,
+               Weights, Candidate, stance.schema.json]
+    owns: ["src/assist/sources/__init__.py", "src/assist/sources/base.py",
+           "src/assist/layers/__init__.py", "src/assist/layers/types.py", "schema/**",
+           "tests/fixtures/stance/**", "tests/helpers/**", "tests/test_contracts.py"]
+    accept: uv run pytest -q tests/test_contracts.py && uv run ruff check src/assist/sources/base.py src/assist/layers/types.py
+    estimate: 1.5
+    notes: >-
+      Row = (series_id, date, value, as_of, source). open_ro helpers: DuckDB ATTACH READ_ONLY,
+      SQLite file:...?mode=ro, Postgres via duckdb postgres ext, HTTP CSV via httpx (localhost only),
+      and an open-query-close helper for dbnomics' mutual lock. A locked/missing store raises
+      SourceUnavailable, which callers turn into stale_inputs, never a crash.
+      stance.schema.json extends worldbankscape's score.schema.json and matches the CLAUDE.md
+      output contract (stance enum overweight|neutral|underweight|avoid, disclaimer and sources
+      required). tests/fixtures/stance/ holds 3 valid sample stances that brief/notify build against.
+      Freeze this: changing it later means `slicer invalidate S1-contracts`.
+
+  # ---------------- phase A fan-out ----------------
+  - id: P1-worldbankscape
+    title: "PLAN S1: worldbankscape adapter (out/*.json, validated) → AssetScore"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/sources/worldbankscape.py", "tests/sources/test_worldbankscape.py",
+           "tests/fixtures/worldbankscape/**", "docs/results/P1-worldbankscape.md"]
+    accept: uv run pytest -q tests/sources/test_worldbankscape.py && uv run ruff check src/assist/sources/worldbankscape.py
+    estimate: 1.5
+    notes: >-
+      Validate each file against worldbankscape's own schema (read from ../worldbankscape, not copied). Live: every country × asset score loads with confidence and flags.
+
+  - id: P2-usfin-fred
+    title: "PLAN S2: FRED adapter over usfin HTTP CSV or read-only ATTACH (identical rows)"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/sources/usfin.py", "tests/sources/test_usfin_fred.py",
+           "tests/fixtures/usfin/**", "docs/results/P2-usfin-fred.md"]
+    accept: uv run pytest -q tests/sources/test_usfin_fred.py && uv run ruff check src/assist/sources/usfin.py
+    estimate: 2
+    notes: >-
+      HTTP when `usfin serve` answers on 127.0.0.1:8660, ATTACH otherwise; one test asserts both
+      paths give identical rows from the same fixture. Reads fred_observation_latest (current) and
+      fred_as_of(DATE) (backtests). NFCI/STLFSI4 are huge: always filter by series in SQL.
+      Net liquidity = WALCL − WTREGEN − RRPONTSYD×1000 (RRP in $bn). Live: all layer-0 series in
+      CLAUDE.md load by both paths. Keep the HTTP/ATTACH helper importable: P15 reuses it.
+
+  - id: P3-idn-prices
+    title: "JISDOR (idxscape fx_rate) + JCI/index CSVs (idx-method data/*_daily.csv) adapters"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/sources/idxscape.py", "src/assist/sources/idxmethod.py",
+           "tests/sources/test_idxscape_prices.py", "tests/sources/test_idxmethod_index.py",
+           "tests/fixtures/idxscape/**", "tests/fixtures/idxmethod/index/**",
+           "docs/results/P3-idn-prices.md"]
+    accept: uv run pytest -q tests/sources/test_idxscape_prices.py tests/sources/test_idxmethod_index.py && uv run ruff check src/assist/sources/idxscape.py src/assist/sources/idxmethod.py
+    estimate: 1
+    notes: >-
+      Needed by the regime walk-forward (JCI and IDR returns). idxmethod.py here is index series only; stock-level reads are P19's file.
+
+  - id: P4-portfolio
+    title: "PLAN S4: financer adapter + layer 5 weights by country × asset class"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/sources/financer.py", "src/assist/layers/portfolio.py",
+           "tests/layers/test_portfolio.py", "tests/fixtures/financer/**",
+           "docs/results/P4-portfolio.md"]
+    accept: uv run pytest -q tests/layers/test_portfolio.py && uv run ruff check src/assist/sources/financer.py src/assist/layers/portfolio.py
+    estimate: 2
+    notes: >-
+      ~/.financer/financer.db opened mode=ro; latest as_of per account. IDX tickers → IDN stocks;
+      SBN/ORI/SR/FR codes → IDN bonds; RDN/bank cash → IDR cash; unmapped holdings listed, never
+      guessed. Live: weights sum to 100% and match broker statement totals.
+
+  - id: P5-journal
+    title: "Journal + model fingerprint (hash of rules, weights, config)"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/journal.py", "tests/test_journal.py"]
+    accept: uv run pytest -q tests/test_journal.py && uv run ruff check src/assist/journal.py
+    estimate: 1
+    notes: >-
+      Append-only under journal/ (gitignored). Fingerprint must be stable across runs with unchanged rules/config and change when either changes; records segment by fingerprint.
+
+  - id: P6-brief
+    title: "PLAN S6a: Markdown brief from stance JSONs (regime, table, changes, stale, disclaimer)"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/brief.py", "tests/test_brief.py", "tests/fixtures/brief/**"]
+    accept: uv run pytest -q tests/test_brief.py && uv run ruff check src/assist/brief.py
+    estimate: 1.5
+    notes: >-
+      Build only against tests/fixtures/stance/ and the schema; render generically from drivers/risks/watch so later layers need no brief changes. Changes since last run = diff vs previous out/ snapshot.
+
+  - id: P7-notify
+    title: "PLAN S6b: Telegram notify, never-fail + send-once"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/notify.py", "tests/test_notify.py"]
+    accept: uv run pytest -q tests/test_notify.py && uv run ruff check src/assist/notify.py
+    estimate: 1.5
+    notes: >-
+      ASSIST_TELEGRAM_TOKEN / ASSIST_TELEGRAM_CHAT from env, else macOS Keychain (`security`).
+      Same rules as idx-method's former paper daemon: a send failure is logged, never raised;
+      a send-once marker per (kind, date) skips a second send. Tests mock the HTTP call.
+
+  - id: P9-placebo
+    title: "Placebo-control walk-forward harness (shuffled-date control, t-stat, verdict)"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/eval/**", "tests/eval/**"]
+    accept: uv run pytest -q tests/eval && uv run ruff check src/assist/eval
+    estimate: 1.5
+    notes: >-
+      Used by regime (P8), screens (P20) and every later rule. Verdict = rule beats placebo AND placebo itself shows no edge; a procedure that improves the control is fitting noise. Deterministic seed.
+
+  - id: P10-stance
+    title: "PLAN S5: stance v0 from layers 0+1+5 (bands, delta, entry style), schema-valid"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/stance.py", "tests/test_stance.py"]
+    accept: uv run pytest -q tests/test_stance.py && uv run ruff check src/assist/stance.py
+    estimate: 2
+    notes: >-
+      Pure function over the S1 types (fake layer outputs in tests), so it does not wait on the
+      adapters. Score from layer 1 shifted by regime; ladder when risk_off; hand-set weight bands
+      are an OPEN QUESTION in PLAN.md: put them in config/stance.yaml-style constants here with a
+      TODO, don't invent risk limits silently. Output byte-identical for identical inputs (sorted
+      keys, fixed float formatting).
+
+  - id: P8-regime
+    title: "PLAN S3: regime layer 0 (VIX, HY OAS Δ13w, DTWEXBGS Δ13w, DFII10, NFCI) + placebo"
+    depends_on: [P2-usfin-fred, P3-idn-prices, P9-placebo]
+    owns: ["src/assist/layers/regime.py", "tests/layers/test_regime.py",
+           "docs/results/P8-regime.md"]
+    accept: uv run pytest -q tests/layers/test_regime.py && uv run ruff check src/assist/layers/regime.py
+    estimate: 2
+    notes: >-
+      Deliberately small hand-set rule; net liquidity, EM OAS, term premium, STLFSI4 only if they beat the placebo. Point in time via fred_as_of. Live: walk-forward does risk_off precede weaker JCI and IDR returns? Record verdict and t-stat with the control in docs/results.
+
+  - id: F1-run
+    kind: integration
+    title: "Phase A fan-in: assist run|brief|regime|journal; deterministic rerun; live brief sent once"
+    depends_on: [P1-worldbankscape, P4-portfolio, P5-journal, P6-brief, P7-notify, P8-regime, P10-stance]
+    owns: ["src/assist/cli.py", "src/assist/pipeline.py", "tests/test_run_e2e.py", "PLAN.md", "README.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 1.5
+    notes: >-
+      Wire adapters → layers → stance → journal → brief → notify. E2E on fixtures: rerun with unchanged inputs writes identical out/ files. Live: assist run writes valid JSON for every in-scope subject; brief sent; second send same day skipped. Copy docs/results for S0–S6 into PLAN.md Progress and STATUS.
+
+  # ---------------- phase B: Indonesia ----------------
+  - id: P11-bps
+    title: "bps-looker (Postgres, read-only) + satudatascape stub adapters"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/sources/bpslooker.py", "src/assist/sources/satudatascape.py",
+           "tests/sources/test_bpslooker.py", "tests/fixtures/bpslooker/**"]
+    accept: uv run pytest -q tests/sources/test_bpslooker.py && uv run ruff check src/assist/sources/bpslooker.py src/assist/sources/satudatascape.py
+    estimate: 1.5
+    notes: >-
+      CPI, trade, GDP. Tests use a DuckDB fixture standing in for the Postgres tables (no live Postgres in tests). satudatascape raises SourceUnavailable until it has a store.
+
+  - id: P12-bisfetcher
+    title: "bisfetcher adapter (WS_CBPOL incl. BI rate, WS_EER, WS_CREDIT_GAP, WS_SPP, WS_DSR)"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/sources/bisfetcher.py", "tests/sources/test_bisfetcher.py",
+           "tests/fixtures/bisfetcher/**"]
+    accept: uv run pytest -q tests/sources/test_bisfetcher.py && uv run ruff check src/assist/sources/bisfetcher.py
+    estimate: 1
+    notes: >-
+      Table names per the contract block in ../bisfetcher/PLAN.md (series, observations, datasets). $BISFETCHER_DB override.
+
+  - id: P13-idx-flows
+    title: "idxscape foreign flow (stock_summary), broker summary, DJPPR sbn_ownership"
+    depends_on: [P3-idn-prices]
+    owns: ["src/assist/sources/idxscape.py", "tests/sources/test_idxscape_flows.py",
+           "tests/fixtures/idxscape_flows/**"]
+    accept: uv run pytest -q tests/sources/test_idxscape_flows.py && uv run ruff check src/assist/sources/idxscape.py
+    estimate: 1.5
+    notes: >-
+      Extends P3's idxscape.py (hence the dependency). Foreign net flow in IDR and USD via JISDOR.
+
+  - id: P14-kseistat
+    title: "kseistat adapter (v_market_composition, v_type_composition)"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/sources/kseistat.py", "tests/sources/test_kseistat.py", "tests/fixtures/kseistat/**"]
+    accept: uv run pytest -q tests/sources/test_kseistat.py && uv run ruff check src/assist/sources/kseistat.py
+    estimate: 1
+
+  - id: P15-tic
+    title: "sec-edgar TIC adapter (tic_observation_latest, us_*_42218 for Indonesia, for_*)"
+    depends_on: [P2-usfin-fred]
+    owns: ["src/assist/sources/usfin_tic.py", "tests/sources/test_usfin_tic.py", "tests/fixtures/usfin_tic/**"]
+    accept: uv run pytest -q tests/sources/test_usfin_tic.py && uv run ruff check src/assist/sources/usfin_tic.py
+    estimate: 1
+    notes: >-
+      Reuses usfin.py's HTTP/ATTACH helper; do not edit usfin.py (import only). /series/tic?country=…&format=csv.
+
+  - id: P16-dbnomics
+    title: "dbnomics adapter (OECD CLI/BCI/CCI/CPI/rates, cn.*, EA; damodaran_erp/crp, shiller)"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/sources/dbnomics.py", "tests/sources/test_dbnomics.py", "tests/fixtures/dbnomics/**"]
+    accept: uv run pytest -q tests/sources/test_dbnomics.py && uv run ruff check src/assist/sources/dbnomics.py
+    estimate: 1.5
+    notes: >-
+      HTTP from dbn serve (127.0.0.1:8770, ?format=csv) first; direct read is open-query-close only (lock is mutual and blocks dbn refresh). Ids and units from ../dbnomics/docs/HANDOFF.md.
+
+  - id: P17-overrides-idn
+    title: "PLAN S7: IDN overrides layer 2 (CPI, trade, GDP momentum, BI rate), cap ±10"
+    depends_on: [P11-bps, P12-bisfetcher, P16-dbnomics]
+    owns: ["src/assist/layers/overrides.py", "tests/layers/test_overrides_idn.py", "docs/results/P17-overrides-idn.md"]
+    accept: uv run pytest -q tests/layers/test_overrides_idn.py && uv run ruff check src/assist/layers/overrides.py
+    estimate: 1.5
+    notes: >-
+      Returns Override objects; shift of the layer-1 score is clamped to ±10. BI rate from WS_CBPOL.M.ID. Missing satudatascape → stale_inputs, not failure.
+
+  - id: P18-signals-idn
+    title: "PLAN S8: IDN market signals layer 3 (foreign flow, SBN holdings Δ, KSEI share, TIC)"
+    depends_on: [P13-idx-flows, P14-kseistat, P15-tic]
+    owns: ["src/assist/layers/signals.py", "tests/layers/test_signals_idn.py", "docs/results/P18-signals-idn.md"]
+    accept: uv run pytest -q tests/layers/test_signals_idn.py && uv run ruff check src/assist/layers/signals.py
+    estimate: 2
+
+  - id: P19-factors
+    title: "PLAN S10b: idx-method stock reads + derived factors (vol_1y, amihud, med_value_60d, days_traded_60, mom_12_1, near_52w_high)"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/sources/idxmethod_stocks.py", "src/assist/candidates/__init__.py",
+           "src/assist/candidates/factors.py", "tests/candidates/test_factors.py",
+           "tests/fixtures/idxmethod/stocks/**"]
+    accept: uv run pytest -q tests/candidates/test_factors.py && uv run ruff check src/assist/sources/idxmethod_stocks.py src/assist/candidates
+    estimate: 2
+    notes: >-
+      Reads factors.json, consensus.json, composition.json, universe.json, cache/history/, cache/dividends/, cache/fundamentals/ read-only. Separate file from P3's idxmethod.py on purpose. Derived columns computed from cache/history only.
+
+  - id: P20-screens
+    title: "PLAN S10b: dividend / value / momentum screens, each gated by a placebo control"
+    depends_on: [P19-factors, P9-placebo]
+    owns: ["src/assist/candidates/screens.py", "tests/candidates/test_screens.py", "docs/results/P20-screens.md"]
+    accept: uv run pytest -q tests/candidates/test_screens.py && uv run ruff check src/assist/candidates/screens.py
+    estimate: 2
+    notes: >-
+      A screen that fails its placebo may run but must not name a candidate. Record each screen's verdict in docs/results.
+
+  - id: P21-cost-entry
+    title: "PLAN S10b: IDX cost model + entry levels"
+    depends_on: [P19-factors]
+    owns: ["src/assist/candidates/costs.py", "src/assist/candidates/entry.py", "tests/candidates/test_costs_entry.py"]
+    accept: uv run pytest -q tests/candidates/test_costs_entry.py && uv run ruff check src/assist/candidates/costs.py src/assist/candidates/entry.py
+    estimate: 1.5
+    notes: >-
+      Fees, tax, spread/impact from amihud and med_value_60d; entry levels per candidate. Look at idx-method git history for the former cost model rather than reinventing it.
+
+  - id: P22-idn-stocks-rule
+    title: "PLAN S10a: IDN stocks market rule (JCI EY vs SBN yield, US ERP + IDN CRP hurdle, flows)"
+    depends_on: [P16-dbnomics, P17-overrides-idn, P18-signals-idn, P19-factors]
+    owns: ["src/assist/layers/rules/**", "tests/layers/rules/**", "docs/results/P22-idn-stocks-rule.md"]
+    accept: uv run pytest -q tests/layers/rules && uv run ruff check src/assist/layers/rules
+    estimate: 1.5
+    notes: >-
+      SBN yield from dbnomics IDN long-term rate as a proxy until the PHEI curve exists (say so in drivers). JCI P/E from idx-method. Market stance first; names come from P20.
+
+  - id: F2-idn
+    kind: integration
+    title: "Phase B fan-in: wire layers 2–4 into stance + pipeline; layer-4 candidate list"
+    depends_on: [F1-run, P17-overrides-idn, P18-signals-idn, P20-screens, P21-cost-entry, P22-idn-stocks-rule]
+    owns: ["src/assist/cli.py", "src/assist/pipeline.py", "src/assist/stance.py",
+           "src/assist/layers/candidates.py", "tests/test_run_idn.py", "PLAN.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 1.5
+    notes: >-
+      Live assist run for IDN stocks with overrides, signals and candidates in the JSON; update PLAN.md for S7, S8, S10.
+
+  # ---------------- phase C: foreign markets ----------------
+  - id: P23-jquantster
+    title: "jquantster adapter (macro: JGB, BOJ, Tankan, USD/JPY; TSE flows; prices, EPS)"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/sources/jquantster.py", "tests/sources/test_jquantster.py", "tests/fixtures/jquantster/**"]
+    accept: uv run pytest -q tests/sources/test_jquantster.py && uv run ruff check src/assist/sources/jquantster.py
+    estimate: 1.5
+
+  - id: P24-singstat
+    title: "singstat adapter (MAS SORA, SGS, FX)"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/sources/singstat.py", "tests/sources/test_singstat.py", "tests/fixtures/singstat/**"]
+    accept: uv run pytest -q tests/sources/test_singstat.py && uv run ruff check src/assist/sources/singstat.py
+    estimate: 1
+
+  - id: P25-ausdata
+    title: "ausdata adapter (RBA, ABS, AOFM)"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/sources/ausdata.py", "tests/sources/test_ausdata.py", "tests/fixtures/ausdata/**"]
+    accept: uv run pytest -q tests/sources/test_ausdata.py && uv run ruff check src/assist/sources/ausdata.py
+    estimate: 1
+
+  - id: P26-openkrx
+    title: "openkrx adapter (KR/TW, Postgres read-only)"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/sources/openkrx.py", "tests/sources/test_openkrx.py", "tests/fixtures/openkrx/**"]
+    accept: uv run pytest -q tests/sources/test_openkrx.py && uv run ruff check src/assist/sources/openkrx.py
+    estimate: 1
+    notes: >-
+      DuckDB fixture stands in for Postgres in tests.
+
+  - id: P27-fx-idr
+    title: "IDR return conversion, hedged vs unhedged (carry from rate differential)"
+    depends_on: [S1-contracts]
+    owns: ["src/assist/fx.py", "tests/test_fx.py"]
+    accept: uv run pytest -q tests/test_fx.py && uv run ruff check src/assist/fx.py
+    estimate: 1.5
+    notes: >-
+      Pure functions over Row series (JISDOR, local FX, policy rates); overweight only if the edge survives the expected FX move.
+
+  - id: P28-overrides-foreign
+    title: "PLAN S11: foreign overrides (US, JP, EU, AU, SG) in IDR terms"
+    depends_on: [P2-usfin-fred, P12-bisfetcher, P15-tic, P16-dbnomics, P23-jquantster, P24-singstat, P25-ausdata, P27-fx-idr]
+    owns: ["src/assist/layers/overrides_foreign.py", "tests/layers/test_overrides_foreign.py", "docs/results/P28-overrides-foreign.md"]
+    accept: uv run pytest -q tests/layers/test_overrides_foreign.py && uv run ruff check src/assist/layers/overrides_foreign.py
+    estimate: 2
+    notes: >-
+      EU from dbnomics (ECB; euro-area 2Y stands in for Bund 2Y). Same ±10 cap as IDN overrides.
+
+  - id: P29-candidates-foreign
+    title: "PLAN S12: foreign candidates, index-level (US, JP, AU, SG; KR/TW via openkrx)"
+    depends_on: [P16-dbnomics, P23-jquantster, P26-openkrx, P27-fx-idr]
+    owns: ["src/assist/layers/candidates_foreign.py", "tests/layers/test_candidates_foreign.py"]
+    accept: uv run pytest -q tests/layers/test_candidates_foreign.py && uv run ruff check src/assist/layers/candidates_foreign.py
+    estimate: 1.5
+
+  - id: F3-foreign
+    kind: integration
+    title: "Phase C fan-in: foreign subjects in stance + pipeline"
+    depends_on: [F2-idn, P28-overrides-foreign, P29-candidates-foreign]
+    owns: ["src/assist/cli.py", "src/assist/pipeline.py", "src/assist/stance.py", "tests/test_run_foreign.py", "PLAN.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 1
+
+  # ---------------- phase D: track record and ops ----------------
+  - id: P30-paper
+    title: "PLAN S13: paper tracking vs IDR 60/40 (JCI / SBN leg), segmented by fingerprint"
+    depends_on: [P3-idn-prices, P5-journal, P16-dbnomics]
+    owns: ["src/assist/paper.py", "tests/test_paper.py"]
+    accept: uv run pytest -q tests/test_paper.py && uv run ruff check src/assist/paper.py
+    estimate: 2
+    notes: >-
+      SBN index for the 40% leg is an OPEN QUESTION (PHEI); make the bond leg pluggable with a labelled proxy from dbnomics IDN long rate. Reads journal records only; marks weekly.
+
+  - id: F4-ops
+    kind: integration
+    title: "PLAN S14: launchd jobs (weekly brief Mon 07:00 WIB, daily regime), doctor in brief header, README"
+    depends_on: [F3-foreign, P30-paper]
+    owns: ["launchd/**", "README.md", "src/assist/cli.py", "src/assist/pipeline.py", "src/assist/brief.py", "PLAN.md"]
+    accept: uv run pytest -q && uv run ruff check . && plutil -lint launchd/*.plist
+    estimate: 1
+    notes: >-
+      Daily regime job sends Telegram only on regime change. Install script mirrors bisfetcher's launchd/install.sh.
