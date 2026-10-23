@@ -1,0 +1,212 @@
+# Every sibling store investment-assist reads, all READ-ONLY. Re-checked against each repo
+# (git log, docs, real schema) on 2026-10-23.
+#
+# path     relative to the siblings root (`../` of this repo; override with ASSIST_SIBLINGS_ROOT),
+#          absolute, or `~/...`. `env` overrides it (and `dsn` for postgres).
+# access   duckdb | sqlite | postgres | http | files
+#          http: GET `url` + probe `http` path (CSV); when the server is down, fall back to a
+#          read-only open of `path` (DuckDB) with the probe's `sql`.
+#          files: `path` is a directory; probes read `csv`, `json`, `parquet` or `sqlite` under it.
+# probes   newest-date checks. `sql` returns one date; `csv`/`json`/`parquet` take the max of
+#          `column`/`field`. Dates after today are ignored. A probe older than `max_age_days` is
+#          stale; an `optional` probe whose table is absent is reported, not counted as stale.
+
+sources:
+  sec-edgar:
+    repo: sec-edgar
+    layers: [0, 2, 3, 4]
+    access: http
+    url: http://127.0.0.1:8660
+    url_env: ASSIST_SEC_EDGAR_URL
+    path: sec-edgar/data/usfin.duckdb
+    env: ASSIST_SEC_EDGAR_DB
+    probes:
+      - name: fred VIXCLS
+        http: /series/fred/VIXCLS?format=csv
+        column: date
+        sql: select max(date) from fred_observation_latest where series_id = 'VIXCLS'
+        max_age_days: 7
+      - name: tic
+        sql: select max(date) from tic_observation_latest
+        max_age_days: 120
+
+  bisfetcher:
+    repo: bisfetcher
+    layers: [0, 2]
+    access: duckdb
+    path: bisfetcher/warehouse.duckdb
+    env: ASSIST_BISFETCHER_DB
+    probes:
+      - name: WS_EER IDR daily
+        sql: select max(date) from observations where series_id = 'WS_EER.D.N.B.ID'
+        max_age_days: 14
+      - name: WS_CBPOL BI rate
+        sql: select max(date) from observations where series_id = 'WS_CBPOL.D.ID'
+        max_age_days: 45
+
+  worldbankscape:
+    repo: worldbankscape
+    layers: [1]
+    access: files
+    path: worldbankscape/out
+    env: ASSIST_WORLDBANKSCAPE_OUT
+    probes:
+      - name: index.json as_of
+        json: index.json
+        field: entries.as_of
+        max_age_days: 45
+
+  bps-looker:
+    repo: bps-looker
+    layers: [2]
+    access: postgres
+    dsn: postgresql://bps:bps@localhost:5432/bps
+    env: ASSIST_BPS_LOOKER_DSN
+    probes:
+      - name: observation last_update
+        sql: select max(last_update)::date from public.observation
+        max_age_days: 45
+      - name: trade_flow month
+        sql: >-
+          select max(make_date(year::int, month::int, 1)) from public.trade_flow
+          where month between 1 and 12
+        max_age_days: 120
+
+  ausdata:
+    repo: ausdata
+    layers: [2]
+    access: duckdb
+    path: ausdata/warehouse.duckdb
+    env: ASSIST_AUSDATA_DB
+    probes:
+      - name: observations
+        sql: select max(date) from observations where date <= current_date
+        max_age_days: 45
+
+  singstat:
+    repo: singstat
+    layers: [2]
+    access: duckdb
+    path: singstat/data/sgecon.duckdb
+    env: ASSIST_SINGSTAT_DB
+    probes:
+      - name: observations
+        sql: select max(date) from observations where date <= current_date
+        max_age_days: 45
+
+  dbnomics:
+    repo: dbnomics
+    layers: [2, 3]
+    access: http
+    url: http://127.0.0.1:8770
+    url_env: ASSIST_DBNOMICS_URL
+    path: dbnomics/data/dbnomics.duckdb
+    env: ASSIST_DBNOMICS_DB
+    probes:
+      - name: series_latest
+        http: /api/latest?format=csv
+        column: date
+        sql: select max(date) from series_latest where date <= current_date
+        max_age_days: 14
+
+  satudatascape:
+    repo: satudatascape
+    layers: [2]
+    access: sqlite
+    path: satudatascape/data/satudata.db
+    env: ASSIST_SATUDATASCAPE_DB
+    probes:
+      - name: runs finished
+        sql: select max(substr(finished_at, 1, 10)) from runs
+        max_age_days: 7
+
+  jquantster:
+    repo: jquantster
+    layers: [2, 3, 4]
+    access: sqlite
+    path: jquantster/data/jquantster.db
+    env: ASSIST_JQUANTSTER_DB
+    probes:
+      - name: macro usdjpy
+        sql: select max(date) from macro_obs where key = 'usdjpy'
+        max_age_days: 7
+      - name: investor_types
+        sql: select max(en_date) from investor_types
+        max_age_days: 14
+      - name: daily_bars
+        sql: select max(date) from daily_bars
+        max_age_days: 100
+
+  idxscape:
+    repo: idxscape
+    layers: [3]
+    access: duckdb
+    path: idxscape/data/idxscape.duckdb
+    env: ASSIST_IDXSCAPE_DB
+    probes:
+      - name: stock_summary
+        sql: select max(trade_date) from stock_summary
+        max_age_days: 7
+      - name: fx_rate JISDOR
+        sql: select max(rate_date) from fx_rate
+        max_age_days: 7
+      - name: sbn_ownership
+        sql: select max(as_of) from sbn_ownership
+        max_age_days: 7
+      - name: igsyc_point PHEI
+        sql: select max(as_of) from igsyc_point
+        max_age_days: 7
+        optional: true
+
+  kseistat:
+    repo: kseistat
+    layers: [3]
+    access: duckdb
+    path: kseistat/data/ksei.duckdb
+    env: ASSIST_KSEISTAT_DB
+    probes:
+      - name: holdings
+        sql: select max(date) from holdings
+        max_age_days: 45
+
+  idx-method:
+    repo: idx-method
+    layers: [3, 4]
+    access: files
+    path: idx-method
+    env: ASSIST_IDX_METHOD_DIR
+    probes:
+      - name: jkse_daily.csv
+        csv: data/jkse_daily.csv
+        column: date
+        max_age_days: 7
+      - name: stockbiter bars
+        sqlite: store/data/stockbiter.db
+        sql: select max(date) from bars
+        max_age_days: 7
+
+  openkrx:
+    repo: openkrx
+    layers: [4]
+    access: files
+    path: openkrx/data/parquet
+    env: ASSIST_OPENKRX_PARQUET
+    probes:
+      - name: dart_filing
+        parquet: dart_filing/**/*.parquet
+        column: date
+        max_age_days: 7
+
+  financer:
+    repo: financer
+    layers: [5]
+    access: sqlite
+    path: ~/.financer/financer.db
+    env: ASSIST_FINANCER_DB
+    probes:
+      - name: holdings as_of
+        sql: select max(as_of) from holdings
+        max_age_days: 45
+      - name: transactions
+        sql: select max(txn_date) from transactions
+        max_age_days: 45

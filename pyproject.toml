@@ -1,0 +1,41 @@
+[project]
+name = "investment-assist"
+version = "0.1.0"
+description = "Reads the sibling fetcher stores read-only and turns them into a stance and entry plan per country x asset class. Heuristic, not investment advice."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "duckdb>=1.1",
+    "httpx>=0.27",
+    "jsonschema>=4.23",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+assist = "assist.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/assist"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# Vendored scheduler, not part of the package (lint it where it lives upstream).
+extend-exclude = ["slicer.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
