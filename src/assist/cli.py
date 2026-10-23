@@ -1,20 +1,26 @@
-"""`assist` command line. Subcommands: doctor (run, brief, regime and journal come later)."""
+"""`assist` command line: doctor | run | brief | regime | journal."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import date
 from pathlib import Path
 
 import httpx
 
-from assist import doctor
+from assist import brief, doctor, journal, notify, pipeline
+from assist.layers import regime as regime_layer
+
+
+def _today(args: argparse.Namespace) -> date:
+    return date.fromisoformat(args.today) if getattr(args, "today", None) else date.today()
 
 
 def _doctor(args: argparse.Namespace) -> int:
-    today = date.fromisoformat(args.today) if args.today else date.today()
+    today = _today(args)
     sources = doctor.load_sources(Path(args.config), root=Path(args.root) if args.root else None)
     client = None if args.no_http else httpx.Client(trust_env=False)
     try:
@@ -29,9 +35,91 @@ def _doctor(args: argparse.Namespace) -> int:
     return 0  # a missing, locked or stale source is reported, never a failure
 
 
+def _run(args: argparse.Namespace) -> int:
+    day = _today(args)
+    paths = pipeline.Paths.default()
+    res = pipeline.run(day, paths=paths, sources=pipeline.Sources.default(),
+                       send=not args.no_send)
+    reg = res.regime
+    print(f"assist run {day}: regime {reg.state}, dollar {reg.dollar}")
+    if res.ok:
+        counts: dict[str, int] = {}
+        for s in res.stances:
+            counts[s["stance"]] = counts.get(s["stance"], 0) + 1
+        mix = ", ".join(f"{n} {k}" for k, n in sorted(counts.items()))
+        print(f"{len(res.stances)} stance(s) → {paths.out} ({mix})")
+        print(f"model {res.fingerprint}")
+        print(f"brief {res.brief_path}")
+    else:
+        print("no stance written: layer 1 (worldbankscape) unavailable; out/ left as it was")
+    for s in res.stale_inputs:
+        print(f"stale: {s}")
+    for path, why in res.problems.items():
+        print(f"problem: {path}: {why}")
+    if res.notify is not None:
+        print(notify.describe(res.notify))
+    elif args.no_send:
+        print("telegram: not sent (--no-send)")
+    else:
+        print("telegram: not sent (no stances)")
+    return 0 if res.ok else 1
+
+
+def _brief(args: argparse.Namespace) -> int:
+    paths = pipeline.Paths.default()
+    text = brief.build_brief(paths.out, paths.snapshots)
+    print(text, end="" if text.endswith("\n") else "\n")
+    if not args.send:
+        return 0
+    loaded = brief.load_out(paths.out)
+    if not loaded.stances:
+        print("telegram: nothing to send (out/ is empty)", file=sys.stderr)
+        return 1
+    day = date.fromisoformat(max(s["as_of"] for s in loaded.stances))
+    regimes = "/".join(sorted({s["regime"] for s in loaded.stances}))
+    msg = pipeline.message(loaded.stances, regime=regimes, day=day,
+                           brief_path=paths.briefs / f"{day}.md")
+    result = notify.send(msg, kind="brief", day=day, state_dir=paths.notify)
+    print(notify.describe(result), file=sys.stderr)
+    return 0
+
+
+def _regime(args: argparse.Namespace) -> int:
+    day = _today(args)
+    reg = regime_layer.regime(day, source=pipeline.Sources.default().fred)
+    if args.json:
+        print(json.dumps(journal.jsonable(reg), indent=2, sort_keys=True))
+        return 0
+    print(f"regime {day}: {reg.state}, dollar {reg.dollar}")
+    for d in reg.drivers:
+        print(f"  driver: {d}")
+    for s in reg.stale_inputs:
+        print(f"  stale: {s}")
+    return 0
+
+
+def _journal(args: argparse.Namespace) -> int:
+    j = journal.Journal(pipeline.Paths.default().journal)
+    try:
+        n, chain = j.verify(), "chain ok"
+    except ValueError as e:
+        n, chain = sum(1 for _ in j.read()), f"chain BROKEN: {e}"
+    segs = j.segments()
+    print(f"{j.path}: {n} record(s), {len(segs)} model(s), {chain}")
+    for fp, recs in segs.items():
+        days = sorted({r["as_of"] for r in recs if r.get("as_of")})
+        span = f"{days[0]} … {days[-1]}" if days else "-"
+        stances = sum(1 for r in recs if r["kind"] == "stance")
+        print(f"  {fp[:19]}  {len(recs)} record(s), {stances} stance(s), {span}")
+    return 0 if chain == "chain ok" else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="assist", description=__doc__)
+    parser.add_argument("--siblings-root",
+                        help="siblings root for every source (sets ASSIST_SIBLINGS_ROOT)")
     sub = parser.add_subparsers(dest="command", required=True)
+
     d = sub.add_parser("doctor", help="present / missing / locked / stale per source")
     d.add_argument("--config", default=str(doctor.DEFAULT_CONFIG))
     d.add_argument("--root", help="siblings root (default ../ or $ASSIST_SIBLINGS_ROOT)")
@@ -41,7 +129,27 @@ def main(argv: list[str] | None = None) -> int:
         "--no-http", action="store_true", help="skip local HTTP servers, read the stores directly"
     )
     d.set_defaults(func=_doctor)
+
+    r = sub.add_parser("run", help="stances → out/, journal, brief, Telegram (once a day)")
+    r.add_argument("--today", help="YYYY-MM-DD run date (default today)")
+    r.add_argument("--no-send", action="store_true", help="write everything, send nothing")
+    r.set_defaults(func=_run)
+
+    b = sub.add_parser("brief", help="print the brief for the current out/")
+    b.add_argument("--send", action="store_true", help="also send the summary (once a day)")
+    b.set_defaults(func=_brief)
+
+    g = sub.add_parser("regime", help="layer 0: risk regime and dollar direction")
+    g.add_argument("--today", help="YYYY-MM-DD, read point in time (default today)")
+    g.add_argument("--json", action="store_true")
+    g.set_defaults(func=_regime)
+
+    j = sub.add_parser("journal", help="decision journal: records per model, chain check")
+    j.set_defaults(func=_journal)
+
     args = parser.parse_args(argv)
+    if args.siblings_root:
+        os.environ["ASSIST_SIBLINGS_ROOT"] = args.siblings_root
     return args.func(args)
 
 

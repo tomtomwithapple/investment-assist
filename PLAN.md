@@ -8,11 +8,15 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-10-23, sources re-synced with the siblings (idxscape PHEI done so S9 is unblocked; idx-method index CSVs frozen at 2026-09-30; openkrx read as Parquet; satudatascape SQLite). Build runs from `plan.yaml` (slicer worker loop). **Next up:** S0.
+**Last updated:** 2026-10-23, phase A wired (F1-run): `assist run` reads layers 0, 1 and 5,
+writes 49 stance JSONs to `out/`, journals them, writes the brief and sends one Telegram summary a
+day. Build runs from `plan.yaml` (slicer worker loop). Phase B–D slices have landed as modules
+but are not wired into `assist run` yet. **Next up:** F2 (wire layers 2–4 and the IDN rules into
+`src/assist/pipeline.py`).
 
 | Phase | Slices | Done |
 |---|---|---|
-| A. Skeleton + base layers (0, 1, 5) | S0–S6 | 0 / 7 |
+| A. Skeleton + base layers (0, 1, 5) | S0–S6 | 7 / 7 |
 | B. Indonesia overrides and rules (2, 3, 4) | S7–S10 | 0 / 4 |
 | C. Foreign markets | S11–S12 | 0 / 2 |
 | D. Track record and ops | S13–S14 | 0 / 2 |
@@ -91,6 +95,7 @@ src/assist/
   brief.py      Markdown brief
   notify.py     Telegram (env IDX-style: ASSIST_TELEGRAM_TOKEN / ASSIST_TELEGRAM_CHAT, Keychain)
   journal.py    every decision + model fingerprint (hash of rules + weights + config)
+  pipeline.py   gather (read layers) → build (stances) → out/, journal, brief, notify
   cli.py        assist doctor | run | brief | regime | journal
 ```
 
@@ -113,33 +118,33 @@ real stores → record numbers in the Progress table → commit. One slice per c
 
 ### Phase A — skeleton and base layers
 
-- [ ] **S0 Skeleton + doctor.** uv project, `assist` CLI, `config/sources.yaml`, socket guard.
+- [x] **S0 Skeleton + doctor.** uv project, `assist` CLI, `config/sources.yaml`, socket guard.
   `assist doctor` lists each source: present / missing / locked / newest date, never fails the run.
   *Done when:* live doctor shows all 14 sources with their newest data date (satudatascape
   reported missing until it has a store).
-- [ ] **S1 Adapter contract + worldbankscape.** `Source` protocol → tidy rows. worldbankscape
+- [x] **S1 Adapter contract + worldbankscape.** `Source` protocol → tidy rows. worldbankscape
   adapter reads `out/` and validates against its schema. *Done when:* live run loads every
   country × asset score with its confidence and flags.
-- [ ] **S2 FRED adapter (usfin).** CSV over HTTP when `serve` is up, read-only `ATTACH` otherwise;
+- [x] **S2 FRED adapter (usfin).** CSV over HTTP when `serve` is up, read-only `ATTACH` otherwise;
   same rows either way (one test asserts it). Reads `fred_observation_latest`, and `fred_as_of`
   for backtests. *Done when:* every layer-0 series listed in `CLAUDE.md` (25 today; `fred.yaml`
   holds 34 incl. layer-2 macro) loads live by both paths.
-- [ ] **S3 Regime (layer 0).** Hand-set rule on VIX level, HY OAS 13-week change, DTWEXBGS 13-week
+- [x] **S3 Regime (layer 0).** Hand-set rule on VIX level, HY OAS 13-week change, DTWEXBGS 13-week
   change, DFII10, NFCI (deliberately small; net liquidity, EM OAS, term premium and STLFSI4 are
   candidates to add only if they beat the placebo) → `risk_on | neutral | risk_off` + dollar direction. Placebo: the same rule
   on shuffled dates. Walk-forward test: does `risk_off` precede weaker JCI and IDR returns
   (JCI from idx-method `data/jkse_daily.csv`, IDR from JISDOR)? *Done when:* verdict and t-stat recorded here, with the
   control.
-- [ ] **S4 Portfolio (layer 5).** financer `holdings` latest `as_of` per account → weights by
+- [x] **S4 Portfolio (layer 5).** financer `holdings` latest `as_of` per account → weights by
   country × asset class. Mapping: IDX tickers → IDN stocks; SBN/ORI/SR/FR codes → IDN bonds;
   RDN/bank cash → IDR cash; anything unmapped is listed, not guessed. *Done when:* live weights
   add up to 100% and match the brokers' statement totals.
-- [ ] **S5 Stance v0 (layers 0 + 1 + 5).** `schema/stance.schema.json`; stance from the layer-1
+- [x] **S5 Stance v0 (layers 0 + 1 + 5).** `schema/stance.schema.json`; stance from the layer-1
   score, shifted by the regime; target weight band per stance; delta vs current weight; entry
   style (`lump | ladder`, ladder when `risk_off`). Journal every run. *Done when:* `assist run`
   writes valid JSON for every in-scope subject and a rerun with unchanged inputs writes identical
   files.
-- [ ] **S6 Brief + Telegram.** Markdown brief (regime, stance table, changes since last run,
+- [x] **S6 Brief + Telegram.** Markdown brief (regime, stance table, changes since last run,
   stale inputs, disclaimer); Telegram summary; same never-fail and send-once rules as idx-method's former paper daemon.
   *Done when:* a live brief is sent and a second send the same day is skipped.
 
@@ -185,6 +190,22 @@ real stores → record numbers in the Progress table → commit. One slice per c
 
 ## Progress
 
+Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
+
 | Slice | Status | Date | Commit | Tests | Live result |
 |---|---|---|---|---|---|
-| — | — | — | — | — | — |
+| S0 skeleton + doctor (S0-skeleton) | done | 2026-10-23 | `b328bf5` | 33 (doctor) | 14 sources: 10 present, 3 stale (sec-edgar VIXCLS 2026-10-12, jquantster, idx-method CSVs frozen 2026-09-30), 1 missing (satudatascape) |
+| S1 adapter contract + worldbankscape (S1-contracts, P1-worldbankscape) | done | 2026-10-23 | `fbe9e82`, `ab0fb79` | 47 contract + worldbankscape | 144 scores load (27 countries + 14 commodities, 6 asset classes), 0 invalid; 47 flags, 8 critical; IDN bonds 58.0, stocks 53.6, currency 52.5 |
+| S2 FRED adapter (P2-usfin-fred) | done | 2026-10-23 | `3d3d921` | 22 | all 25 layer-0 series load via ATTACH (159,682 rows, 0.4 s); HTTP path proven on fixture only (`usfin serve` down here); net liquidity $5,865 bn on 2026-10-07 |
+| S3 regime (P8-regime, with P3-idn-prices, P9-placebo) | done | 2026-10-23 | `21f4ef5` (`d9ed1b1`, `e347dc4`) | 28 regime | now neutral, dollar flat; walk-forward 2019–2026: **not proven** (JCI 20d p 0.910, IDR 20d p 0.052, 3 independent risk_off windows; control t ≤ 0.35); no candidate adopted |
+| S4 portfolio (P4-portfolio) | done | 2026-10-23 | `4443214` | 34 | IDN stocks 60.36%, IDN cash 39.64% (Rp29.6 M, statements 2026-09-30); Ajaib total matches its lines; 0 unmapped |
+| S5 stance v0 + journal (P10-stance, P5-journal, F1-run) | done | 2026-10-23 | `031d079`, `5b0f99d`, F1 | 30 stance, 18 journal, 9 e2e | `assist run`: 49 schema-valid stances (12 countries × in-scope assets + 14 commodities): 15 overweight, 31 neutral, 2 underweight, 1 avoid; IDN stocks/bonds/currency all neutral; rerun byte-identical; journal chain ok |
+| S6 brief + Telegram (P6-brief, P7-notify, F1-run) | done | 2026-10-23 | `a6da657`, `e5868f7`, F1 | 20 brief, 26 notify | brief written to `data/briefs/<day>.md`; live send: see F1 note below |
+
+**F1-run notes (2026-10-23).** In scope: IDN, USA, JPN, DEU, FRA, ITA, ESP, NLD (the EU as its
+members; worldbankscape has no euro-area aggregate), SGP, AUS, KOR, TWN × stocks, bonds,
+currency, plus all 14 commodities; worldbankscape's `business` and `property` have no stance.
+This Mac's sec-edgar copy stops at 2026-10-12, so all five core regime inputs are stale and every
+stance's confidence carries ×0.9⁵ (e.g. IDN stocks 0.43); the jobs Mac should not show this.
+Telegram shows every IDN stance plus every non-neutral one elsewhere (one part, ~1.7 k chars);
+the other neutral stances are counted and left to the brief.
