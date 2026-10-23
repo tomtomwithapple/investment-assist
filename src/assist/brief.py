@@ -9,6 +9,12 @@ watch items are printed as given, so a later layer that adds a driver needs no c
 `out/` to `<snapshots>/<as_of>/` after a run, and `build_brief` diffs against the newest snapshot
 dated before the current stances. A file that is not JSON or fails the schema is skipped and
 listed under *Problems*, never raised. Same inputs give the same bytes (no clock reads).
+
+Two optional sections come from outside `out/` (PLAN S14), each passed in as ready-made lines so
+the brief stays a pure function of its inputs: *Data health* (the doctor, one line per missing,
+locked or stale source; `health_lines`) right under the disclaimer, and *Paper track* (the 60/40
+benchmark and each model segment; `paper_lines`) before the details. Without them the brief is
+exactly as before.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from assist.layers.types import DISCLAIMER, stance_validator
 
@@ -30,7 +37,9 @@ __all__ = [
     "Loaded",
     "build_brief",
     "diff",
+    "health_lines",
     "load_out",
+    "paper_lines",
     "previous_snapshot",
     "render",
     "save_snapshot",
@@ -101,14 +110,96 @@ def previous_snapshot(snapshots_dir: Path, before: str) -> Path | None:
     return max(dates, key=lambda d: d.name) if dates else None
 
 
-def build_brief(out_dir: Path, snapshots_dir: Path) -> str:
+def build_brief(out_dir: Path, snapshots_dir: Path, *, health: Sequence[str] | None = None,
+                paper: Sequence[str] | None = None) -> str:
     """Brief for the stances in `out_dir`, diffed against the newest earlier snapshot."""
     loaded = load_out(out_dir)
     as_of = _as_of(loaded.stances)
     prev_dir = previous_snapshot(snapshots_dir, before=as_of) if as_of else None
     previous = load_out(prev_dir).stances if prev_dir else None
     return render(loaded.stances, previous, problems=loaded.problems,
-                  previous_as_of=prev_dir.name if prev_dir else None)
+                  previous_as_of=prev_dir.name if prev_dir else None, health=health,
+                  paper=paper)
+
+
+# ---------------- doctor and paper lines ----------------
+
+_PROBLEM_PROBES = ("stale", "empty", "absent", "error")
+_PROBLEM_ORDER = ("missing", "locked", "error", "stale")
+
+
+def _probe_text(p: Any) -> str:
+    if p.status == "stale" and p.age_days is not None:
+        return f"{p.name} {p.age_days}d/{p.max_age_days}d"
+    return f"{p.name} {p.status}"
+
+
+def health_lines(statuses: Sequence[Any]) -> list[str]:
+    """The doctor (`doctor.SourceStatus` list) in a few lines: a count, then one line per source
+    that is not present and fresh, or present with a probe that is absent or failing."""
+    n = len(statuses)
+    bad = {s.name: [p for p in s.probes if p.status in _PROBLEM_PROBES] for s in statuses}
+    fine = [s for s in statuses if s.status == "present" and not bad[s.name]]
+    if len(fine) == n:
+        return [f"Doctor: all {n} source(s) present and fresh."]
+    counts = Counter(s.status for s in statuses)
+    tally = ", ".join(f"{counts[k]} {k}" for k in _PROBLEM_ORDER if counts[k])
+    lines = [f"Doctor: {len(fine)} of {n} sources present and fresh"
+             + (f"; {tally}." if tally else ".")]
+    for s in statuses:
+        if s in fine:
+            continue
+        probes = ", ".join(_probe_text(p) for p in bad[s.name])
+        if s.status == "present":
+            lines.append(f"{s.name}: present, but {probes}")
+        elif s.status == "stale":
+            newest = f", newest {s.newest.isoformat()}" if s.newest else ""
+            lines.append(f"{s.name}: stale{newest}" + (f" ({probes})" if probes else ""))
+        else:
+            detail = s.detail.splitlines()[0][:120] if s.detail else probes
+            lines.append(f"{s.name}: {s.status}" + (f" ({detail})" if detail else ""))
+    return lines
+
+
+def _signed(x: float | None) -> str:
+    return "n/a" if x is None else f"{x * 100:+.1f}%"
+
+
+def paper_lines(report: Any) -> list[str]:
+    """`paper.PaperReport` in a few lines: the benchmark's scored and stale weeks, the last
+    scored week, one line per model segment (or "benchmark marks only"), stale legs, the legs.
+    A stale week is counted, never filled in."""
+    pct, bs = report.benchmark_pct, report.benchmark_summary
+    head = f"Benchmark {pct['stocks']:g}% JCI / {pct['bonds']:g}% SBN leg: "
+    if bs["weeks"]:
+        head += (f"{bs['weeks']} week(s) scored from {report.start}, cumulative "
+                 f"{_signed(bs['cumulative'])}, annualised {_signed(bs['annualized'])}")
+    else:
+        head += "no week scored"
+    if bs["stale_weeks"]:
+        head += f"; {bs['stale_weeks']} stale week(s), not scored"
+    lines = [head + "."]
+    scored = [m for m in report.benchmark if m.benchmark is not None]
+    if scored:
+        m = scored[-1]
+        lines.append(f"Last scored week ends {m.week_end}: benchmark {_signed(m.benchmark)} "
+                     f"(JCI {_signed(m.jci)}, SBN leg {_signed(m.sbn)}).")
+    if not report.segments:
+        lines.append("No stance history in the journal yet: benchmark marks only.")
+    for seg in report.segments:
+        line = (f"Model `{_fingerprint(seg.fingerprint)}`: from {seg.first_as_of}, "
+                f"{seg.weeks} week(s) scored ({seg.stale_weeks} stale)")
+        if seg.weeks:
+            hit = "n/a" if seg.hit_rate is None else f"{seg.hit_rate * 100:.0f}%"
+            line += (f": portfolio {_signed(seg.portfolio_return)} vs benchmark "
+                     f"{_signed(seg.benchmark_return)}, active {_signed(seg.active_return)}, "
+                     f"hit rate {hit}")
+        else:
+            line += ": nothing scored yet"
+        lines.append(line + ".")
+    lines += [f"Stale: {x}." for x in report.stale_inputs]
+    lines.append(f"Legs: stocks = {report.legs['stocks']}; bonds = {report.legs['bonds']}.")
+    return lines
 
 
 # ---------------- helpers ----------------
@@ -231,13 +322,17 @@ def diff(previous: Sequence[Mapping], current: Sequence[Mapping]) -> list[str]:
 # ---------------- render ----------------
 
 def render(current: Sequence[Mapping], previous: Sequence[Mapping] | None = None, *,
-           problems: Sequence[str] = (), previous_as_of: str | None = None) -> str:
-    """The brief as Markdown. `previous` None means there is no earlier run to diff against."""
+           problems: Sequence[str] = (), previous_as_of: str | None = None,
+           health: Sequence[str] | None = None, paper: Sequence[str] | None = None) -> str:
+    """The brief as Markdown. `previous` None means there is no earlier run to diff against.
+    `health` (doctor lines) and `paper` (paper-track lines) add their sections when given."""
     stances = _sorted(current)
     as_of = _as_of(stances)
     out: list[str] = [f"# Investment brief {as_of}" if as_of else "# Investment brief", ""]
     out += [f"> {DISCLAIMER} Context for an IDR-based investor, built from "
             f"{len(stances)} stance payload(s); every source is listed at the end.", ""]
+    if health is not None:
+        out += ["## Data health", ""] + [f"- {x}" for x in health] + [""]
 
     out += ["## Global regime", ""]
     if stances:
@@ -275,6 +370,9 @@ def render(current: Sequence[Mapping], previous: Sequence[Mapping] | None = None
         changes = diff(previous, stances)
         out += [f"- {c}" for c in changes] if changes else ["No changes."]
     out.append("")
+
+    if paper is not None:
+        out += ["## Paper track", ""] + [f"- {x}" for x in paper] + [""]
 
     out += ["## Details", ""]
     for s in stances:

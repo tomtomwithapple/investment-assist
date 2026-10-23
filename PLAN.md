@@ -8,23 +8,73 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-10-23, phase C done (F3-foreign): `assist run` reads layers 0, 1 and 5
-for every subject, Indonesia's layers 2–4 (overrides, signals, the IDN bonds and stocks rules,
-layer-4 candidates) and the foreign subjects' layer 2 (P28 overrides: USA, JPN, euro area, AUS,
-SGP) and layer 4 (P29 index candidates), writes 49 stance JSONs to `out/` (each foreign one
-names its IDR edge, hedged vs unhedged), journals them with every rule call, override and
-candidate decision, writes the brief and sends one Telegram summary a day. No stance moved in
-phase B or C: the IDN rules make no call on this Mac and the foreign overrides and candidates
-are hand-set, so they move scores but not bands until they beat a placebo. Build runs from
-`plan.yaml` (slicer worker loop). Phase D slices (P30 paper) have landed as modules but are not
-wired yet. **Next up:** F4.
+**Last updated:** 2026-10-23. **All phases are done** (F4-ops).
+
+What `assist run` does:
+- It reads layers 0, 1 and 5 for every subject.
+- For Indonesia it also reads layers 2–4: overrides, signals, the IDN bonds and stocks rules, and
+  the layer-4 candidates.
+- For the foreign subjects it reads layer 2 (P28 overrides: USA, JPN, euro area, AUS, SGP) and
+  layer 4 (P29 index candidates).
+- It writes 49 stance JSONs to `out/`, and journals them with every rule call, override and
+  candidate decision.
+- It writes the brief, which now opens with the doctor and carries the paper track (S13/S14).
+- It sends one Telegram summary a day.
+
+Two launchd jobs are ready in `launchd/` but are **not installed**; the user decides that
+(README, *Scheduled jobs*):
+- `com.tommy.investment-assist.weekly`: `assist run`, Monday 07:00 WIB.
+- `com.tommy.investment-assist.regime`: `assist regime --check`, daily 07:00 WIB. It sends
+  Telegram only on a regime or dollar change.
+
+No stance has moved in phases B–D:
+- The IDN rules make no call on this Mac.
+- The foreign overrides and candidates are hand-set, so they move scores but not bands until they
+  beat a placebo.
+
+Paper tracking has nothing to score yet. Both legs have no current data (no JCI after
+2026-09-30; no IDN 10Y after 2024-12 until PHEI lands here).
+
+**Next up:** the fetcher-side data gaps below, then install the jobs and let the journal build a
+record.
 
 | Phase | Slices | Done |
 |---|---|---|
 | A. Skeleton + base layers (0, 1, 5) | S0–S6 | 7 / 7 |
 | B. Indonesia overrides and rules (2, 3, 4) | S7–S10 | 4 / 4 |
 | C. Foreign markets | S11–S12 | 2 / 2 |
-| D. Track record and ops | S13–S14 | 0 / 2 |
+| D. Track record and ops | S13–S14 | 2 / 2 |
+
+### Open data gaps (fetcher side)
+
+Each gap is fixed in the repo named, never here. The brief flags each one under *Data health* or
+*Stale inputs*.
+
+- **idxscape: the PHEI tables are missing on this Mac.** It is at migration 8, and the tables
+  arrive with migration 9 (J4 is done upstream). Until then both IDN rules make no call, the IDN
+  10Y falls back to dbnomics `idn.rate.long` (last value 2024-12), every IDR edge rests on that
+  proxy, and the paper track's SBN leg stops at 2024-12-31.
+- **There is no JCI fetcher.** idx-method's index CSVs have been frozen at 2026-09-30 since
+  2026-10-19. The paper track's JCI leg, the stocks rule's journalled verdict and JCI's earnings
+  yield history all stop there.
+- **jquantster runs on the J-Quants free plan.** `investor_types` is empty (no TSE flows), and
+  daily bars end 2026-07-31.
+- **openkrx has no index Parquet on disk** (`tw_index`, KR index). There is no KR or TW index
+  valuation, and its HANDOFF read contract (R1) is still pending.
+- **singstat's refresh has been stale since 2026-10-07.** This covers the MAS SORA, SGS 2Y and
+  10Y, and EURSGD and IDRSGD. SGP confidence is the lowest of all subjects.
+- **sec-edgar's FRED data on this Mac has been stale since 2026-10-12.** All five core regime
+  inputs are stale, so every stance's confidence carries ×0.9⁵.
+- **There are no USD/IDR forwards in any store.** Hedged IDR returns use the policy-rate
+  differential as carry (P27).
+- **idx-method's stock history is short and unadjusted.** It holds about 5 years of closes,
+  about 4 of which are usable for drawdowns (P21).
+- **satudatascape** has no store yet.
+
+**Known bug (P21).** Entry levels are wrong for momentum names at fresh 3-year highs. For
+example, BSML at 575 (its high) gets `entry_typical` 21: a −96% "typical correction" read from a
+short, unadjusted history. DEWI reads −86%, giving 35. Until P21 bounds the correction (or uses
+adjusted prices), treat `entry_typical` for those names as missing.
 
 ---
 
@@ -101,7 +151,9 @@ src/assist/
   notify.py     Telegram (env IDX-style: ASSIST_TELEGRAM_TOKEN / ASSIST_TELEGRAM_CHAT, Keychain)
   journal.py    every decision + model fingerprint (hash of rules + weights + config)
   pipeline.py   gather (read layers) → build (stances) → out/, journal, brief, notify
-  cli.py        assist doctor | run | brief | regime | journal
+  paper.py      paper track vs the IDR 60/40 benchmark, per model fingerprint
+  cli.py        assist doctor | run | brief | regime [--check] | paper | journal
+launchd/        weekly (Mon 07:00 WIB) and daily regime (07:00 WIB) LaunchAgent templates
 ```
 
 ### Rules carried from idx-method
@@ -180,9 +232,9 @@ real stores → record numbers in the Progress table → commit. One slice per c
 
 ### Phase D — track record and ops
 
-- [ ] **S13 Paper tracking.** Each stance's implied allocation vs a fixed IDR 60/40 benchmark
+- [x] **S13 Paper tracking.** Each stance's implied allocation vs a fixed IDR 60/40 benchmark
   (60% JCI, 40% SBN index), marked weekly, segmented by model fingerprint.
-- [ ] **S14 launchd + README.** Weekly brief and daily regime jobs; doctor in the brief header.
+- [x] **S14 launchd + README.** Weekly brief and daily regime jobs; doctor in the brief header.
 
 ---
 
@@ -212,6 +264,43 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S10 IDN stocks rule + candidates (P22-idn-stocks-rule, P19-factors, P20-screens, P21-cost-entry, F2-idn) | done | 2026-10-23 | `1d4151e` (`8767171`, `a0b07b9`, `558b744`) | 49 stocks rule, 18 factors, 34 screens, 35 cost/entry, 23 F2 run | stocks rule **no call** (10Y proxy too old): JCI EY 6.02% (P/E 16.6), implied ERP 4.29% vs hurdle 6.16% (rich), flows −1, macro 48.6; stance neutral (score 48.6); screens: momentum passes (t 2.62, p 0.004), dividend and value blocked; 20 momentum candidates at an IDR 10m tranche, 0 dropped on cost or capacity (round trips 67–172bp vs 224bp/mo edge) |
 | S11 foreign overrides (P28-overrides-foreign, with P23-jquantster, P24-singstat, P25-ausdata, P27-fx-idr, F3-foreign) | done | 2026-10-23 | `9bd100d` (`3f5d1c4`, `c985760`, `7111371`, `4b45770`), F3 this commit | 30 foreign overrides, 19 jquantster, 20 singstat, 19 ausdata, 22 fx, 18 F3 run | shifts s/b/c: USA +3/−4/+3, JPN −2/−1/+4, EMU +2/−9/−1 (on DEU, FRA, ITA, ESP, NLD), AUS −2/−3/+1, SGP 0/−7/+1; all five markets hiked over 6 months, so bonds negative everywhere; KOR/TWN none. Bands held: AUS bonds 58.2, NLD bonds 54.5, SGP bonds 53.1 (stay overweight). Hedge carry USD +1.81%/y, JPY +4.44%, EUR +3.17%; MAS (SGP, EUR leg) stale since 2026-10-07 |
 | S12 foreign candidates (P29-candidates-foreign, with P26-openkrx, P27-fx-idr, F3-foreign) | done | 2026-10-23 | `cb996f1` (`6ebb2b5`, `4b45770`), F3 this commit | 22 foreign candidates, 12 openkrx, 18 F3 run | 1 index candidate (S&P 500, CAPE EY 2.46% vs 10Y 4.99%, edge −6.47%, score 17.7, does not pass; IDR test survives hedged +8.11% vs IDN 10Y 7.01%); no JP/AU/SG/KR/TW index valuation in any store; openkrx index Parquet not on disk. Context only: no stance moved |
+| S13 paper tracking (P30-paper, F4-ops) | done | 2026-10-23 | `93a154d`, F4 this commit | 18 paper, 4 F4 paper | benchmark 60/40 live: 674 weeks scored (2012 → 2025-01-03), cumulative +102.1%, annualised 5.6%, vol 9.8%; worst week 2020-03-20 −8.7%; 94 stale weeks after 2025-01-03 (SBN leg on dbnomics `idn.rate.long`, ends 2024-12; JCI frozen 2026-09-30); one model segment from 2026-10-23, nothing scored yet |
+| S14 launchd + doctor header + README (F4-ops) | done | 2026-10-23 | F4 this commit | 31 ops | jobs rendered, not installed; live `run --no-send`: brief opens with *Data health* (9 of 14 sources fresh: sec-edgar, jquantster, idx-method stale, satudatascape missing, idxscape PHEI absent) and *Paper track*; rerun brief byte-identical; `regime --check --no-send`: neutral, dollar flat, unchanged |
+
+**F4-ops notes (2026-10-23).**
+- **Brief.** `brief.render` takes optional `health` and `paper` lines:
+  - *Data health* sits under the disclaimer, built by `health_lines` from `doctor.SourceStatus`.
+    It has one line per source that is missing, locked or stale, or present with an absent probe.
+  - *Paper track* sits before *Details*, built by `paper_lines` from `paper.PaperReport`.
+  - Without either the brief is unchanged, so the golden file was **not** regenerated.
+  - `pipeline.Sources` gains `doctor` and `paper` callables, live by default and None in tests.
+    Paper reads the journal after this run's records, so the current model shows as a segment.
+    A failure in either becomes one "… failed: …" line, never a failed run.
+  - `assist brief` (reprint from out/) shows neither section.
+- **Daily regime check** (`pipeline.regime_check`, `assist regime --check`):
+  - It compares today's regime with the newest `regime` record on or before the day, from a
+    weekly run or an earlier check.
+  - The first check journals a baseline and sends nothing.
+  - On a state or dollar change it sends Telegram (kind `regime`, send-once per day) and journals
+    the new regime once the message is sent or was already sent. A failed or unconfigured send
+    journals nothing, so the next check retries.
+  - `--no-send` writes nothing. If FRED cannot be read (`Regime.sources` empty), it compares
+    nothing.
+- **launchd.** `launchd/install.sh [--dry-run|--uninstall]` mirrors bisfetcher's: templates with
+  `__REPO__`/`__UV__`, the repo defaulting to the main checkout. `launchd/job.sh weekly|regime`
+  runs `uv run assist …` under `lockf launchd/.jobs.lock`, because both jobs fire at Monday 07:00
+  and the brief and out/ must not interleave. It logs to `launchd/<job>.log` (gitignored).
+  Nothing was installed or loaded, and no Telegram was sent.
+- **`assist paper`** prints the paper lines (`--json [--marks]` for P30's full report).
+- **Live** (worktree, `ASSIST_SIBLINGS_ROOT=/Users/tomtomtomtom/Projects`, `--no-send`):
+  49 stances, unchanged from F3. The doctor header lists sec-edgar stale (VIXCLS 11d/7d),
+  satudatascape missing, jquantster stale (`investor_types` empty), idxscape `igsyc_point PHEI`
+  absent, and idx-method stale (`jkse_daily.csv` 23d/7d, stockbiter bars 11d/7d). The brief is
+  about 50 kB, and the rerun gave the same bytes. Journal: 130 records after two runs, chain ok.
+- **For the user.** Pull the main checkout, then `sh launchd/install.sh --dry-run` and
+  `sh launchd/install.sh`. The jobs send from the login Keychain item
+  `investment-assist-telegram`. Before the first daily check, the weekly run (or one manual
+  `assist regime --check`) sets the baseline.
 
 **F3-foreign notes (2026-10-23).** `assist run` now gathers the foreign layers
 (`pipeline.ForeignSources`, `gather_foreign`) for the 11 foreign countries × stocks, bonds and

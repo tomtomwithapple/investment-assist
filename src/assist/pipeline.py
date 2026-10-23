@@ -42,6 +42,11 @@ per P28 market, one `candidates` record per P29 market and one `idr_edges` recor
 
 Order of the side effects, fixed by the brief's diff and the journal's fingerprint check:
 write out/ → journal → `brief.build_brief` → `brief.save_snapshot` → `notify.send`.
+
+Ops (S14): the brief opens with the doctor (`Sources.doctor`) and carries P30's paper track
+(`Sources.paper`, read after this run is journalled); either one failing becomes a line in its
+section, never a failed run. `regime_check` is the daily job: layer 0 against the last
+journalled regime, Telegram (kind `regime`) only when the state or dollar direction changed.
 """
 
 from __future__ import annotations
@@ -50,7 +55,7 @@ import dataclasses
 import os
 import re
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -75,6 +80,7 @@ from assist.layers.rules import rule_verdict as stocks_verdict
 from assist.layers.signals import IdnSignals, idn_signals
 from assist.layers.types import (
     ASSETS,
+    DISCLAIMER,
     AssetScore,
     Override,
     Regime,
@@ -102,6 +108,7 @@ __all__ = [
     "IdrEdge",
     "Layers",
     "Paths",
+    "RegimeCheck",
     "RunResult",
     "Sources",
     "build",
@@ -113,7 +120,12 @@ __all__ = [
     "in_scope",
     "journalled_calls",
     "journalled_verdict",
+    "last_regime",
+    "live_doctor",
+    "live_paper",
     "message",
+    "regime_check",
+    "regime_message",
     "rule_view",
     "run",
     "write_out",
@@ -217,13 +229,18 @@ class ForeignSources:
 @dataclass
 class Sources:
     """The stores a run reads; each is built from `config/sources.yaml` by default. `idn` None
-    skips Indonesia's layers 2–4 (phase B), `foreign` None the foreign layers (phase C)."""
+    skips Indonesia's layers 2–4 (phase B), `foreign` None the foreign layers (phase C).
+    `doctor(day)` (a `doctor.SourceStatus` list) and `paper(day, journal)` (a
+    `paper.PaperReport`) feed the brief's *Data health* and *Paper track* sections (S14); None
+    leaves the section out."""
 
     worldbankscape: Any
     fred: Any
     financer: Any
     idn: IdnSources | None = None
     foreign: ForeignSources | None = None
+    doctor: Callable[[date], Sequence[Any]] | None = None
+    paper: Callable[[date, journal.Journal], Any] | None = None
 
     @classmethod
     def default(cls) -> Sources:
@@ -233,7 +250,24 @@ class Sources:
 
         return cls(worldbankscape=WorldbankscapeSource.from_config(), fred=FredSource(),
                    financer=FinancerSource.from_config(), idn=IdnSources.default(),
-                   foreign=ForeignSources.default())
+                   foreign=ForeignSources.default(), doctor=live_doctor, paper=live_paper)
+
+
+def live_doctor(day: date) -> list[Any]:
+    """`assist doctor` against the real stores (read-only; local HTTP servers only)."""
+    import httpx
+
+    from assist import doctor
+
+    with httpx.Client(trust_env=False) as client:
+        return doctor.run_doctor(doctor.load_sources(), day, http_client=client)
+
+
+def live_paper(day: date, j: journal.Journal) -> Any:
+    """P30's paper report up to `day`, from this run's journal and the live JCI and SBN legs."""
+    from assist import paper
+
+    return paper.paper_track(journal=j, until=day)
 
 
 # ---------------- read ----------------
@@ -785,8 +819,9 @@ class RunResult:
 def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None,
         send: bool = True, notify_kw: Mapping[str, Any] | None = None) -> RunResult:
     paths = paths or Paths.default()
+    sources = sources or Sources.default()
     j = journal.Journal(paths.journal)
-    layers = gather(day, sources or Sources.default(), history=list(j.read()))
+    layers = gather(day, sources, history=list(j.read()))
     res = RunResult(ok=False, day=day, regime=layers.regime, stale_inputs=layers.stale_inputs,
                     problems=dict(layers.layer1.problems) if layers.layer1 else {},
                     idn=layers.idn, foreign=layers.foreign)
@@ -801,7 +836,9 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
     res.files = write_out(res.stances, paths.out)
     res.run_id = _journal(j, layers, res.stances, fp)
 
-    text = brief.build_brief(paths.out, paths.snapshots)
+    health = _never_fail("doctor", sources.doctor, brief.health_lines, day)
+    paper_track = _never_fail("paper tracking", sources.paper, brief.paper_lines, day, j)
+    text = brief.build_brief(paths.out, paths.snapshots, health=health, paper=paper_track)
     res.brief_path = paths.briefs / f"{day.isoformat()}.md"
     _write_if_changed(res.brief_path, text)
     brief.save_snapshot(paths.out, paths.snapshots, day.isoformat())
@@ -813,3 +850,106 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
         res.notify = notify.send(msg, kind="brief", day=day, state_dir=paths.notify,
                                  **dict(notify_kw or {}))
     return res
+
+
+def _never_fail(name: str, fn: Callable | None, fmt: Callable[[Any], list[str]],
+                *args: Any) -> list[str] | None:
+    """`fmt(fn(*args))`, or one line naming the failure: a brief section never stops a run."""
+    if fn is None:
+        return None
+    try:
+        return fmt(fn(*args))
+    except Exception as e:  # noqa: BLE001 - the stances are already written
+        first = str(e).splitlines()[0][:200] if str(e) else ""
+        return [f"{name} failed: {type(e).__name__}: {first}"]
+
+
+# ---------------- daily regime check (S14) ----------------
+
+
+def last_regime(records: Iterable[Mapping], day: date) -> dict | None:
+    """The newest journalled regime (`kind` regime, from a weekly run or a daily check) dated on
+    or before `day`, as {"as_of", "state", "dollar"}; the later record wins a tie."""
+    best = None
+    for rec in records:
+        out = rec.get("outputs") or {}
+        as_of = str(rec.get("as_of") or out.get("as_of") or "")[:10]
+        if rec.get("kind") != "regime" or not as_of or as_of > day.isoformat():
+            continue
+        if "state" not in out or "dollar" not in out:
+            continue
+        if best is None or as_of >= best["as_of"]:
+            best = {"as_of": as_of, "state": out["state"], "dollar": out["dollar"]}
+    return best
+
+
+@dataclass
+class RegimeCheck:
+    """One daily check: today's regime against the last journalled one."""
+
+    day: date
+    regime: Regime
+    previous: dict | None
+    available: bool
+    changed: bool
+    notify: dict | None = None
+    journalled: bool = False
+
+    def changes(self) -> list[str]:
+        if not self.changed or self.previous is None:
+            return []
+        out = []
+        if self.previous["state"] != self.regime.state:
+            out.append(f"Regime: {self.previous['state']} → {self.regime.state}")
+        if self.previous["dollar"] != self.regime.dollar:
+            out.append(f"Dollar: {self.previous['dollar']} → {self.regime.dollar}")
+        return out
+
+
+def regime_message(chk: RegimeCheck) -> str:
+    """The Telegram text for a regime change: what changed since when, the drivers, stale
+    inputs and the disclaimer last."""
+    reg = chk.regime
+    lines = [f"investment-assist regime {chk.day.isoformat()}", *chk.changes()]
+    if chk.previous is not None:
+        lines.append(f"(since {chk.previous['as_of']})")
+    lines += [""] + [f"- {d}" for d in reg.drivers]
+    if reg.stale_inputs:
+        lines += ["", "stale: " + ", ".join(reg.stale_inputs)]
+    lines += ["", "Stances move on the weekly run; this is a heads-up only.", "", DISCLAIMER]
+    return "\n".join(lines)
+
+
+def regime_check(day: date, *, paths: Paths | None = None, source: Any = None,
+                 send: bool = True, notify_kw: Mapping[str, Any] | None = None) -> RegimeCheck:
+    """Daily job: compute layer 0 for `day` and compare it with the last journalled regime.
+
+    - Telegram (kind `regime`, send-once per day) goes out only when the state or the dollar
+      direction changed. A first check with nothing journalled records a baseline and sends
+      nothing.
+    - The new regime is journalled (kind `regime`) on a baseline, or on a change whose message
+      was sent or already sent today. A failed send journals nothing, so the next check finds
+      the same change and retries.
+    - `send=False` is a dry check: it writes nothing at all.
+    - A regime read without any source (FRED missing or locked) is no reading: no change, no
+      write, no message.
+    """
+    paths = paths or Paths.default()
+    j = journal.Journal(paths.journal)
+    reg = regime.regime(day, source=source if source is not None else Sources.default().fred)
+    prev = last_regime(j.read(), day)
+    available = bool(reg.sources)
+    changed = available and prev is not None and (
+        prev["state"], prev["dollar"]) != (reg.state, reg.dollar)
+    chk = RegimeCheck(day=day, regime=reg, previous=prev, available=available, changed=changed)
+    if not send or not available:
+        return chk
+    if changed:
+        chk.notify = notify.send(regime_message(chk), kind="regime", day=day,
+                                 state_dir=paths.notify, **dict(notify_kw or {}))
+    if prev is None or (changed and (chk.notify["sent"] or chk.notify["skipped"])):
+        fp = j.register_model()
+        j.record(kind="regime", fingerprint=fp, inputs={"day": day, "job": "regime"},
+                 outputs=reg, as_of=day, run_id=uuid.uuid4().hex)
+        chk.journalled = True
+    return chk

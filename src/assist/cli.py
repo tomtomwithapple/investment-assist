@@ -1,4 +1,4 @@
-"""`assist` command line: doctor | run | brief | regime | journal."""
+"""`assist` command line: doctor | run | brief | regime | paper | journal."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 
-from assist import brief, doctor, journal, notify, pipeline, stance
+from assist import brief, doctor, journal, notify, paper, pipeline, stance
 from assist.layers import regime as regime_layer
 
 
@@ -126,7 +126,54 @@ def _brief(args: argparse.Namespace) -> int:
     return 0
 
 
+def _regime_check(args: argparse.Namespace) -> int:
+    """Daily job: Telegram only when the regime or the dollar direction changed."""
+    day = _today(args)
+    chk = pipeline.regime_check(day, paths=pipeline.Paths.default(),
+                                source=pipeline.Sources.default().fred, send=not args.no_send)
+    reg = chk.regime
+    print(f"regime check {day}: {reg.state}, dollar {reg.dollar}")
+    for s in reg.stale_inputs:
+        print(f"  stale: {s}")
+    if not chk.available:
+        print("regime unreadable (no FRED source): nothing compared, nothing sent")
+        return 0
+    prev = chk.previous
+    if prev is None:
+        print("no regime journalled yet: " + ("baseline journalled" if chk.journalled
+                                              else "nothing written (--no-send)"))
+        return 0
+    print(f"last journalled {prev['as_of']}: {prev['state']}, dollar {prev['dollar']}")
+    if not chk.changed:
+        print("unchanged: nothing sent")
+        return 0
+    for c in chk.changes():
+        print(c)
+    if chk.notify is None:
+        print("telegram: not sent (--no-send)")
+    else:
+        print(notify.describe(chk.notify))
+        if not chk.journalled:
+            print("not journalled: the next check retries the message")
+    return 0
+
+
+def _paper(args: argparse.Namespace) -> int:
+    day = _today(args)
+    rep = paper.paper_track(journal=journal.Journal(pipeline.Paths.default().journal), until=day)
+    if args.json:
+        print(json.dumps(rep.to_dict(marks=args.marks), indent=2, sort_keys=True))
+        return 0
+    print(f"paper track {day} (IDN sleeve vs the IDR 60/40 benchmark)")
+    for line in brief.paper_lines(rep):
+        print(f"- {line}")
+    print(rep.disclaimer)
+    return 0
+
+
 def _regime(args: argparse.Namespace) -> int:
+    if args.check:
+        return _regime_check(args)
     day = _today(args)
     reg = regime_layer.regime(day, source=pipeline.Sources.default().fred)
     if args.json:
@@ -184,7 +231,17 @@ def main(argv: list[str] | None = None) -> int:
     g = sub.add_parser("regime", help="layer 0: risk regime and dollar direction")
     g.add_argument("--today", help="YYYY-MM-DD, read point in time (default today)")
     g.add_argument("--json", action="store_true")
+    g.add_argument("--check", action="store_true",
+                   help="daily job: journal the regime and send Telegram only on a change")
+    g.add_argument("--no-send", action="store_true",
+                   help="with --check: compare only, write and send nothing")
     g.set_defaults(func=_regime)
+
+    p = sub.add_parser("paper", help="paper track: IDN stances vs the IDR 60/40 benchmark")
+    p.add_argument("--today", help="YYYY-MM-DD, mark up to this day (default today)")
+    p.add_argument("--json", action="store_true", help="the full report as JSON")
+    p.add_argument("--marks", action="store_true", help="with --json: include weekly marks")
+    p.set_defaults(func=_paper)
 
     j = sub.add_parser("journal", help="decision journal: records per model, chain check")
     j.set_defaults(func=_journal)
