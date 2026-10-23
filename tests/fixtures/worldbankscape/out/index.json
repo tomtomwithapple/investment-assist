@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.2.0",
+  "generated_at": "2026-10-22T21:01:59Z",
+  "model_version": "0.4.0",
+  "entries": [
+    {
+      "subject": "BRN",
+      "subject_type": "country",
+      "asset_class": "bonds",
+      "score": 56.6,
+      "confidence": 0.747,
+      "path": "BRN/bonds.json",
+      "model_version": "0.3.0",
+      "as_of": "2026-10-23",
+      "coverage": 0.772,
+      "sha256": "f18b15c29f49bfc6fed977b0c89c67e3edbb904c837116fd4a51ef55378734d2"
+    },
+    {
+      "subject": "IDN",
+      "subject_type": "country",
+      "asset_class": "bonds",
+      "score": 58.0,
+      "confidence": 0.97,
+      "path": "IDN/bonds.json",
+      "model_version": "0.3.0",
+      "as_of": "2026-10-23",
+      "coverage": 0.97,
+      "sha256": "7ff84b7f0bd1aedb8d341bee70d3bb0741898ba9c2c74c6d32d06fa86a1396c9"
+    },
+    {
+      "subject": "GOLD",
+      "subject_type": "commodity",
+      "asset_class": "commodities",
+      "score": 31.1,
+      "confidence": 1.0,
+      "path": "GOLD/commodities.json",
+      "model_version": "0.1.0",
+      "as_of": "2026-10-23",
+      "coverage": 1.0,
+      "sha256": "8d83e1eb0cd3f308433bc2648756ae662a9392587529f2a16d40601ca2233ff8"
+    },
+    {
+      "subject": "IDN",
+      "subject_type": "country",
+      "asset_class": "stocks",
+      "score": 53.6,
+      "confidence": 0.89,
+      "path": "IDN/stocks.json",
+      "model_version": "0.3.0",
+      "as_of": "2026-10-23",
+      "coverage": 0.89,
+      "sha256": "cddd0a7cc8097bce8eb4b8d7f6608cd20ac21bca5a7f9afc4344d2e08026a6b1"
+    },
+    {
+      "subject": "MMR",
+      "subject_type": "country",
+      "asset_class": "stocks",
+      "score": 44.0,
+      "confidence": 0.231,
+      "path": "MMR/stocks.json",
+      "model_version": "0.3.0",
+      "as_of": "2026-10-23",
+      "coverage": 0.47,
+      "sha256": "55140957412e72e7c3f52f23eaee54776d55abd80eb8d9d50b4d492dda85d80b"
+    }
+  ]
+}

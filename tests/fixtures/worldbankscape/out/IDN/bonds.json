@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.2.0",
+  "subject": "IDN",
+  "subject_type": "country",
+  "asset_class": "bonds",
+  "as_of": "2026-10-23",
+  "model_version": "0.3.0",
+  "score": 58.0,
+  "raw_score": 58.5,
+  "coverage": 0.97,
+  "confidence": 0.97,
+  "components": [
+    {
+      "id": "gov_debt",
+      "value": 38.5348,
+      "unit": "pct_gdp",
+      "period": "2025",
+      "source": "imf_dm",
+      "is_forecast": false,
+      "ref_pct": 0.559,
+      "hist_pct": 0.05,
+      "weight": 0.1546,
+      "contribution": 6.37
+    },
+    {
+      "id": "fiscal_balance",
+      "value": -2.9,
+      "unit": "pct_gdp",
+      "period": "2025",
+      "source": "imf_dm",
+      "is_forecast": false,
+      "ref_pct": 0.454,
+      "hist_pct": 0.25,
+      "weight": 0.1031,
+      "contribution": 4.11
+    }
+  ],
+  "flags": [],
+  "stale_inputs": [
+    "yield_spread (missing)"
+  ],
+  "attribution": [
+    "IMF World Economic Outlook / DataMapper",
+    "World Bank WDI (CC BY 4.0)",
+    "World Bank WGI (CC BY 4.0)",
+    "BIS Statistics",
+    "World Bank GEM (CC BY 4.0)"
+  ],
+  "disclaimer": "Heuristic macro context, not investment advice. Scores summarise public macro data and may be stale or incomplete."
+}

@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.2.0",
+  "subject": "IDN",
+  "subject_type": "country",
+  "asset_class": "stocks",
+  "as_of": "2026-10-23",
+  "model_version": "0.3.0",
+  "score": 53.6,
+  "raw_score": 54.6,
+  "coverage": 0.89,
+  "confidence": 0.89,
+  "components": [
+    {
+      "id": "growth_outlook",
+      "value": 5.1,
+      "unit": "pct",
+      "period": "2026-2027",
+      "source": "imf_dm",
+      "is_forecast": true,
+      "ref_pct": 0.844,
+      "hist_pct": null,
+      "weight": 0.1348,
+      "contribution": 10.41
+    },
+    {
+      "id": "growth_now",
+      "value": 5.1,
+      "unit": "pct",
+      "period": "2025",
+      "source": "imf_dm",
+      "is_forecast": false,
+      "ref_pct": 0.768,
+      "hist_pct": 0.7,
+      "weight": 0.0787,
+      "contribution": 5.48
+    }
+  ],
+  "flags": [],
+  "stale_inputs": [
+    "industrial_momentum (missing)",
+    "retail_momentum (missing)"
+  ],
+  "attribution": [
+    "IMF World Economic Outlook / DataMapper",
+    "BIS Statistics",
+    "World Bank GEM (CC BY 4.0)",
+    "World Bank WDI (CC BY 4.0)",
+    "UN Comtrade Database",
+    "World Bank Pink Sheet (CC BY 4.0)",
+    "World Bank WGI (CC BY 4.0)"
+  ],
+  "disclaimer": "Heuristic macro context, not investment advice. Scores summarise public macro data and may be stale or incomplete."
+}

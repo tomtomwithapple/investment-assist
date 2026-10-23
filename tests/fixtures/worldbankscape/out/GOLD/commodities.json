@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.2.0",
+  "subject": "GOLD",
+  "subject_type": "commodity",
+  "asset_class": "commodities",
+  "as_of": "2026-10-23",
+  "model_version": "0.1.0",
+  "score": 31.1,
+  "raw_score": 31.1,
+  "coverage": 1.0,
+  "confidence": 1.0,
+  "components": [
+    {
+      "id": "momentum_12m",
+      "value": 17.7481,
+      "unit": "pct",
+      "period": "2026M09",
+      "source": "pinksheet",
+      "is_forecast": false,
+      "ref_pct": null,
+      "hist_pct": 0.613,
+      "weight": 0.3,
+      "contribution": 18.38
+    },
+    {
+      "id": "momentum_3m",
+      "value": 2.1523,
+      "unit": "pct",
+      "period": "2026M09",
+      "source": "pinksheet",
+      "is_forecast": false,
+      "ref_pct": null,
+      "hist_pct": 0.446,
+      "weight": 0.2,
+      "contribution": 8.92
+    }
+  ],
+  "flags": [
+    {
+      "code": "extreme_volatility",
+      "severity": "info",
+      "message": "12-month price volatility at the 99% percentile of its 10-year history (> 95%) [2026M09]"
+    }
+  ],
+  "stale_inputs": [],
+  "attribution": [
+    "World Bank Pink Sheet (CC BY 4.0)"
+  ],
+  "disclaimer": "Heuristic macro context, not investment advice. Scores summarise public macro data and may be stale or incomplete."
+}

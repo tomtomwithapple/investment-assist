@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tomtomtomdev/worldbankscape/schema/score.schema.json",
+  "title": "worldbankscape score payload",
+  "description": "Economy-context score for one subject (country or commodity) and one asset class. Heuristic macro context, not investment advice.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "subject", "subject_type", "asset_class", "as_of", "model_version",
+    "score", "confidence", "components", "flags", "stale_inputs", "attribution", "disclaimer"
+  ],
+  "properties": {
+    "schema_version": {"$ref": "#/$defs/semver", "description": "Version of this contract."},
+    "subject": {"type": "string", "description": "ISO3 code (country) or commodity code."},
+    "subject_type": {"enum": ["country", "commodity"]},
+    "asset_class": {"$ref": "#/$defs/asset_class"},
+    "as_of": {"$ref": "#/$defs/date", "description": "Date the score was computed (YYYY-MM-DD)."},
+    "model_version": {"$ref": "#/$defs/semver", "description": "Version of the scoring model/weights."},
+    "score": {"type": "number", "minimum": 0, "maximum": 100, "description": "50 = neutral, >50 = macro tailwind. Since 1.1.0 shrunk towards 50 by coverage: score = 50 + (raw_score - 50) x coverage."},
+    "raw_score": {"type": "number", "minimum": 0, "maximum": 100, "description": "Optional (1.1.0+). Weighted score over the components present, before thin-data shrinkage."},
+    "coverage": {"type": "number", "minimum": 0, "maximum": 1, "description": "Optional (1.1.0+). Share of the model's configured weight whose inputs were present (1 = all components)."},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1, "description": "Data quality: 1 = all inputs fresh, present and primary-sourced."},
+    "components": {"type": "array", "items": {"$ref": "#/$defs/component"}},
+    "flags": {"type": "array", "items": {"$ref": "#/$defs/flag"}},
+    "stale_inputs": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "attribution": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "disclaimer": {"type": "string", "minLength": 1}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"subject_type": {"const": "country"}}, "required": ["subject_type"]},
+      "then": {
+        "properties": {
+          "subject": {"pattern": "^[A-Z]{3}$"},
+          "asset_class": {"not": {"const": "commodities"}}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"subject_type": {"const": "commodity"}}, "required": ["subject_type"]},
+      "then": {
+        "properties": {
+          "subject": {"pattern": "^[A-Z0-9_]+$"},
+          "asset_class": {"const": "commodities"}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+    },
+    "date": {"type": "string", "format": "date", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "asset_class": {"enum": ["bonds", "currency", "stocks", "property", "commodities", "business"]},
+    "unit_interval_or_null": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "value", "unit", "period", "source", "is_forecast",
+        "ref_pct", "hist_pct", "weight", "contribution"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9_]+$", "description": "Canonical indicator id; forecasts use their own ids (e.g. gdp_growth_fcst_2y)."},
+        "value": {"type": ["number", "null"], "description": "Latest value; null when missing."},
+        "unit": {"type": ["string", "null"]},
+        "period": {"type": "string", "description": "Source period, e.g. 2025, 2026Q1, 2026M08."},
+        "source": {"type": "string", "minLength": 1},
+        "is_forecast": {"type": "boolean"},
+        "ref_pct": {"$ref": "#/$defs/unit_interval_or_null", "description": "Directional percentile vs the fixed reference universe."},
+        "hist_pct": {"$ref": "#/$defs/unit_interval_or_null", "description": "Directional percentile vs own 10-year history."},
+        "weight": {"type": "number", "minimum": 0, "maximum": 1},
+        "contribution": {"type": "number", "description": "Points this component adds to the score."}
+      }
+    },
+    "flag": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message"],
+      "properties": {
+        "code": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+        "severity": {"enum": ["info", "warn", "critical"]},
+        "message": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tomtomtomdev/worldbankscape/schema/index.schema.json",
+  "title": "worldbankscape export index",
+  "description": "Listing of all score payloads in one export (out/index.json). Consumers read this file first: every path it lists exists for as long as this index is published.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_at", "model_version", "entries"],
+  "properties": {
+    "schema_version": {"$ref": "#/$defs/semver"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "model_version": {"$ref": "#/$defs/semver", "description": "Highest model_version among the entries; since 1.2.0 each entry carries its own (authoritative) model_version."},
+    "entries": {"type": "array", "items": {"$ref": "#/$defs/entry"}}
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject", "subject_type", "asset_class", "score", "confidence", "path"],
+      "properties": {
+        "subject": {"type": "string", "pattern": "^[A-Z0-9_]+$"},
+        "subject_type": {"enum": ["country", "commodity"]},
+        "asset_class": {"enum": ["bonds", "currency", "stocks", "property", "commodities", "business"]},
+        "score": {"type": "number", "minimum": 0, "maximum": 100},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "path": {"type": "string", "minLength": 1, "description": "Payload path relative to index.json, e.g. IDN/bonds.json."},
+        "model_version": {"$ref": "#/$defs/semver", "description": "Optional (1.2.0+). The payload's model_version."},
+        "as_of": {"type": "string", "format": "date", "description": "Optional (1.2.0+). The payload's as_of."},
+        "coverage": {"type": "number", "minimum": 0, "maximum": 1, "description": "Optional (1.2.0+). The payload's coverage."},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Optional (1.2.0+). Lowercase hex SHA-256 of the payload file bytes."}
+      }
+    }
+  }
+}

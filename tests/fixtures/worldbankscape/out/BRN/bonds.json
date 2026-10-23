@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.2.0",
+  "subject": "BRN",
+  "subject_type": "country",
+  "asset_class": "bonds",
+  "as_of": "2026-10-23",
+  "model_version": "0.3.0",
+  "score": 56.6,
+  "raw_score": 61.0,
+  "coverage": 0.772,
+  "confidence": 0.747,
+  "components": [
+    {
+      "id": "gov_debt",
+      "value": 1.6,
+      "unit": "pct_gdp",
+      "period": "2025",
+      "source": "imf_dm",
+      "is_forecast": false,
+      "ref_pct": 0.987,
+      "hist_pct": 0.7,
+      "weight": 0.2113,
+      "contribution": 15.28
+    },
+    {
+      "id": "fiscal_balance",
+      "value": -17.7,
+      "unit": "pct_gdp",
+      "period": "2025",
+      "source": "imf_dm",
+      "is_forecast": false,
+      "ref_pct": 0.013,
+      "hist_pct": 0.05,
+      "weight": 0.1408,
+      "contribution": 3.27
+    }
+  ],
+  "flags": [
+    {
+      "code": "large_fiscal_deficit",
+      "severity": "critical",
+      "message": "Fiscal balance -17.7% of GDP (< -8%) [2025]"
+    }
+  ],
+  "stale_inputs": [
+    "interest_burden (missing)",
+    "real_rate (missing)",
+    "yield_spread (missing)"
+  ],
+  "attribution": [
+    "IMF World Economic Outlook / DataMapper",
+    "World Bank WDI (CC BY 4.0)",
+    "World Bank WGI (CC BY 4.0)",
+    "World Bank GEM (CC BY 4.0)"
+  ],
+  "disclaimer": "Heuristic macro context, not investment advice. Scores summarise public macro data and may be stale or incomplete."
+}

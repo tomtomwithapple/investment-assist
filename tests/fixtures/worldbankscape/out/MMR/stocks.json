@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.2.0",
+  "subject": "MMR",
+  "subject_type": "country",
+  "asset_class": "stocks",
+  "as_of": "2026-10-23",
+  "model_version": "0.3.0",
+  "score": 44.0,
+  "raw_score": 22.9,
+  "coverage": 0.47,
+  "confidence": 0.231,
+  "components": [
+    {
+      "id": "growth_outlook",
+      "value": 2.0,
+      "unit": "pct",
+      "period": "2026-2027",
+      "source": "imf_dm",
+      "is_forecast": true,
+      "ref_pct": 0.284,
+      "hist_pct": null,
+      "weight": 0.2553,
+      "contribution": 11.55
+    },
+    {
+      "id": "growth_now",
+      "value": -2.0,
+      "unit": "pct",
+      "period": "2025",
+      "source": "imf_dm",
+      "is_forecast": false,
+      "ref_pct": 0.017,
+      "hist_pct": 0.25,
+      "weight": 0.1489,
+      "contribution": 6.16
+    }
+  ],
+  "flags": [
+    {
+      "code": "high_inflation",
+      "severity": "warn",
+      "message": "CPI inflation 21.1% (> 10%) [2025]"
+    },
+    {
+      "code": "data_gaps",
+      "severity": "info",
+      "message": "53% of model weight missing or stale (>= 30%); read the score with low confidence"
+    }
+  ],
+  "stale_inputs": [
+    "industrial_momentum (missing)",
+    "retail_momentum (missing)",
+    "real_rate (missing)",
+    "policy_easing (missing)",
+    "credit_impulse (missing)",
+    "fx_momentum (missing)",
+    "equity_momentum (missing)",
+    "market_depth (missing)"
+  ],
+  "attribution": [
+    "IMF World Economic Outlook / DataMapper",
+    "World Bank WDI (CC BY 4.0)",
+    "UN Comtrade Database",
+    "World Bank Pink Sheet (CC BY 4.0)",
+    "World Bank WGI (CC BY 4.0)"
+  ],
+  "disclaimer": "Heuristic macro context, not investment advice. Scores summarise public macro data and may be stale or incomplete."
+}
