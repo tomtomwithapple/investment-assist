@@ -1,0 +1,7 @@
+rate_date,pair,rate,source,carried_forward,recorded_at
+2021-11-25,USDIDR,14254.00,bi_jisdor,false,2026-10-03 06:30:00+07
+2021-11-26,USDIDR,14254.00,bi_jisdor,true,2026-10-03 06:30:00+07
+2021-11-29,USDIDR,14340.00,bi_jisdor,false,2026-10-03 06:30:00+07
+2026-10-14,USDIDR,17898.00,bi_jisdor,false,2026-10-16 20:32:17+07
+2026-10-15,USDIDR,17948.00,bi_jisdor,false,2026-10-16 20:32:17+07
+2026-10-16,USDIDR,18052.00,bi_jisdor,false,2026-10-16 20:32:17+07
