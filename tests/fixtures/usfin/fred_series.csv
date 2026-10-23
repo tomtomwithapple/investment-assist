@@ -1,0 +1,7 @@
+series_id,title,units,frequency,seasonal_adjustment,last_updated,raw_id
+VIXCLS,CBOE Volatility Index: VIX,Index,"Daily, Close",Not Seasonally Adjusted,2026-10-09,1
+GDPC1,Real Gross Domestic Product,Billions of Chained 2017 Dollars,Quarterly,Seasonally Adjusted Annual Rate,2026-09-25,1
+WALCL,Assets: Total Assets,Millions of U.S. Dollars,"Weekly, As of Wednesday",Not Seasonally Adjusted,2026-10-09,1
+WTREGEN,Treasury General Account,Millions of U.S. Dollars,"Weekly, As of Wednesday",Not Seasonally Adjusted,2026-10-09,1
+RRPONTSYD,Overnight Reverse Repurchase Agreements,Billions of U.S. Dollars,Daily,Not Seasonally Adjusted,2026-10-08,1
+NFCI,Chicago Fed National Financial Conditions Index,Index,"Weekly, Ending Friday",Not Seasonally Adjusted,2026-10-08,1
