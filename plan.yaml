@@ -176,6 +176,7 @@ slices:
     estimate: 1.5
     notes: >-
       Wire adapters → layers → stance → journal → brief → notify. E2E on fixtures: rerun with unchanged inputs writes identical out/ files. Live: assist run writes valid JSON for every in-scope subject; brief sent; second send same day skipped. Copy docs/results for S0–S6 into PLAN.md Progress and STATUS.
+      Learned 2026-10-23: pass fingerprint=journal.model_fingerprint() into stance.build_stance (stance's own model_fingerprint hashes only MODEL_CONFIG, and the journal refuses mismatched payloads); order is write out/ → brief.build_brief → brief.save_snapshot; notify.send(notify.summary(...), kind='brief', day=...) twice from the MAIN checkout (send-once marker lives in its data/notify/), second must be skipped; portfolio.current_weights() returns (Weights|None, stale_inputs). worldbankscape publishes 6 asset classes (incl. business, property): choose the in-scope four. Read docs/results/*.md before wiring.
 
   # ---------------- phase B: Indonesia ----------------
   - id: P11-bps
@@ -286,6 +287,7 @@ slices:
     estimate: 1.5
     notes: >-
       SBN 10Y yield from the IGSYC curve (P32), falling back to dbnomics' IDN long-term rate when PHEI is unavailable (say which in drivers). JCI P/E from idx-method; the JCI level is frozen at 2026-09-30 (no fetcher), so flag it in stale_inputs. Market stance first; names come from P20.
+      Learned 2026-10-23: PHEI tables are missing on this Mac and dbnomics idn.rate.long ends 2024-12 (stale): apply the same 90-day staleness limit as P31 and make no call when the yield is too old; JCI level frozen 2026-09-30. Live runs from a worktree need ASSIST_SIBLINGS_ROOT=/Users/tomtomtomtom/Projects.
 
   - id: F2-idn
     kind: integration
@@ -297,6 +299,7 @@ slices:
     estimate: 1.5
     notes: >-
       Live assist run for IDN stocks and IDN bonds with overrides, signals and candidates in the JSON; update PLAN.md for S7, S8, S9, S10.
+      Learned 2026-10-23: pass P8's live regime, P17 overrides and P18 signals into the bonds rule (layers/bonds) and route its stance through gated_stance with the journalled placebo verdict; only P20's momentum screen currently passes its gate; subtract P21 Cost.round_trip_bps from screen edges and drop over_participation names; Candidate.entry_level = entry_typical or entry_deep. PHEI tables missing on this Mac and JCI frozen at 2026-09-30: expect stale_inputs, not failures.
 
   - id: P32-phei
     title: "idxscape PHEI adapter (igsyc_point curve, phei_bond_quote, credit_curve_point)"
@@ -375,6 +378,7 @@ slices:
     estimate: 2
     notes: >-
       EU from dbnomics (ECB; euro-area 2Y stands in for Bund 2Y). Same ±10 cap as IDN overrides.
+      Learned 2026-10-23: ausdata dates the current month at month end before it ends (pass as_of to skip unfinished months; ABS rows are period-start dated); singstat store last refreshed 2026-10-07 (flag MAS data older than a week; real GDP is singstat:M015631:2); jquantster has macro but no TSE flows; FX for KRW/TWD only via SGD crosses (see P29). Live runs from a worktree need ASSIST_SIBLINGS_ROOT=/Users/tomtomtomtom/Projects.
 
   - id: P29-candidates-foreign
     title: "PLAN S12: foreign candidates, index-level (US, JP, AU, SG; KR/TW via openkrx)"
@@ -390,6 +394,8 @@ slices:
     owns: ["src/assist/cli.py", "src/assist/pipeline.py", "src/assist/stance.py", "tests/test_run_foreign.py", "PLAN.md"]
     accept: uv run pytest -q && uv run ruff check .
     estimate: 1
+    notes: >-
+      Learned 2026-10-23: P29 gives a candidate only for the US live (other markets lack index P/E; list in docs/results/P29); its scoring constants are hand-set and must not change a stance before beating a placebo.
 
   # ---------------- phase D: track record and ops ----------------
   - id: P30-paper
@@ -410,3 +416,4 @@ slices:
     estimate: 1
     notes: >-
       Daily regime job sends Telegram only on regime change. Install script mirrors bisfetcher's launchd/install.sh.
+      Learned 2026-10-23: paper.py has a `python -m assist.paper` entry; wire it as `assist paper` and into the weekly job.
