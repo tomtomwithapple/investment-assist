@@ -1,0 +1,400 @@
+{
+ "symbol": "BBCA",
+ "periods": {
+  "is": [
+   "2025Q3",
+   "2025Q4",
+   "2026Q1",
+   "2026Q2"
+  ],
+  "bs": [
+   "2025Q3",
+   "2025Q4",
+   "2026Q1",
+   "2026Q2"
+  ],
+  "cf": [
+   "2025Q3",
+   "2025Q4",
+   "2026Q1",
+   "2026Q2"
+  ]
+ },
+ "items": {
+  "is": {
+   "revenue": [
+    30875157000000.0,
+    27144302000000.0,
+    29653619000000.0,
+    32493339000000.0
+   ],
+   "gross_profit": [
+    27565053000000.0,
+    23818924000000.0,
+    26169804000000.0,
+    28724332000000.0
+   ],
+   "operating_profit": [
+    17973285000000.0,
+    17493932000000.0,
+    18077072000000.0,
+    18374757000000.0
+   ],
+   "pretax_profit": [
+    17973285000000.0,
+    17493932000000.0,
+    18077072000000.0,
+    18374757000000.0
+   ],
+   "net_income": [
+    14390494000000.0,
+    14149630000000.0,
+    14689799000000.0,
+    14855822000000.0
+   ],
+   "net_income_parent": [
+    14390494000000.0,
+    14149630000000.0,
+    14689799000000.0,
+    14855822000000.0
+   ],
+   "shares": [
+    123280000000.0,
+    123280000000.0,
+    123280000000.0,
+    123280000000.0
+   ],
+   "eps": [
+    116.66,
+    114.7,
+    119.12,
+    120.46
+   ],
+   "ebitda": [
+    18637070000000.0,
+    18122510000000.0,
+    18814980000000.0,
+    19115690000000.0
+   ],
+   "roa_q": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "roe_q": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "int_cov_q": [
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "bs": {
+   "cash": [
+    18427521000000.0,
+    25305031000000.0,
+    23963776000000.0,
+    21065925000000.0
+   ],
+   "assets": [
+    1538501812000000.0,
+    1586828536000000.0,
+    1640830566000000.0,
+    1660579336000000.0
+   ],
+   "liabilities": [
+    1261866404000000.0,
+    1305140981000000.0,
+    1381471773000000.0,
+    1389911590000000.0
+   ],
+   "equity_raw": [
+    276635408000000.0,
+    281687555000000.0,
+    259358793000000.0,
+    270667746000000.0
+   ],
+   "shares_bs": [
+    123275050000.0,
+    123275050000.0,
+    123275050000.0,
+    123275050000.0
+   ],
+   "equity": [
+    276635000000000.0,
+    281688000000000.0,
+    259359000000000.0,
+    270668000000000.0
+   ],
+   "bvps": [
+    2242.27,
+    2283.24,
+    2102.07,
+    2193.77
+   ],
+   "tbvps": [
+    2228.16,
+    2268.81,
+    2087.99,
+    2179.86
+   ],
+   "common_equity": [
+    276416000000000.0,
+    281466000000000.0,
+    259132000000000.0,
+    270438000000000.0
+   ],
+   "total_debt": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "net_debt": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "working_capital": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "current_ratio": [
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "der_q": [
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "cf": {
+   "cfo_raw": [
+    25008762000000.0,
+    11576805000000.0,
+    47920728000000.0,
+    -15658754000000.0
+   ],
+   "cfo": [
+    25009000000000.0,
+    11577000000000.0,
+    47921000000000.0,
+    null
+   ],
+   "capex": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "fcf": [
+    24610000000000.0,
+    10465000000000.0,
+    47682000000000.0,
+    null
+   ],
+   "fcfps": [
+    199.63,
+    84.89,
+    386.8,
+    -132.61
+   ]
+  }
+ },
+ "raw_currency_keys": [
+  "gross_profit",
+  "net_income",
+  "net_income_parent",
+  "operating_profit",
+  "pretax_profit",
+  "revenue",
+  "assets",
+  "cash",
+  "equity_raw",
+  "liabilities",
+  "shares_bs",
+  "cfo_raw"
+ ],
+ "unmatched_raw_labels": {
+  "is": [
+   "Beban Bunga",
+   "Beban Operasional Lainnya",
+   "Beban Pajak Penghasilan",
+   "Beban Penyisihan Kerugia...",
+   "Beban Provisi Dan Komisi",
+   "Beban Tenaga Kerja",
+   "Beban Umum Dan Administr...",
+   "In Million",
+   "Jumlah Laba Komprehensif",
+   "Kenaikan Nilai Wajar Ase...",
+   "Kepentingan Non-Pegendali",
+   "Keuntungan (Rugi) Atas T...",
+   "Keuntungan Dari Penjuala...",
+   "Keuntungan Dari Perubaha...",
+   "Keuntungan Transaksi Mat...",
+   "Laba (Rugi) Atas Penjuala...",
+   "Laba (Rugi) Selisih Kurs",
+   "Laba Bersih Tahun Berjalan",
+   "Laba Bersih Yang Dapat Diatribu...",
+   "Laba Komprehensif Yang Dapat Di...",
+   "Laba Kotor",
+   "Laba Sebelum Pajak",
+   "Laba Usaha",
+   "Others",
+   "Pajak Kini",
+   "Pajak Tangguhan",
+   "Pemilik Entitas Induk",
+   "Pendapatan Bunga",
+   "Pendapatan Komprehensif Lain",
+   "Pendapatan Operasional La...",
+   "Penghasilan/Beban Lain-Lain",
+   "Penurunan Nilai Wajar As...",
+   "Provisi Dan Komisi Kredit",
+   "Provisi Dan Komisi Lainn...",
+   "Total  Beban Pokok Penjualan\u0000...",
+   "Total  Beban Usaha",
+   "Total  Pendapatan",
+   "Total Beban Operasional...",
+   "Total Beban Pajak Penghasilan",
+   "Total Beban Pokok Penjualan",
+   "Total Beban Usaha",
+   "Total Laba Bersih Yang Dapat ...",
+   "Total Laba Komprehensif Yang ...",
+   "Total Pendapatan",
+   "Total Pendapatan Komprehensif...",
+   "Total Pendapatan Operas...",
+   "Total Penghasilan/Beban Lain-..."
+  ],
+  "bs": [
+   "Aset",
+   "Aset Pajak Tangguhan",
+   "Aset Tak Berwujud",
+   "Aset Tetap",
+   "Belum Ditentukan Peng...",
+   "Dana Syirkah Temporer",
+   "Ekuitas",
+   "Giro Pada Bank Indonesia",
+   "In Million",
+   "Kas Dan Setara Kas",
+   "Kepentingan Non Pengenda...",
+   "Liabilitas",
+   "Liabilitas Akseptasi",
+   "Liabilitas Bank Lain",
+   "Liabilitas Dan Ekuitas",
+   "Liabilitas Pajak Tangguh...",
+   "Liabilitas Segera",
+   "Modal Saham",
+   "Obligasi Pemerintah",
+   "Obligasi Subordinasi",
+   "Others",
+   "Penempatan Pada Bank Indo...",
+   "Pihak Berelasi",
+   "Pihak Ketiga",
+   "Pinjaman Yang Diberikan",
+   "Pinjaman Yang Diterima",
+   "Piutang Pembiayaan Konsum...",
+   "Saham Beredar",
+   "Saldo Laba",
+   "Simpanan Dari Bank Lain",
+   "Simpanan Nasabah",
+   "Surat Berharga Yang Dite...",
+   "Tambahan Modal Disetor",
+   "Telah Ditentukan Peng...",
+   "Total Aset",
+   "Total Ekuitas",
+   "Total Liabilitas",
+   "Total Liabilitas Dan Ekuitas",
+   "Total Penempatan Pada B...",
+   "Total Pinjaman Yang Dib...",
+   "Total Saldo Laba",
+   "Total Simpanan Nasabah"
+  ],
+  "cf": [
+   "(Beban) Pendapatan Dari T...",
+   "Akuisisi Entitas Anak, Se...",
+   "Arus Kas Dari Aktivitas Investa...",
+   "Arus Kas Dari Aktivitas Operasi",
+   "Arus Kas Dari Aktivitas Pendana...",
+   "Aset Keuangan Untuk Dipe...",
+   "Aset Lain-Lain",
+   "Beban Operasional Lainnya",
+   "Beban Yang Masih Harus D...",
+   "Dampak Neto Perubahan Nilai Tuk...",
+   "Dana Investasi Revenue S...",
+   "Dana Simpanan Syariah",
+   "Dana Syirkah Temporer",
+   "Efek-Efek Yang Dibeli De...",
+   "Efek-Efek Yang Dijual Den...",
+   "Hasil Penjualan Aset Teta...",
+   "Hasil Penjualan Penyertaa...",
+   "Hasil Penjualan Saham Tre...",
+   "In Million",
+   "Investasi Sewa Pembiayaa...",
+   "Kas Dan Setara Kas Akhir Period...",
+   "Kas Dan Setara Kas Awal Periode",
+   "Kenaikan (Penurunan) Bersih Kas...",
+   "Kenaikan Efek-Efek Utang ...",
+   "Kenaikan/Penurunan Lainny...",
+   "Kredit Yang Diberikan",
+   "Liabilitas Lain-Lain",
+   "Liabilitas Segera",
+   "Obligasi Pemerintah Untu...",
+   "Pembayaran Beban Bunga, P...",
+   "Pembayaran Dividen Kas",
+   "Pembayaran Imbalan Pasca-...",
+   "Pembayaran Pajak Penghasi...",
+   "Pembayaran Tantiem Dewan ...",
+   "Pembayaran Tantieme Dewan...",
+   "Pembelian Efek-Efek Untuk...",
+   "Pembelian Kembali Saham B...",
+   "Pembelian Obligasi Pemeri...",
+   "Pembelian Penyertaan Dala...",
+   "Pembelian Surat-Surat Ber...",
+   "Pembiayaan Syariah",
+   "Pendapatan Non-Operasiona...",
+   "Pendapatan Operasional La...",
+   "Penempatan Pada Bank Ind...",
+   "Penempatan Sertifikat Dep...",
+   "Penerimaan Dari Efek-Efek...",
+   "Penerimaan Dari Obligasi ...",
+   "Penerimaan Dari Penambaha...",
+   "Penerimaan Dari Penjualan...",
+   "Penerimaan Dari Sertifika...",
+   "Penerimaan Dari Surat-Sur...",
+   "Penerimaan Dividen Kas Da...",
+   "Penerimaan Efek-Efek Yang...",
+   "Penerimaan Pendapatan Bun...",
+   "Penerimaan Pinjaman Yang ...",
+   "Penjualan Efek-Efek Untuk...",
+   "Penurunan (Kenaikan) Pinj...",
+   "Perolehan Aset Sewa Guna",
+   "Perolehan Aset Tetap",
+   "Piutang Pembiayaan Konsu...",
+   "Simpanan Dari Bank-Bank ...",
+   "Simpanan Dari Nasabah",
+   "Surat Berharga Yang Diju...",
+   "Surat-Surat Berharga Unt...",
+   "Surat-Surat Berharga Yan...",
+   "Tagihan Akseptasi",
+   "Tambahan Setoran Modal Ke...",
+   "Total Arus Kas Dari Aktivitas...",
+   "Total Kenaikan/Penuruna...",
+   "Utang Akseptasi",
+   "Wesel Tagih"
+  ]
+ },
+ "currency": "IDR"
+}

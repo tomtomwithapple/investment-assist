@@ -1,0 +1,55 @@
+{
+ "AADI": {
+  "report_date": "2026-09-30",
+  "total_shares": 7786891760,
+  "window": [
+   "2026-03-31",
+   "2026-09-30"
+  ],
+  "holders": {
+   "Corporate": 60.9017,
+   "Individual": 20.9799,
+   "Private Bank": 4.6181,
+   "Insurance": 1.6144,
+   "Mutual Funds": 1.5015,
+   "Total Scripless": 0.34,
+   "Pension Funds": 0.1538,
+   "Firm": 0.1165,
+   "Securities Company": 0.1058,
+   "Private Equity": 0.0537,
+   "Foundation": 0.0365,
+   "Exchange Traded Funds": 0.0355,
+   "CV / Limited Partnership": 0.0337
+  }
+ },
+ "BBCA": {
+  "report_date": "2026-09-30",
+  "total_shares": 123275050000,
+  "window": [
+   "2026-03-31",
+   "2026-09-30"
+  ],
+  "holders": {
+   "DWIMURIA INVESTAMA ANDALAN": 54.9421,
+   "Individual": 9.1409,
+   "Insurance": 1.7501,
+   "TRICIPTA MANDHALA GUMILANG": 1.0653,
+   "CATURGUWIRATNA SUMAPALA": 1.0235,
+   "Total Scripless": 0.9941,
+   "Mutual Funds": 0.8659,
+   "Corporate": 0.4981,
+   "Bank": 0.3515,
+   "Pension Funds": 0.2607,
+   "State Owned Enterprises": 0.2277,
+   "Exchange Traded Funds": 0.1162,
+   "Securities Company": 0.0647,
+   "Foundation": 0.0562,
+   "Investment Manager": 0.0221,
+   "Sole Proprietorship": 0.0147,
+   "Firm": 0.014,
+   "Congregation": 0.0088,
+   "Private Equity": 0.0067,
+   "Investment Advisors": 0.0053
+  }
+ }
+}

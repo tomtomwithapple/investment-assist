@@ -1,0 +1,292 @@
+{
+ "data": {
+  "index": [
+   {
+    "id": "0",
+    "name": "IHSG",
+    "scope": "IHSG",
+    "list": [
+     {
+      "id": "559",
+      "name": "IDX30",
+      "scope": "idx"
+     },
+     {
+      "id": "550",
+      "name": "LQ45",
+      "scope": "idx"
+     },
+     {
+      "id": "557",
+      "name": "SRI-KEHATI",
+      "scope": "idx"
+     },
+     {
+      "id": "551",
+      "name": "JII",
+      "scope": "idx"
+     },
+     {
+      "id": "558",
+      "name": "ISSI",
+      "scope": "idx"
+     },
+     {
+      "id": "1000003830",
+      "name": "IDXSHAGROW",
+      "scope": "idx"
+     },
+     {
+      "id": "1000003448",
+      "name": "ABX",
+      "scope": "idx"
+     },
+     {
+      "id": "1000003185",
+      "name": "IDXESGL",
+      "scope": "idx"
+     },
+     {
+      "id": "1000003583",
+      "name": "IDXSMC-LIQ",
+      "scope": "idx"
+     },
+     {
+      "id": "1000000012",
+      "name": "JII70",
+      "scope": "idx"
+     },
+     {
+      "id": "553",
+      "name": "DBX",
+      "scope": "idx"
+     },
+     {
+      "id": "1000003584",
+      "name": "IDXSMC-COM",
+      "scope": "idx"
+     },
+     {
+      "id": "1000002393",
+      "name": "IDXG30",
+      "scope": "idx"
+     },
+     {
+      "id": "1000003847",
+      "name": "IDXLQ45LCL",
+      "scope": "idx"
+     },
+     {
+      "id": "1000004908",
+      "name": "ECONOMIC30",
+      "scope": "idx"
+     },
+     {
+      "id": "1000003585",
+      "name": "I-GRADE",
+      "scope": "idx"
+     },
+     {
+      "id": "555",
+      "name": "KOMPAS100",
+      "scope": "idx"
+     },
+     {
+      "id": "1000003289",
+      "name": "IDXMESBUMN",
+      "scope": "idx"
+     },
+     {
+      "id": "552",
+      "name": "MBX",
+      "scope": "idx"
+     },
+     {
+      "id": "1000003288",
+      "name": "IDX80",
+      "scope": "idx"
+     },
+     {
+      "id": "467",
+      "name": "IHSG",
+      "scope": "idx"
+     },
+     {
+      "id": "1000004351",
+      "name": "PRIMBANK10",
+      "scope": "idx"
+     },
+     {
+      "id": "1868",
+      "name": "MNC36",
+      "scope": "idx"
+     },
+     {
+      "id": "1890",
+      "name": "SMinfra18",
+      "scope": "idx"
+     },
+     {
+      "id": "1000000011",
+      "name": "IDXBUMN20",
+      "scope": "idx"
+     },
+     {
+      "id": "1000000010",
+      "name": "IDXHIDIV20",
+      "scope": "idx"
+     },
+     {
+      "id": "554",
+      "name": "BISNIS-27",
+      "scope": "idx"
+     },
+     {
+      "id": "1000003123",
+      "name": "IDXQ30",
+      "scope": "idx"
+     },
+     {
+      "id": "1000004998",
+      "name": "IDXVESTA28",
+      "scope": "idx"
+     },
+     {
+      "id": "560",
+      "name": "INFOBANK15",
+      "scope": "idx"
+     },
+     {
+      "id": "1000003575",
+      "name": "ESGSKEHATI",
+      "scope": "idx"
+     },
+     {
+      "id": "1000002398",
+      "name": "IDXV30",
+      "scope": "idx"
+     },
+     {
+      "id": "1837",
+      "name": "Investor33",
+      "scope": "idx"
+     },
+     {
+      "id": "1000003576",
+      "name": "ESGQKEHATI",
+      "scope": "idx"
+     },
+     {
+      "id": "1000004969",
+      "name": "FR-SYARIAH",
+      "scope": "idx"
+     },
+     {
+      "id": "1000003851",
+      "name": "Pemantauan-Khusus",
+      "scope": "idx"
+     },
+     {
+      "id": "626",
+      "name": "AKSELERASI-SYARIAH",
+      "scope": "idx"
+     },
+     {
+      "id": "1000005130",
+      "name": "SUSPENDED",
+      "scope": "idx"
+     },
+     {
+      "id": "1000005131",
+      "name": "UNSUSPENDED",
+      "scope": "idx"
+     },
+     {
+      "id": "1000005133",
+      "name": "UMA",
+      "scope": "idx"
+     },
+     {
+      "id": "1000005139",
+      "name": "TRADINGLIMIT",
+      "scope": "idx"
+     },
+     {
+      "id": "1000005990",
+      "name": "CALL WARRANT",
+      "scope": "idx"
+     },
+     {
+      "id": "1000006758",
+      "name": "HSC",
+      "scope": "idx"
+     },
+     {
+      "id": "628",
+      "name": "Syariah",
+      "scope": "idx"
+     }
+    ]
+   }
+  ],
+  "sectors": [
+   {
+    "id": "1",
+    "name": "Barang Konsumen Primer",
+    "scope": "sec",
+    "subsector": [
+     {
+      "id": "10",
+      "name": "Perdagangan Ritel Barang Primer",
+      "scope": "sub"
+     },
+     {
+      "id": "15",
+      "name": "Makanan & Minuman",
+      "scope": "sub"
+     },
+     {
+      "id": "37",
+      "name": "Produk Rumah Tangga Tidak Tahan Lama",
+      "scope": "sub"
+     },
+     {
+      "id": "47",
+      "name": "Rokok",
+      "scope": "sub"
+     }
+    ]
+   },
+   {
+    "id": "2",
+    "name": "Kesehatan",
+    "scope": "sec",
+    "subsector": [
+     {
+      "id": "44",
+      "name": "Farmasi & Riset Kesehatan",
+      "scope": "sub"
+     },
+     {
+      "id": "61",
+      "name": "Jasa & Peralatan Kesehatan",
+      "scope": "sub"
+     }
+    ]
+   }
+  ],
+  "watchlist": [
+   {
+    "id": "315237",
+    "name": "All Watchlist",
+    "scope": "wl"
+   },
+   {
+    "id": "4659066",
+    "name": "Portfolio",
+    "scope": "wl"
+   }
+  ]
+ },
+ "message": "Retrieved stock universe list"
+}
