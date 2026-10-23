@@ -199,8 +199,8 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S2 FRED adapter (P2-usfin-fred) | done | 2026-10-23 | `3d3d921` | 22 | all 25 layer-0 series load via ATTACH (159,682 rows, 0.4 s); HTTP path proven on fixture only (`usfin serve` down here); net liquidity $5,865 bn on 2026-10-07 |
 | S3 regime (P8-regime, with P3-idn-prices, P9-placebo) | done | 2026-10-23 | `21f4ef5` (`d9ed1b1`, `e347dc4`) | 28 regime | now neutral, dollar flat; walk-forward 2019–2026: **not proven** (JCI 20d p 0.910, IDR 20d p 0.052, 3 independent risk_off windows; control t ≤ 0.35); no candidate adopted |
 | S4 portfolio (P4-portfolio) | done | 2026-10-23 | `4443214` | 34 | IDN stocks 60.36%, IDN cash 39.64% (Rp29.6 M, statements 2026-09-30); Ajaib total matches its lines; 0 unmapped |
-| S5 stance v0 + journal (P10-stance, P5-journal, F1-run) | done | 2026-10-23 | `031d079`, `5b0f99d`, F1 | 30 stance, 18 journal, 9 e2e | `assist run`: 49 schema-valid stances (12 countries × in-scope assets + 14 commodities): 15 overweight, 31 neutral, 2 underweight, 1 avoid; IDN stocks/bonds/currency all neutral; rerun byte-identical; journal chain ok |
-| S6 brief + Telegram (P6-brief, P7-notify, F1-run) | done | 2026-10-23 | `a6da657`, `e5868f7`, F1 | 20 brief, 26 notify | brief written to `data/briefs/<day>.md`; live send: see F1 note below |
+| S5 stance v0 + journal (P10-stance, P5-journal, F1-run) | done | 2026-10-23 | `031d079`, `5b0f99d`, `e8662dd` | 30 stance, 18 journal, 9 e2e | `assist run`: 49 schema-valid stances (12 countries × in-scope assets + 14 commodities): 15 overweight, 31 neutral, 2 underweight, 1 avoid; IDN stocks/bonds/currency all neutral; rerun byte-identical; journal chain ok |
+| S6 brief + Telegram (P6-brief, P7-notify, F1-run) | done | 2026-10-23 | `a6da657`, `e5868f7`, `e8662dd` | 20 brief, 26 notify | live 2026-10-23: brief written, Telegram summary sent (1 part, ~1.7 k chars), second run the same day skipped (`already sent`), out/ byte-identical (49 files) |
 
 **F1-run notes (2026-10-23).** In scope: IDN, USA, JPN, DEU, FRA, ITA, ESP, NLD (the EU as its
 members; worldbankscape has no euro-area aggregate), SGP, AUS, KOR, TWN × stocks, bonds,
@@ -208,4 +208,8 @@ currency, plus all 14 commodities; worldbankscape's `business` and `property` ha
 This Mac's sec-edgar copy stops at 2026-10-12, so all five core regime inputs are stale and every
 stance's confidence carries ×0.9⁵ (e.g. IDN stocks 0.43); the jobs Mac should not show this.
 Telegram shows every IDN stance plus every non-neutral one elsewhere (one part, ~1.7 k chars);
-the other neutral stances are counted and left to the brief.
+the other neutral stances are counted and left to the brief. The live send ran from the F1
+worktree (the agent sandbox blocks git in the main checkout, so it could not pull) with
+`ASSIST_NOTIFY_STATE` pointing at the main checkout's `data/notify/`: the send-once marker
+`brief_2026-10-23.json` is there, but the main checkout's `out/` and `journal/` stay empty until
+it pulls and runs.
