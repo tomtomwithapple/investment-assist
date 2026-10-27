@@ -1,4 +1,4 @@
-"""`assist` command line: doctor | status | run | brief | regime | paper | journal."""
+"""`assist` command line: doctor | status | run | brief | regime | paper | journal | industries."""
 
 from __future__ import annotations
 
@@ -259,6 +259,24 @@ def _journal(args: argparse.Namespace) -> int:
     return 0 if chain == "chain ok" else 1
 
 
+def _industries(args: argparse.Namespace) -> int:
+    """S30: write out/industries/IDN.json from idx-method's stored /comparison, nothing else."""
+    from assist.candidates import peers
+
+    day = _today(args)
+    path, stale = pipeline.write_peers(day, peers.gather_live, pipeline.Paths.default().out)
+    if path is None:
+        print(stale[0] if stale else "peer comparison: nothing written", file=sys.stderr)
+        return 1
+    payload = json.loads(path.read_text())
+    names = sum(i["n"] for i in payload["industries"])
+    print(f"{path}: {len(payload['industries'])} industries, {names} names, "
+          f"as of {payload['as_of']}")
+    for line in stale:
+        print(f"  stale: {line}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="assist", description=__doc__)
     parser.add_argument("--siblings-root",
@@ -277,8 +295,8 @@ def main(argv: list[str] | None = None) -> int:
 
     st = sub.add_parser("status", help=STATUS_HELP,
                         description=f"{STATUS_HELP}, on 127.0.0.1, read-only: / overview, "
-                        "/stance/<SUBJECT>/<asset>, /candidates[/<MKT>], /paper, /journal, "
-                        "/status (each with a .json twin)")
+                        "/stance/<SUBJECT>/<asset>, /candidates[/<MKT>], /industries[/<id>], "
+                        "/paper, /journal, /status (each with a .json twin)")
     st.add_argument("--port", type=int, default=status.DEFAULT_PORT,
                     help=f"port on {status.HOST} (default {status.DEFAULT_PORT})")
     st.add_argument("--config", default=str(doctor.DEFAULT_CONFIG))
@@ -313,6 +331,11 @@ def main(argv: list[str] | None = None) -> int:
 
     j = sub.add_parser("journal", help="decision journal: records per model, chain check")
     j.set_defaults(func=_journal)
+
+    ind = sub.add_parser("industries",
+                         help="peer comparison per industry → out/industries/IDN.json")
+    ind.add_argument("--today", help="YYYY-MM-DD build date (default today)")
+    ind.set_defaults(func=_industries)
 
     args = parser.parse_args(argv)
     if args.siblings_root:

@@ -763,3 +763,15 @@ slices:
       scores no week because JCI ends 2026-09-30 and IGSYC starts in October). Tick S29 in
       PLAN.md (phase G row 7 / 7, Progress row). Live: ./start.sh --no-open on the real repo,
       curl / and stop it; record what it did and how long it took.
+
+  - id: P46-peers
+    title: "PLAN S30: peer comparison per industry (valuation, dividend, profitability, solvency vs industry and sector median) → out/industries/IDN.json, /industries pages with charts"
+    depends_on: [F7-ui]
+    owns: ["src/assist/sources/idxmethod_comparison.py", "src/assist/candidates/peers.py", "src/assist/views/industries.py", "src/assist/web.py", "src/assist/pipeline.py", "src/assist/cli.py", "tests/sources/test_idxmethod_comparison.py", "tests/candidates/test_peers.py", "tests/test_view_industries.py", "PLAN.md", "docs/results/P46-peers.md"]
+    accept: uv run pytest -q tests/sources/test_idxmethod_comparison.py tests/candidates/test_peers.py tests/test_view_industries.py tests/test_web.py && uv run ruff check .
+    estimate: 1
+    notes: >-
+      Reads idx-method's stored /comparison responses (api_raw, endpoints_pull weekdays 16:30),
+      no fetch. Industry = identical Stockbit industry block (no name in the data). Benchmarks are
+      the medians computed here; Stockbit's means are carried as a cross-check. Context only:
+      no screen, verdict or stance reads it.

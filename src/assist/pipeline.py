@@ -82,6 +82,7 @@ from pathlib import Path
 from typing import Any
 
 from assist import brief, journal, notify, stance
+from assist.candidates import peers as peer_cmp
 from assist.eval.placebo import Verdict
 from assist.fx import FxEdge, fx_edge
 from assist.layers import candidates_foreign as cf
@@ -149,6 +150,7 @@ __all__ = [
     "rule_view",
     "run",
     "write_out",
+    "write_peers",
 ]
 
 HOME = "IDN"
@@ -253,7 +255,8 @@ class Sources:
     `doctor(day)` (a `doctor.SourceStatus` list) and `paper(day, journal)` (a
     `paper.PaperReport`) feed the brief's *Data health* and *Paper track* sections (S14); None
     leaves the section out. `undervalued(day, regime)` gives the inputs of the S20 list (IDN) and
-    `undervalued_us(day, regime)` those of the US one (F6); None writes no file for it."""
+    `undervalued_us(day, regime)` those of the US one (F6); None writes no file for it.
+    `peers(day)` gives the S30 peer comparison (`out/industries/IDN.json`); None skips it."""
 
     worldbankscape: Any
     fred: Any
@@ -264,6 +267,7 @@ class Sources:
     paper: Callable[[date, journal.Journal], Any] | None = None
     undervalued: Callable[[date, Regime], undervalued.UndervaluedInputs] | None = None
     undervalued_us: Callable[[date, Regime], undervalued.UndervaluedInputs] | None = None
+    peers: Callable[[date], dict] | None = None
 
     @classmethod
     def default(cls) -> Sources:
@@ -275,7 +279,7 @@ class Sources:
                    financer=FinancerSource.from_config(), idn=IdnSources.default(),
                    foreign=ForeignSources.default(), doctor=live_doctor, paper=live_paper,
                    undervalued=undervalued.gather_live,
-                   undervalued_us=undervalued.gather_live_usa)
+                   undervalued_us=undervalued.gather_live_usa, peers=peer_cmp.gather_live)
 
 
 def live_doctor(day: date) -> list[Any]:
@@ -914,6 +918,21 @@ class RunResult:
     idn: IdnLayers | None = None
     foreign: ForeignLayers | None = None
     undervalued: list[dict] = field(default_factory=list)
+    peers: Path | None = None
+
+
+def write_peers(day: date, gather: Callable[[date], dict] | None,
+                out_dir: Path) -> tuple[Path | None, list[str]]:
+    """The S30 peer comparison → (`out/industries/IDN.json`, stale inputs). Never raises: an
+    unreadable store leaves the previous file and names itself as a stale input."""
+    if gather is None:
+        return None, []
+    try:
+        payload = gather(day)
+    except Exception as e:  # noqa: BLE001 - context only, never fails the run
+        first = str(e).splitlines()[0][:160] if str(e) else ""
+        return None, [f"peer comparison failed: {type(e).__name__}: {first}"]
+    return peer_cmp.write(payload, out_dir), list(payload.get("stale_inputs") or [])
 
 
 def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None,
@@ -935,7 +954,8 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
     res.stances = build(layers, fp)
     res.files = write_out(res.stances, paths.out)
     res.undervalued, uv_stale = _undervalued(day, sources, layers, res.stances, fp, paths)
-    res.stale_inputs = sorted({*res.stale_inputs, *uv_stale})
+    res.peers, peer_stale = write_peers(day, sources.peers, paths.out)
+    res.stale_inputs = sorted({*res.stale_inputs, *uv_stale, *peer_stale})
     res.run_id = _journal(j, layers, res.stances, fp)
     _journal_undervalued(j, res.undervalued, fp, res.run_id)
 

@@ -26,7 +26,8 @@ from urllib.parse import unquote
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8790
 DISCLAIMER = "Heuristic, not investment advice."
-NAV = (("/", "Overview"), ("/candidates", "Candidates"), ("/paper", "Paper"),
+NAV = (("/", "Overview"), ("/candidates", "Candidates"), ("/industries", "Industries"),
+       ("/paper", "Paper"),
        ("/journal", "Journal"), ("/status", "Status"))
 ALIASES = {"/json": "/status.json"}
 
@@ -166,6 +167,16 @@ def _market(app: App, m: re.Match[str]) -> View | None:
     return candidates.page(app, m)
 
 
+def _industries(app: App, m: re.Match[str]) -> View:
+    from assist.views import industries
+    return industries.index(app, m)
+
+
+def _industry(app: App, m: re.Match[str]) -> View | None:
+    from assist.views import industries
+    return industries.page(app, m)
+
+
 def _paper(app: App, m: re.Match[str]) -> View:
     from assist.views import paper
     return paper.page(app, m)
@@ -180,6 +191,8 @@ ROUTES: list[Route] = [(re.compile(r"^/$"), _overview),
                        (re.compile(r"^/stance/([^/]+)/([^/]+)$"), _stance),
                        (re.compile(r"^/candidates$"), _candidates),
                        (re.compile(r"^/candidates/([^/]+)$"), _market),
+                       (re.compile(r"^/industries$"), _industries),
+                       (re.compile(r"^/industries/([^/]+)$"), _industry),
                        (re.compile(r"^/paper$"), _paper),
                        (re.compile(r"^/journal$"), _journal)]
 

@@ -8,7 +8,7 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-10-27 (P45-start). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S15 and S22 are open.
+**Last updated:** 2026-10-27 (P45-start). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against its industry and sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S15 and S22 are open.
 
 What `assist run` does:
 - It reads layers 0, 1 and 5 for every subject.
@@ -52,7 +52,7 @@ it), then install the jobs and let the journal build a record.
 | D. Track record and ops | S13–S14 | 2 / 2 |
 | E. Layer 4 refinements | S15 | 0 / 1 |
 | F. Undervalued stocks, macro-weighted (IDN, then US, JP) | S16–S22 | 7 / 8 |
-| G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S29 | 7 / 7 |
+| G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S30 | 8 / 8 |
 
 ### Open data gaps (fetcher side)
 
@@ -502,6 +502,24 @@ host, launchd for the server, changes to how stances or candidates are built.
   *Data gaps* section is brought up to date: PHEI is fresh here since 2026-10-26, FRED since
   2026-10-23, and the paper track is blocked by the missing JCI fetcher.
 
+- [x] **S30 Peer comparison per industry** (P46-peers, added 2026-10-27). Each IDN name
+  against its industry and its sector in four categories: valuation (PE, PBV, P/S,
+  EV/EBITDA), dividend (yield; payout shown), profitability (ROE, ROA, ROIC, net, operating
+  and gross margin) and solvency (D/E, liabilities/equity, current ratio, interest cover,
+  Altman Z), split into big (≥ IDR 10T), mid (1–10T) and small cap.
+  - **Source.** idx-method already stores Stockbit's `/comparison/{sym}/ratios` and
+    `/industries` verbatim in `api_raw` (`endpoints_pull.py`, weekdays 16:30), so nothing is
+    fetched. An industry is the set of names with an identical Stockbit `industry` block
+    (33 on 2026-10-26, unnamed in the data, labelled by their largest names).
+  - **Benchmarks.** The industry and sector medians computed here. Stockbit's own averages are
+    means that loss-makers drag below zero (industry PE −77 and −115 on 2026-10-26), so they
+    are shown as a cross-check and never scored (as S15 decided).
+  - **Deviation.** log(name / median), clamped at 4×; a category score is the signed mean, so
+    positive is better. Context only: no screen, verdict or stance reads it.
+  - **Output.** `out/industries/IDN.json` from `assist run` (never fails the run) or
+    `assist industries`; `/industries` and `/industries/<id>` (chart of four small multiples,
+    bar vs the industry, ring vs the sector, plus a table per category; S20 names starred).
+
 **F7-ui notes (2026-10-27).** Per-slice details are in `docs/results/P40-ui-shell.md` …
 `P44-ui-paper.md`.
 - **Wiring.** `cli._status` builds `web.App` from `pipeline.Paths.default()` (out/,
@@ -557,6 +575,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S21 US single stocks (F6-us-stocks, with P39-us-stocks) | done | 2026-10-27 | F6 this commit | 19 F6 run (1133 total) | `out/candidates/USA.json` written: **no names**, sec-edgar's Alpaca tables are empty on this Mac (universe 0, pool 0), so dividend and GARP both *insufficient sample (0 quarters)*; USA hurdle 8.92% in IDR, IDN 13.61% binds (a US name needs 14.45% in USD), JISDOR IDR 18,116; no tilt (S16 is IDN only), caps 5; USA stocks overweight 0% → 5%, so budget IDR 1.48M of IDR 29.6M; nothing held in USD; journal 1 `undervalued` per run, 0 rows; rerun byte-identical |
 | S23–S28 local UI view (F7-ui, with P40–P44) | done | 2026-10-27 | F7 this commit (`02ca075`, `9d7253a`, `b6726bd`, `bde605d`, `c43dac8`) | 24 web, 18 status, 9 overview, 23 stance, 23 candidates, 22 paper, 2 F7 e2e (1236 total) | live `assist status --port 8799` on the real out/ and journal: `/` 200 15,190 B 21 ms, `/stance/IDN/bonds` 200 5,284 B 41 ms, `/candidates` 200 10,536 B 3 ms, `/candidates/IDN` 200 7,916 B, `/candidates/USA` 200 4,982 B, `/paper` 200 6,107 B 122 ms, `/journal` 200 3,667 B 116 ms, `/status` 200 14,796 B 3.4 s; every `.json` twin 200 (`/json` alias too), `/nope` and `/stance/IDN/..%2Fx` 404, HEAD `/paper` 200; nav and one disclaimer on every page, no notices; 49 stances, journal 865 records chain ok over 8 models; **paper 0 weeks scored** (JCI ends 2026-09-30, IGSYC 10Y starts in October: gap 2b blocks it); out/ (51 files) and `journal/decisions.jsonl` sha-identical before and after |
 | S29 one-step start (P45-start) | done | 2026-10-27 | this commit | 21 start (1257 total) | live `./start.sh --no-open --port 8799` on the real repo: sync, doctor (11 of 14 fresh, 2 stale: jquantster, idx-method; satudatascape missing), **no run** (out/ all as_of 2026-10-27), pages up in 6.1 s; `/` 200 15,190 B, `/candidates` 200 10,536 B; SIGTERM (and Ctrl-C under a pty) stops it, port 8799 free, no server process left; out/ sha-identical. README data gaps brought up to date: PHEI fresh 2026-10-26 (both IDN rules now propose but are not applied, insufficient sample), FRED fresh 2026-10-23, paper 0 weeks for the benchmark and 8 segments |
+| S30 peer comparison per industry (P46-peers) | done | 2026-10-27 | this commit | 22 adapter, 23 peers, 15 view (1317 total) | `assist industries`: 33 industries, 836 names, as of 2026-10-26 (1.9 MB); `/industries` 200, `/industries/8f8ca75c` (banks, 47 names) 200, twins 200, unknown id and `..` 404; checked by screenshot in light and dark. Stockbit industry PE means of −77 (POLU group) and −115 (DOSS) confirm the switch to medians. The Stockbit session had expired (refresh 401): not needed, the 2026-10-26 pull is stored |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`
