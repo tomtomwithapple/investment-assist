@@ -125,8 +125,8 @@ def test_fresh_out_skips_the_run_and_serves_then_opens(repo):
     _out(repo, "2026-10-20", name="USA/stocks.json")  # the newest as_of decides
     res = _start(repo)
     assert res.returncode == 0, res.stderr
-    assert _names(_calls(repo)) == ["uv sync", "doctor", "status --port 8790", "curl",
-                                    "open http://127.0.0.1:8790/"]
+    assert _names(_calls(repo)) == ["uv sync", "doctor", "status --port 8791", "curl",
+                                    "open http://127.0.0.1:8791/"]
     assert "out/ is current" in res.stdout
 
 
@@ -135,8 +135,8 @@ def test_stale_out_runs_no_send(repo, as_of):
     _out(repo, as_of)
     res = _start(repo)
     assert res.returncode == 0, res.stderr
-    assert _names(_calls(repo)) == ["uv sync", "doctor", "run --no-send", "status --port 8790",
-                                    "curl", "open http://127.0.0.1:8790/"]
+    assert _names(_calls(repo)) == ["uv sync", "doctor", "run --no-send", "status --port 8791",
+                                    "curl", "open http://127.0.0.1:8791/"]
 
 
 def test_empty_out_runs_no_send(repo):
@@ -255,7 +255,7 @@ def test_failed_doctor_and_run_still_serve(repo):
     env = _env(repo, STUB_DOCTOR_EXIT="1", STUB_RUN_EXIT="3")
     res = _start(repo, "--no-open", env=env)
     assert res.returncode == 0, res.stderr
-    assert _names(_calls(repo)) == ["uv sync", "doctor", "run --no-send", "status --port 8790",
+    assert _names(_calls(repo)) == ["uv sync", "doctor", "run --no-send", "status --port 8791",
                                     "curl"]
     assert "run failed (exit 3)" in res.stdout + res.stderr
 

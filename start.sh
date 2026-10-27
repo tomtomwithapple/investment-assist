@@ -2,7 +2,7 @@
 # One step from a checkout to the local pages (PLAN S29):
 #
 #   ./start.sh                  uv sync, assist doctor, assist run --no-send if out/ is stale,
-#                               then assist status on http://127.0.0.1:8790/ and open the browser
+#                               then assist status on http://127.0.0.1:8791/ and open the browser
 #   ./start.sh --run            run even when out/ is already today's
 #   ./start.sh --no-run         never run; serve whatever out/ holds
 #   ./start.sh --send           let the run send its Telegram summary (assist run)
@@ -27,7 +27,7 @@ usage() {
 RUN=auto
 SEND=no
 OPEN_BROWSER=yes
-PORT=8790
+PORT=8791
 INSTALL_JOBS=no
 while [ $# -gt 0 ]; do
     case "$1" in

@@ -13,7 +13,7 @@ its sources.
 ## Quick start
 
 ```sh
-./start.sh                  # uv sync, doctor, run if out/ is stale, then the pages on http://127.0.0.1:8790/
+./start.sh                  # uv sync, doctor, run if out/ is stale, then the pages on http://127.0.0.1:8791/
 ```
 
 `start.sh` works from any directory. It stops with a message if `uv` is not installed
@@ -31,7 +31,7 @@ its sources.
 | `--run` / `--no-run` | always run / never run, whatever the age of `out/` |
 | `--send` | the run sends its Telegram summary (`assist run`, still once a day) |
 | `--no-open` | do not open the browser |
-| `--port N` | serve on another port (default 8790) |
+| `--port N` | serve on another port (default 8791, so it does not clash with a plain `assist status` on 8790) |
 | `--install-jobs` | also run `sh launchd/install.sh` after the sync; without it `~/Library/LaunchAgents` is never touched |
 
 ## Use
