@@ -47,6 +47,8 @@ class App:
     journal_path: Path = field(default_factory=lambda: _paths().journal)
     paper: Callable[[date], Any] | None = None  # until -> report; default paper.paper_track
     health: Callable[[], Any] | None = None  # the `assist status` snapshot builder
+    today: Callable[[], date] = date.today  # the day /paper reports up to
+    cache: dict = field(default_factory=dict, repr=False, compare=False)  # per-view caches
 
     def __post_init__(self) -> None:
         if self.paper is None:
@@ -164,10 +166,22 @@ def _market(app: App, m: re.Match[str]) -> View | None:
     return candidates.page(app, m)
 
 
+def _paper(app: App, m: re.Match[str]) -> View:
+    from assist.views import paper
+    return paper.page(app, m)
+
+
+def _journal(app: App, m: re.Match[str]) -> View:
+    from assist.views import paper
+    return paper.journal(app, m)
+
+
 ROUTES: list[Route] = [(re.compile(r"^/$"), _overview),
                        (re.compile(r"^/stance/([^/]+)/([^/]+)$"), _stance),
                        (re.compile(r"^/candidates$"), _candidates),
-                       (re.compile(r"^/candidates/([^/]+)$"), _market)]
+                       (re.compile(r"^/candidates/([^/]+)$"), _market),
+                       (re.compile(r"^/paper$"), _paper),
+                       (re.compile(r"^/journal$"), _journal)]
 
 
 def to_json(data: Any) -> str:

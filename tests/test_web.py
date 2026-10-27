@@ -148,6 +148,19 @@ def test_candidates_is_served_over_http(base):
     assert _get(url + "/candidates/IDN").status_code == 404
 
 
+def test_paper_and_journal_are_served_over_http(base):
+    url, _ = base  # the fake paper returns a dict, not a report: a notice, never a 500
+    r = _get(url + "/paper")
+    assert r.status_code == 200 and '<a href="/paper" class="active">Paper</a>' in r.text
+    assert "unreadable paper report" in r.text
+    h = _get(url + "/paper", "HEAD")
+    assert h.status_code == 200 and h.content == b"" and int(h.headers["content-length"]) > 0
+    r = _get(url + "/journal")
+    assert r.status_code == 200 and '<a href="/journal" class="active">Journal</a>' in r.text
+    assert "no journal yet" in r.text and "chain ok" in r.text
+    assert json.loads(_get(url + "/journal.json").text)["records"] == 0
+
+
 def test_layout_has_nav_disclaimer_and_dark_mode():
     page = web.layout(EVIL, "<p>body</p>", "/paper")
     for href, label in web.NAV:
