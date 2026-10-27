@@ -1,0 +1,166 @@
+{
+  "as_of": "2026-10-27",
+  "bar_date": "2026-10-09",
+  "config": {},
+  "currency": "IDR",
+  "disclaimer": "Heuristic, not investment advice.",
+  "hurdle": {
+    "drivers": [
+      "IDN hurdle 13.74% = SBN 10Y (igsyc) + US ERP 4.09% + IDN CRP 2.46% (2026-01) (Damodaran via dbnomics)"
+    ],
+    "required_pt": 13.739463134550558
+  },
+  "market": "AUS",
+  "model_fingerprint": "sha256:d0111175d4fcfe76b523af0bb22d2794dac0d0e5d62f69a08f4b733e77189c2b",
+  "regime": "neutral",
+  "schema_version": "1.0.0",
+  "sizing": {
+    "budget_idr": 2000000.0,
+    "excluded": [
+      {
+        "reason": "below the minimum order",
+        "symbol": "ASII"
+      }
+    ],
+    "fingerprint": "sha256:968f9582054d1cd24b8461b2b2b648b0a19e320723f16ff0a48bde4aba181677",
+    "portfolio_value_idr": 29617701.36,
+    "trims": [],
+    "unspent_idr": 500000.0
+  },
+  "sources": [
+    "idx-method",
+    "dbnomics",
+    "idxscape",
+    "bisfetcher",
+    "bps-looker",
+    "worldbankscape",
+    "sec-edgar",
+    "financer"
+  ],
+  "stale_inputs": [
+    "financer (stale): last statement 2026-09-30"
+  ],
+  "stance": {
+    "current_pct": 0.0,
+    "stance": "overweight",
+    "target_pct": 5.0
+  },
+  "styles": [
+    {
+      "dropped": [
+        {
+          "reason": "round trip 145bp eats the 0.52pt margin",
+          "symbol": "ELSA"
+        }
+      ],
+      "p": 0.003996003996003996,
+      "passed": true,
+      "pool": 35,
+      "quarters": 37,
+      "rows": [
+        {
+          "action": "hold",
+          "cost": {
+            "flags": [],
+            "order_idr": 10000000.0,
+            "round_trip_bps": 66.55
+          },
+          "drivers": [
+            "expected 16.25% vs hurdle 13.74%",
+            "yield 11.81% + growth 4.45%",
+            "yield at the 85th pct of its own 20 quarters",
+            "bank (BANK_FLOOR)"
+          ],
+          "entry": {
+            "basis": "typical",
+            "level": 5950.0,
+            "status": "deep"
+          },
+          "expected_pt": 16.2539382309524,
+          "held": true,
+          "held_idr": 4010000.0,
+          "margin_pt": 2.514475096401842,
+          "margin_shift_pt": 0.0,
+          "net_margin_pt": 1.8490169940225605,
+          "price": 4040.0,
+          "rank": 1,
+          "risks": [],
+          "sector": "Keuangan",
+          "size": null,
+          "style": "dividend_value",
+          "symbol": "BMRI"
+        },
+        {
+          "action": "add",
+          "cost": {
+            "flags": [],
+            "order_idr": 10000000.0,
+            "round_trip_bps": 101.47
+          },
+          "drivers": [
+            "expected 14.86% vs hurdle 13.74%",
+            "yield 6.86% + growth 8.00%",
+            "yield at the 80th pct of its own 20 quarters"
+          ],
+          "entry": {
+            "basis": "typical",
+            "level": 1915.0,
+            "status": "wait"
+          },
+          "expected_pt": 14.862745098039216,
+          "held": false,
+          "held_idr": 0.0,
+          "margin_pt": 1.1232819634886582,
+          "margin_shift_pt": -0.5,
+          "net_margin_pt": 0.10854276146769504,
+          "price": 2040.0,
+          "rank": 2,
+          "risks": [],
+          "sector": "Barang Konsumen Primer",
+          "size": {
+            "idr": 1500000.0,
+            "reason": "quarter-Kelly, capped at 5%",
+            "tranches": [
+              {
+                "day": 0,
+                "idr": 500000.0,
+                "limit": 1915.0,
+                "shares": 200
+              },
+              {
+                "day": 10,
+                "idr": 500000.0,
+                "limit": 1880.0,
+                "shares": 200
+              },
+              {
+                "day": 20,
+                "idr": 500000.0,
+                "limit": null,
+                "shares": 200
+              }
+            ]
+          },
+          "style": "dividend_value",
+          "symbol": "JPFA"
+        }
+      ],
+      "style": "dividend_value",
+      "t": 2.7937107923268103,
+      "verdict": "beats placebo (t 2.79, p 0.004); control t 0.10"
+    }
+  ],
+  "tilt": {
+    "fingerprint": "abababababababababababababababababababababababababababababababab",
+    "passed": true,
+    "sectors": [
+      {
+        "cap": 3,
+        "margin_shift_pt": -0.5,
+        "sector": "Keuangan",
+        "tilt": 0.4
+      }
+    ],
+    "verdict": "beats placebo (t 2.40, p 0.010)"
+  }
+}

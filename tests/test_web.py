@@ -139,6 +139,15 @@ def test_root_is_the_overview(base):
         assert f'href="{href}"' in r.text and label in r.text
 
 
+def test_candidates_is_served_over_http(base):
+    url, _ = base  # the temp out/ has no candidates/: a 200 page with a notice, never a 500
+    r = _get(url + "/candidates")
+    assert r.status_code == 200
+    assert '<a href="/candidates" class="active">Candidates</a>' in r.text
+    assert "no candidate lists" in r.text
+    assert _get(url + "/candidates/IDN").status_code == 404
+
+
 def test_layout_has_nav_disclaimer_and_dark_mode():
     page = web.layout(EVIL, "<p>body</p>", "/paper")
     for href, label in web.NAV:

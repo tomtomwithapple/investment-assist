@@ -154,8 +154,20 @@ def _stance(app: App, m: re.Match[str]) -> View | None:
     return stance.page(app, m)
 
 
+def _candidates(app: App, m: re.Match[str]) -> View:
+    from assist.views import candidates
+    return candidates.index(app, m)
+
+
+def _market(app: App, m: re.Match[str]) -> View | None:
+    from assist.views import candidates
+    return candidates.page(app, m)
+
+
 ROUTES: list[Route] = [(re.compile(r"^/$"), _overview),
-                       (re.compile(r"^/stance/([^/]+)/([^/]+)$"), _stance)]
+                       (re.compile(r"^/stance/([^/]+)/([^/]+)$"), _stance),
+                       (re.compile(r"^/candidates$"), _candidates),
+                       (re.compile(r"^/candidates/([^/]+)$"), _market)]
 
 
 def to_json(data: Any) -> str:
