@@ -85,12 +85,21 @@ def test_industries_and_medians(payload):
     bank = by_id["bank"]
     assert [s["symbol"] for s in bank["stocks"]] == ["AAAA", "BBBB", "CCCC"]  # by market cap
     assert bank["n"] == 3 and bank["leaders"] == ["AAAA", "BBBB", "CCCC"]
-    assert bank["label"] == "Keuangan · AAAA, BBBB, CCCC"
+    assert bank["label"] == "Keuangan"  # no anchor among the members: the sector name
+
     assert bank["median"]["pe"] == 10.0 and bank["median"]["div_yield"] == 5.0
     assert bank["average"]["pe"] == -77.0  # carried as Stockbit gave it
     assert by_id["insurer"]["median"]["pe"] is None  # one name: below min_median
     assert payload["sectors"]["Keuangan"]["median"]["pe"] == 9.0  # 5, 8, 10, 20
     assert payload["sectors"]["Keuangan"]["average"]["pe"] == 9.9
+
+def test_subsector_names_a_group_by_its_anchors():
+    assert peers.subsector(["XXXX", "BBRI"], "Keuangan") == "Bank"
+    assert peers.subsector(["GIAA"], "Transportasi & Logistik") == "Transportasi"
+    assert peers.subsector(["XXXX"], "Energi") == "Energi"
+    assert peers.subsector(["XXXX"], "") == "Unknown sector"
+    anchors = [a for _, xs in peers.SUBSECTORS for a in xs]
+    assert len(anchors) == len(set(anchors))  # an anchor names one sub-sector only
 
 
 def test_scores_are_signed_so_positive_is_better(payload):

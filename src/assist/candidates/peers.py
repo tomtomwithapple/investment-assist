@@ -35,8 +35,8 @@ from typing import Any
 
 from assist.sources.idxmethod_comparison import Comparison
 
-__all__ = ["CATEGORIES", "CONFIG", "OUT_DIR", "build", "deviation", "gather_live", "tier",
-           "write"]
+__all__ = ["CATEGORIES", "CONFIG", "OUT_DIR", "SUBSECTORS", "build", "deviation", "gather_live",
+           "subsector", "tier", "write"]
 
 OUT_DIR = "industries"
 SCHEMA_VERSION = 1
@@ -79,6 +79,56 @@ CATEGORIES: tuple[tuple[str, str, tuple[tuple[str, int, str, str | None], ...]],
         ("altman_z", 13402, "Altman Z (modified)", "higher"),
     )),
 )
+# Stockbit's /comparison carries no industry name. Its industry groups match the IDX sub-sectors
+# Stockbit lists in idx-method's data/universe.json one for one, sector by sector (33 on
+# 2026-10-26), so a group takes the name of the sub-sector whose anchor names it holds. Anchors
+# marked "by elimination" are the one group left in their sector; a group with no anchor is
+# named by its sector alone.
+SUBSECTORS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Barang Baku", ("ANTM", "INTP", "TPIA")),
+    ("Media & Hiburan", ("SCMA", "MNCN")),
+    ("Perdagangan Ritel", ("MAPI", "ACES", "ERAA")),
+    ("Pakaian & Barang Mewah", ("HRTA", "PBRX")),
+    ("Otomotif & Komponen Otomotif", ("AUTO", "GJTL", "SMSM")),
+    ("Barang Rumah Tangga", ("WOOD", "CINT")),
+    ("Jasa Konsumen", ("BUVA", "JSPT", "BLTZ")),
+    ("Barang Rekreasi", ("DOSS",)),  # by elimination
+    ("Minyak, Gas & Batu Bara", ("ADRO", "BYAN", "PTBA")),
+    ("Energi Alternatif", ("ALII", "SEMA")),  # by elimination
+    ("Bank", ("BBCA", "BBRI", "BMRI")),
+    ("Asuransi", ("TUGU", "LIFE", "ABDA")),
+    ("Jasa Pembiayaan", ("BFIN", "ADMF", "WOMF")),
+    ("Jasa Investasi", ("TRIM", "PANS", "YULE")),
+    ("Perusahaan Holding & Investasi", ("SRTG", "DNET")),
+    ("Farmasi & Riset Kesehatan", ("KLBF", "SIDO", "KAEF")),
+    ("Jasa & Peralatan Kesehatan", ("MIKA", "SILO", "HEAL")),
+    ("Perusahaan Holding Multi Sektor", ("ASII", "BNBR")),
+    ("Barang Perindustrian", ("UNTR", "IMPC")),
+    ("Jasa Perindustrian", ("ASGR", "JTPE")),
+    ("Konstruksi Bangunan", ("TOTL", "SSIA")),
+    ("Infrastruktur Transportasi", ("JSMR", "CMNP")),
+    ("Telekomunikasi", ("TLKM", "ISAT", "EXCL")),
+    ("Utilitas", ("PGEO", "BREN", "POWR")),
+    ("Perdagangan Ritel Barang Primer", ("AMRT", "MIDI", "HERO")),
+    ("Makanan & Minuman", ("ICBP", "INDF", "MYOR")),
+    ("Produk Rumah Tangga Tidak Tahan Lama", ("UNVR", "KINO")),
+    ("Rokok", ("HMSP", "GGRM", "WIIM")),
+    ("Properti & Real Estat", ("CTRA", "BSDE", "PWON")),
+    ("Perangkat Lunak & Jasa TI", ("GOTO", "EMTK", "DCII")),
+    ("Perangkat Keras & Peralatan Teknologi", ("PTSN", "MTDL")),
+    ("Transportasi", ("GIAA", "BIRD")),
+    ("Logistik & Pengantaran", ("TMAS", "SMDR")),  # by elimination
+)
+
+
+def subsector(members: Sequence[str], sector: str) -> str:
+    """The first `SUBSECTORS` name with an anchor among `members`; else the sector, else
+    'Unknown sector'."""
+    have = set(members)
+    return next((name for name, anchors in SUBSECTORS if have & set(anchors)),
+                sector or "Unknown sector")
+
+
 METRICS = [(cat, key, fid, better) for cat, _, ms in CATEGORIES for key, fid, _, better in ms]
 
 
@@ -175,7 +225,7 @@ def build(cmp: Comparison, day: date, config: Mapping[str, Any] = CONFIG) -> dic
             })
         industries.append({
             "id": ind,
-            "label": f"{sector or 'Unknown sector'} · {', '.join(syms[:3])}",
+            "label": subsector(syms, sector),
             "sector": sector,
             "n": len(syms),
             "leaders": syms[:3],

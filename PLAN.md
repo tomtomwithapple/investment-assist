@@ -510,7 +510,11 @@ host, launchd for the server, changes to how stances or candidates are built.
   - **Source.** idx-method already stores Stockbit's `/comparison/{sym}/ratios` and
     `/industries` verbatim in `api_raw` (`endpoints_pull.py`, weekdays 16:30), so nothing is
     fetched. An industry is the set of names with an identical Stockbit `industry` block
-    (33 on 2026-10-26, unnamed in the data, labelled by their largest names).
+    (33 on 2026-10-26, unnamed in the data). The groups match the IDX sub-sectors Stockbit
+    lists in idx-method's `data/universe.json` one for one, sector by sector, so each is named
+    by the sub-sector whose anchor names it holds (`peers.SUBSECTORS`: BBCA → Bank, TLKM →
+    Telekomunikasi, …); Barang Rekreasi (DOSS), Energi Alternatif (ALII, SEMA) and Logistik &
+    Pengantaran (TMAS, SMDR) are by elimination. A group with no anchor takes its sector name.
   - **Benchmarks.** The industry and sector medians computed here. Stockbit's own averages are
     means that loss-makers drag below zero (industry PE −77 and −115 on 2026-10-26), so they
     are shown as a cross-check and never scored (as S15 decided).
@@ -525,11 +529,12 @@ host, launchd for the server, changes to how stances or candidates are built.
     (below 1×) on valuation or profitability, sorted most positive first. Names at or below 1×,
     unscored names, names without a dividend score (no yield, or no industry median yield) and
     names red or unscored on valuation or profitability (no score counts as below 1×) are left
-    out there (solvency may be red or unscored), and so are names whose PE or PBV is not below
+    out there and so are names whose PE or PBV is not below
     the industry median or is missing: the valuation score averages four ratios, so a cheap P/S
     or EV/EBITDA could hide a dear PE or PBV (CNMA, PE 2.2× its median, scored blue). The table
     shows PE and PBV with their multiple of the median; the values match idx-method's
-    `factors.json`. Every name stays on its `/industries/<id>` page.
+    `factors.json`. Dividend and solvency need at least 0.8× the industry median (below, or no
+    score, is left out). Every name stays on its `/industries/<id>` page.
 
 **F7-ui notes (2026-10-27).** Per-slice details are in `docs/results/P40-ui-shell.md` …
 `P44-ui-paper.md`.

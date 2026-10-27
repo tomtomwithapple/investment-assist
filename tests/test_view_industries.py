@@ -7,6 +7,7 @@ synthetic `Comparison` through `peers.build`; no real out/, store or network."""
 from __future__ import annotations
 
 import json
+import math
 import re
 from datetime import date
 from pathlib import Path
@@ -61,19 +62,22 @@ def test_nav_has_industries(out):
 
 
 def _ranked_out(tmp_path) -> Path:
-    """bank2's medians are pinned by eleven identical names (PE 10, PBV 2, yield 5, ROE 10), so
+    """bank2's medians are pinned by eleven identical names (PE 10, PBV 2, yield 5, ROE 10, D/E
+    0.5), so
     each test name is scored against those: AAAA passes every filter, the others fail one."""
     c = Comparison(date=date(2026, 10, 26))
-    rows = {f"M{i:03d}": {PE: 10.0, PBV: 2.0, YIELD: 5.0, ROE: 10.0, MKTCAP: 1e12}
+    rows = {f"M{i:03d}": {PE: 10.0, PBV: 2.0, YIELD: 5.0, ROE: 10.0, DER: 0.5, MKTCAP: 1e12}
             for i in range(11)}  # level: overall 1.00x
     rows.update({
-        "AAAA": {PE: 5.0, PBV: 1.0, YIELD: 10.0, ROE: 20.0, MKTCAP: 100e12},  # passes
+        "AAAA": {PE: 5.0, PBV: 1.0, YIELD: 10.0, ROE: 20.0, DER: 0.45, MKTCAP: 100e12},  # passes
         "CCCC": {PE: 20.0, PBV: 4.0, YIELD: 1.0, ROE: 5.0, MKTCAP: 0.5e12},  # below
         "EEEE": {PE: 5.0, PBV: 1.0, ROE: 20.0, MKTCAP: 2e12},  # no yield
         "FFFF": {PE: 15.0, PBV: 3.0, YIELD: 20.0, ROE: 40.0, MKTCAP: 3e12},  # red valuation
         "GGGG": {PE: 5.0, PBV: 1.0, YIELD: 20.0, ROE: 5.0, MKTCAP: 4e12},  # red profitability
         "HHHH": {PE: 5.0, PBV: 1.0, YIELD: 20.0, MKTCAP: 6e12},  # no profitability
         "IIII": {PE: 2.0, PBV: 3.0, YIELD: 20.0, ROE: 20.0, MKTCAP: 7e12},  # dear PBV
+        "JJJJ": {PE: 5.0, PBV: 1.0, YIELD: 3.0, ROE: 40.0, MKTCAP: 8e12},  # dividend 0.6x
+        "KKKK": {PE: 5.0, PBV: 1.0, YIELD: 10.0, ROE: 20.0, DER: 1.0, MKTCAP: 9e12},  # D/E 2x
     })
     for sym, vals in rows.items():
         c.ratios[sym], c.industry[sym], c.sectors[sym] = dict(vals), "bank2", "Keuangan"
@@ -105,10 +109,15 @@ def test_index_is_one_ranked_table_after_every_filter(tmp_path):
     assert min(iiii["valuation"], iiii["profitability"], iiii["dividend"]) > 0
     assert every["IIII"]["dev_industry"]["pbv"] > 0  # blue on valuation, but PBV above median
     assert all(r["dev_industry"][k] < 0 for r in data["rows"] for k in ("pe", "pbv"))
+    for sym, cat in (("JJJJ", "dividend"), ("KKKK", "solvency")):
+        sc = every[sym]["score_industry"]
+        assert sc[cat] < math.log(0.8) and min(sc["valuation"], sc["profitability"]) > 0
+        assert peers_overall(every[sym]) > 0
+    assert every["EEEE"]["score_industry"]["solvency"] is None  # no D/E: fails the floor too
     order = re.findall(r"<strong>(\w+)</strong>", body)
     assert order == [r["symbol"] for r in data["rows"]]
     assert order == ["AAAA"]
-    assert "1 of 18 names across 1 industries" in body
+    assert "1 of 20 names across 1 industries" in body
     aaaa = re.search(r"<strong>AAAA</strong>.*?</tr>", body, re.S).group(0)
     assert '<a href="/industries/bank2">' in aaaa and ">big<" in aaaa
     assert 'class="num score pos"' in aaaa and "PBV<br>" in body
