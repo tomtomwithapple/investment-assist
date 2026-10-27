@@ -45,6 +45,7 @@ record.
 | C. Foreign markets | S11–S12 | 2 / 2 |
 | D. Track record and ops | S13–S14 | 2 / 2 |
 | E. Layer 4 refinements | S15 | 0 / 1 |
+| F. Undervalued stocks, macro-weighted (IDN, then US, JP) | S16–S22 | 0 / 8 |
 
 ### Open data gaps (fetcher side)
 
@@ -268,13 +269,142 @@ real stores → record numbers in the Progress table → commit. One slice per c
     *Valuation history for investment-assist (planned 2026-10-26)*.
   - *Done when:* the screen replays over month ends, its placebo verdict is journalled, and a
     failing verdict names no candidate, as for the other three.
+  - *Can start before idx-method V1 (found 2026-10-27).* `factor_series` already holds daily
+    `mktcap` and `price` from 2016-10 and quarterly `ni_ttm`, `equity`, `cfo_ttm`,
+    `op_income_ttm`, `net_debt` from 2016-12, so PE, PBV, P/CFO and EV/EBIT are computed here.
+    V1 becomes a cross-check, and EV/EBITDA and PS wait for it (no revenue or D&A in the store).
+    V2 (membership) and V3 (period-end vs filing lag) still block the point-in-time replay.
+
+### Phase F — undervalued stocks, macro-weighted (planned 2026-10-27)
+
+**Goal.** Name stocks that are undervalued for an IDR investor, in a dividend or growth style
+(S15 covers plain value), Indonesia first, then the US and Japan. The macro outlook decides
+**where to look and how much discount to demand**; valuation decides **which names**. A name
+is a candidate only when its expected IDR return beats the hurdle for its market, after the
+macro adjustment, costs and FX. The output is still heuristic context, not advice.
+
+**How the pieces fit.**
+
+```
+layers 0–2 (regime, scores, overrides) ─► S16 sector tilt ─┐
+layer 3 (flows, curve, ERP/CRP) ─────────► S17 IDR hurdle ─┼─► S20 one ranked list
+idx-method / sec-edgar / jquantster ─► S18 dividend, S19 growth, S15 value ─┘   (+ layer 5 fit,
+                                                                                entry, costs)
+```
+
+Rules that hold for every slice:
+- Every expected return is in IDR, **unhedged**. Foreign names use `fx.py` and P29's
+  `expected_fx_move` (the adverse 5% quantile, else UIP) as a haircut.
+- Everything is point in time: fundamentals as of their filing date (`xbrl_as_of` for the US;
+  the S15 V3 lag for IDN), prices as of the close, delisted names kept.
+- Everything starts as context. A tilt or screen changes a ranking only after its month-end
+  replay beats the placebo control (`assist.eval.placebo`); until then it is journalled and
+  shown, and names no candidate.
+- Quality is a gate, not a score: the existing `QUALITY_FLOOR` and `BANK_FLOOR` are reused.
+
+**Slices** (order: S17 → S16 → S18 ∥ S19 → S20 → S20a → S21 → S22; S15 slots in before S20 when
+idx-method V2/V3 land):
+
+- [ ] **S16 Macro sector tilt (IDN).** A journalled, hand-set sensitivity table: each IDX-IC
+  sector against the drivers the layers already read. Coal, nickel and CPO against Pink Sheet
+  trends and China momentum (worldbankscape, dbnomics `cn.*`). Banks and property against the BI
+  rate direction, the real yield and the credit gap (bisfetcher `WS_CBPOL`, `WS_CREDIT_GAP`).
+  Exporters vs importers against USD/IDR (JISDOR, `WS_EER` REER). Consumer names against CPI
+  and consumer confidence (bps-looker, dbnomics CCI). Size and quality lean on the layer-0
+  regime. The output is a tilt from −1 to +1 per sector, with its drivers. It is applied in two
+  ways: a sector's required margin over the hurdle (S17) moves by at most ±2 pt, and S20's
+  per-sector cap moves between 3 and 7 names. *Replay:* sector-month tilts against the
+  next-quarter sector returns built from `factor_series` mktcap, with a placebo. *Done when* the
+  tilt and its verdict are journalled and shown in the brief.
+- [ ] **S17 IDR hurdle per market.** The required return each name must beat. IDN: SBN 10Y
+  (PHEI `igsyc_point`, else the dbnomics proxy, flagged) plus US implied ERP (`damodaran_erp`)
+  plus IDN CRP (`damodaran_crp`). Foreign: the local 10Y plus ERP plus that country's CRP,
+  converted to IDR (unhedged) with the expected FX move. Risk-off adds a premium (start: +1 pt, journalled
+  in the model fingerprint). This builds on S10's JCI earnings yield vs SBN and P29's index
+  test, so one function serves the index and the single names.
+- [ ] **S18 Undervalued dividend (IDN).** This upgrades the `dividend` screen from "high
+  trailing yield" to "the dividend return beats the hurdle and is safe":
+  - Expected return = forward yield + sustainable growth (ROE × retention, capped at nominal
+    GDP growth).
+  - Safety gates: payout below 90% of earnings and covered by CFO (`cfo_ttm`), paid in at
+    least 4 of the last 5 years (`cache/dividends`, 979 names), no cut in the last 2 years
+    unless earnings recovered.
+  - A cheapness leg: yield against the name's own 5-year yield range.
+  - Banks are judged on dividends with their prudential floor; holding companies are skipped.
+  - Replay: quarter ends with trailing data, 3-month forward return, placebo as for the other
+    screens.
+- [ ] **S19 Undervalued growth, GARP (IDN).** Growth at a price the hurdle allows:
+  - Reverse DCF: the 10-year earnings growth the price implies at the S17 hurdle, against the
+    name's realised growth (5-year `ni_ttm` and `cfo_ttm` CAGR) and consensus
+    (`consensus.json`). A candidate is a name whose implied growth is clearly below both.
+  - PEG on forward PE as a cross-check.
+  - Quality: ROE or ROCE stable or rising over 3 years, CFO/NI ≥ 0.8 (accruals), equity
+    dilution under 5% a year.
+  - Replay uses realised growth only: there is **no consensus history** (16 snapshots since
+    2026-08-30, none holding consensus). The consensus leg is live and journalled, and is
+    judged once about 24 months of monthly snapshots exist (fetcher ask below).
+- [ ] **S20 One ranked list.** S15, S18 and S19 plus the S16 tilt and S17 hurdle make one list
+  per market. Each row carries style, expected IDR return, margin over the hurdle, drivers,
+  risks, entry (`entry.py`, with P21's bound), costs (`costs.py`) and layer-5 fit (held or not,
+  add or trim from financer). It extends the output contract with an `out/candidates/*.json`,
+  a brief section *Undervalued candidates* and the top 5 in the Telegram summary. Within a
+  style, rank by margin; across styles, never by a mixed score.
+- [ ] **S20a Position sizing.** Each candidate that passes gets an IDR amount, top-down:
+  - **Budget.** The asset-class budget is the layer-5 `target_pct` minus `current_pct` for that
+    country × stocks stance, times the portfolio value from financer. An `underweight` or
+    `avoid` stance gives no new money, only trims of names already held.
+  - **Split.** Inside the budget, weight ∝ margin over the hurdle ÷ the name's 1-year
+    volatility (`vol_1y`), so a cheaper, calmer name gets more.
+  - **Caps.** At most 5% of the portfolio per name, the S16-tilted sector cap, and liquidity:
+    each tranche stays under `costs.py`'s participation limit of the 60-day median value, and
+    a name below one lot is dropped.
+  - **Timing.** Amounts are split into `entry.py` tranches (laddered when the regime is
+    risk-off).
+  - **Trims.** A name already held that no longer passes, or whose margin turned negative, gets
+    a trim line instead of an add.
+  - Sizes are journalled with the model fingerprint and paper-tracked (S13) before real money.
+    The per-name and sector caps are starting values for the user to confirm.
+- [ ] **S21 US single stocks.** The same engines on sec-edgar data, in USD and then IDR:
+  - Fundamentals from `xbrl_as_of(d)` (point in time by filed date, 122.7M facts; one scan
+    per screen through `usfin serve` `/screen` or a read-only open).
+  - Prices from `alpaca_bar_adjusted_lookup(sym)`, identity across renames from
+    `alpaca_security_lookup`, dividends from `alpaca_corp_action`.
+  - Universe: US-listed operating companies with ≥ US$2bn market cap and ≥ US$20m median daily
+    value. Peers by SIC from `edgar_company`.
+  - The US hurdle and the FX haircut come from S17. A US name must beat the IDN alternative in
+    IDR, not only US Treasuries.
+- [ ] **S22 Japan, then KR/TW.** JP: jquantster `fins_summary` (company forecasts for EPS and
+  dividends make S18/S19 natural there) and `daily_bars`. **Blocked:** bars end 2026-07-31 on
+  the free plan, so prices are 12+ weeks old; it runs as context only until fresher prices
+  arrive. KR/TW: openkrx `dart_fs_line` exists, but there are no prices on disk; **blocked on
+  openkrx R1** and a price table. AU and SG stay index-level (P29): no single-stock store.
+
+**Asks to the fetchers** (each goes into that repo's plan, never built here):
+- idx-method: V2 and V3 (membership, TTM lag) for S15 and S19. **New V4:** keep a dated
+  consensus snapshot (EPS and revenue forecasts, target price) per month into `factor_series`,
+  so S19's forward leg can be tested later. **New V5:** quarterly revenue and D&A, for PS,
+  EV/EBITDA and revenue growth.
+- idxscape (or another fetcher): the JCI and sector index series (gap 2b). S16's replay
+  can build sector returns from `factor_series` mktcap meanwhile, but the paper track and betas
+  need the official indices.
+- jquantster: a fresher daily price source (paid plan or another feed) before S22 ranks JP.
+- openkrx: R1 HANDOFF and KR/TW daily prices on Parquet.
+
+**Decided by the user (2026-10-27).**
+- **Review quarterly.** Candidates are reviewed each quarter, dividend names included, so every
+  replay scores the **3-month forward return** from quarter ends (not month ends) and the list
+  turns over at most once a quarter. GARP follows the same cycle unless the user says otherwise.
+- **Unhedged.** Foreign expected returns are unhedged IDR returns with the adverse FX haircut;
+  no hedge cost is modelled for candidates (`fx.py`'s hedged path stays for the stances).
+- **Size positions.** S20 sizes each candidate (S20a below).
 
 ---
 
 ## Open questions
 
 - Target weight bands per stance (e.g. overweight = benchmark + 10 pt): needs the user's
-  risk limits and the benchmark choice confirmed.
+  risk limits and the benchmark choice confirmed. **S20a sizes from these bands**, so they
+  (and its 5% per-name cap) must be confirmed before its sizes are more than paper.
 - Which SBN index for the benchmark (the 40% leg): pick once the PHEI parser shows what's
   available.
 
