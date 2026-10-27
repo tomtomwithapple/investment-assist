@@ -44,6 +44,7 @@ record.
 | B. Indonesia overrides and rules (2, 3, 4) | S7–S10 | 4 / 4 |
 | C. Foreign markets | S11–S12 | 2 / 2 |
 | D. Track record and ops | S13–S14 | 2 / 2 |
+| E. Layer 4 refinements | S15 | 0 / 1 |
 
 ### Open data gaps (fetcher side)
 
@@ -70,6 +71,9 @@ Each gap is fixed in the repo named, never here. The brief flags each one under 
 - **idx-method's stock history is short and unadjusted.** It holds about 5 years of closes,
   about 4 of which are usable for drawdowns (P21).
 - **satudatascape** has no store yet.
+- **idx-method has no valuation history or industry membership** (for S15). `factor_series`
+  holds price, market cap and fundamentals, not PE / PBV / PS / EV multiples, and
+  `/comparison` peer groups are kept for one day only.
 
 **Known bug (P21).** Entry levels are wrong for momentum names at fresh 3-year highs. For
 example, BSML at 575 (its high) gets `entry_typical` 21: a −96% "typical correction" read from a
@@ -105,18 +109,18 @@ One user, on this Mac. Telegram is the only push channel.
 
 | Layer | Repo | Store (verified 2026-10-13) | Access |
 |---|---|---|---|
-| 0, 2, 3, 4 | sec-edgar (usfin) | `data/usfin.duckdb`: FRED `fred_observation_latest`, `fred_as_of(DATE)` (layers 0, 2); TIC `tic_observation_latest`, `/series/tic?country=…` (layer 3); US fundamentals (layer 4) | HTTP `?format=csv` from `usfin serve` (127.0.0.1:8660), because `serve` holds the DuckDB lock; read-only `ATTACH` when no lock is held |
-| 0, 2 | bisfetcher | `warehouse.duckdb` (`$BISFETCHER_DB`): `series`, `observations`, `datasets` (contract block in its `PLAN.md`); `WS_EER` (layer 0), `WS_CBPOL` incl. BI rate `WS_CBPOL.M.ID`/`.D.ID`, `WS_CREDIT_GAP`, `WS_SPP`, `WS_DSR` (layer 2) | Read-only `ATTACH`, or its `serve` API while a refresh holds the lock. Done (S1–S13 on main); daily 07:30 refresh via `launchd/install.sh` |
+| 0, 2, 3, 4 | sec-edgar (usfin) | `data/usfin.duckdb`: FRED `fred_observation_latest`, `fred_as_of(DATE)` (layers 0, 2); TIC `tic_observation_latest`, `/series/tic?country=…` (layer 3); US fundamentals (layer 4); Alpaca US daily bars since 2016 (layer 4, S6–S13 done 2026-10-23): `alpaca_bar` / `alpaca_bar_latest`, security identity across renames `alpaca_security`, `alpaca_security_lookup(sym)`, split- and dividend-adjusted `alpaca_bar_adjusted_lookup(sym)` (prefer the macro: the whole `alpaca_bar_adjusted` view scans ~25M bars), `alpaca_universe`; objects listed in its `docs/plans/alpaca-market-data.md` | HTTP `?format=csv` from `usfin serve` (127.0.0.1:8660), because `serve` holds the DuckDB lock; read-only `ATTACH` when no lock is held |
+| 0, 2 | bisfetcher | `warehouse.duckdb` (`$BISFETCHER_DB`): `series`, `observations`, `datasets` (contract block in its `PLAN.md`); `WS_EER` (layer 0), `WS_CBPOL` incl. BI rate `WS_CBPOL.M.ID`/`.D.ID`, `WS_CREDIT_GAP`, `WS_SPP`, `WS_DSR` (layer 2) | Read-only `ATTACH`, or its `serve` API while a refresh holds the lock. Done (S1–S13 on main); daily 05:30 refresh via `launchd/install.sh` (since 2026-10-26) |
 | 1 | worldbankscape | `out/{SUBJECT}/{asset_class}.json` + `out/index.json` | Files (JSON Schema contract) |
 | 2 | bps-looker | Postgres (`DATABASE_URL`) | Read-only role |
 | 2 | ausdata | `warehouse.duckdb` | Read-only `ATTACH` |
 | 2 | singstat (sgecon) | `data/sgecon.duckdb` | Read-only `ATTACH` |
-| 2, 3 | dbnomics | `data/dbnomics.duckdb` (`$DBN_DB`): `series`, `observations`, `series_latest`, `series_status`; OECD CLI/BCI/CCI/CPI/rates, China `cn.*`, Eurozone (layer 2); `damodaran_erp`, `damodaran_crp`, `shiller` (layer 3). Ids and units in `docs/HANDOFF.md` | HTTP `?format=csv` from `dbn serve` (127.0.0.1:8770) first; its lock is mutual (a reader blocks `dbn refresh`), so a direct read opens, queries and closes |
+| 2, 3 | dbnomics | `data/dbnomics.duckdb` (`$DBN_DB`): `series`, `observations`, `series_latest`, `series_status`; OECD CLI/BCI/CCI/CPI/rates, China `cn.*`, Eurozone (layer 2); `damodaran_erp`, `damodaran_crp`, `shiller` (layer 3). Ids and units in `docs/HANDOFF.md` | HTTP `?format=csv` from `dbn serve` (127.0.0.1:8770) first; its lock is mutual (a reader blocks `dbn refresh`), so a direct read opens, queries and closes. Daily 05:00 refresh (since 2026-10-26) |
 | 2 | satudatascape | `data/satudata.db` (SQLite): data.go.id catalogue `packages`, `resources`, `tables` (extracted Parquet, grade A/B/C), `runs` (freshness); list in its `docs/PLAN.md` *Tables read by investment-assist*. Not on this Mac yet | `mode=ro` URI; doctor reports it missing until the file exists |
 | 2, 3, 4 | jquantster | `data/jquantster.db` (SQLite): macro (layer 2), TSE investor flows (layer 3), prices, EPS, EDINET (layer 4) | DuckDB `sqlite` extension, read-only |
-| 3 | idxscape | `data/idxscape.duckdb`: `stock_summary`, `broker_summary`, `fx_rate` (JISDOR), `sbn_ownership`, `corporate_action`; PHEI (J4 done 2026-10-22, migration 9): `igsyc_point` (as_of, tenor_y), `phei_bond_quote` (as_of, series_code, grp; never read a series as "the 10Y benchmark"), `credit_curve_point`, local use only (`docs/storage.md`). This Mac's copy lacks migration 9 until idxscape is pulled and loaded here | Read-only `ATTACH` |
-| 3 | kseistat | `data/ksei.duckdb`: `v_market_composition`, `v_type_composition` | Read-only `ATTACH` |
-| 3, 4 | idx-method | Fetcher only since 2026-10-14 (no books or screens; see its README, *Changes the parent must follow*). `store/data/stockbiter.db` (SQLite); `data/factors.json`, `consensus.json`, `composition.json`, `universe.json`, `sectors.json`, `special_boards.json`, `data/snapshots/<date>.json.gz`; `data/*_daily.csv`, `*_weekly.csv` (IHSG, LQ45, XIHD, IDX indices) **frozen at 2026-09-30, no longer updated since 2026-10-19: JCI needs another fetcher**; `cache/history/` (OHLC, value, net foreign flow), `cache/dividends/`, `cache/fundamentals/` | Read-only, files |
+| 3 | idxscape | `data/idxscape.duckdb`: `stock_summary`, `broker_summary`, `fx_rate` (JISDOR), `sbn_ownership`, `corporate_action`; PHEI (J4 done 2026-10-22, migration 9): `igsyc_point` (as_of, tenor_y), `phei_bond_quote` (as_of, series_code, grp; never read a series as "the 10Y benchmark"), `credit_curve_point`, local use only (`docs/storage.md`). This Mac's copy lacks migration 9 until idxscape is pulled and loaded here | Read-only `ATTACH`. Nightly fetch with a 05:30 WIB morning retry (since 2026-10-26) |
+| 3 | kseistat | `data/ksei.duckdb`: `v_market_composition`, `v_type_composition` | Read-only `ATTACH`. Daily 05:15 update (since 2026-10-26) |
+| 3, 4 | idx-method | Fetcher only since 2026-10-14 (no books or screens; see its README, *Changes the parent must follow*). `store/data/stockbiter.db` (SQLite; since 2026-10-26 every `run.sh` setup and `daily` also imports its files: `bars` from `cache/history`, new `dividends` (symbol, seq, ex, value, ccy) and `fundamentals` (symbol, stmt, item, period, value, currency), `insider_history` incl. root `cache/insider` 2021-08..2026-08; each import logged to `pulls` as `idx-method:<source>`; the files stay, so switching the adapter to the tables is optional); `data/factors.json`, `consensus.json`, `composition.json`, `universe.json`, `sectors.json`, `special_boards.json`, `data/snapshots/<date>.json.gz`; `data/*_daily.csv`, `*_weekly.csv` (IHSG, LQ45, XIHD, IDX indices) **frozen at 2026-09-30, no longer updated since 2026-10-19: JCI needs another fetcher**; `cache/history/` (OHLC, value, net foreign flow), `cache/dividends/`, `cache/fundamentals/` | Read-only, files |
 | 4 | openkrx | `data/parquet` (KR: `dart_*`, TW: `tw_*` incl. `tw_adjusted_daily`); Postgres holds only ops tables. Read contract = its `docs/HANDOFF.md` (slice R1, pending 2026-10-23; table changes listed in its `plan.yaml` R1 notes) | DuckDB read-only over Parquet (phase C) |
 | 5 | financer | `~/.financer/financer.db` (SQLite): `holdings`, `trades`, `transactions` | `mode=ro` URI |
 
@@ -235,6 +239,35 @@ real stores → record numbers in the Progress table → commit. One slice per c
 - [x] **S13 Paper tracking.** Each stance's implied allocation vs a fixed IDR 60/40 benchmark
   (60% JCI, 40% SBN index), marked weekly, segmented by model fingerprint.
 - [x] **S14 launchd + README.** Weekly brief and daily regime jobs; doctor in the brief header.
+
+### Phase E — layer 4 refinements
+
+- [ ] **S15 Industry-relative value screen (IDN, layer 4).** Undervalued in any style, not a
+  dividend or growth book. A fourth screen beside `value` (B/P alone) in
+  `candidates/screens.py`, behind the same gates, quality floor and placebo control.
+  - **Peer group, not the market.** Rank inside the industry from the start, so structurally
+    cheap industries (banks, plantations, coal, property) do not fill the list. Peers are the
+    IDX-IC sub-industry with at least 8 names, else the sector. The baseline is the peer median
+    computed here; Stockbit's `/comparison` industry averages are means, sometimes negative, and
+    today-only, so they are a cross-check at most.
+  - **Undervalued, not just cheap.** The signal is the gap between a name's multiple and the
+    one its fundamentals justify, fitted within the peer group: log PBV on ROE, log PE on
+    expected growth and payout, log EV/EBITDA on ROIC. Banks use PE and PBV against ROE and cost
+    of credit only (no EV or FCF legs); asset-light names lean on EV/EBITDA and P/FCF.
+  - **Scale.** Deviations as log(stock / peer median) or peer percentile, never percent.
+  - **Earnings.** TTM is checked against the 3–5 year mean or forward EPS, so one-offs
+    (e.g. LSIP EV/EBIT 0.13, BMTR PE 2 on 2026-10-26) do not rank first.
+  - **Second leg: own history.** Each name's PE and PBV against its own 5-year median.
+  - **Quality gates, does not score.** The existing floor stays a gate, so the screen stays a
+    valuation screen.
+  - **Point in time.** Peer medians per month end from idx-method's 10-year valuation series,
+    fundamentals lagged to filing (check whether Stockbit's TTM steps at period end or filing),
+    delisted names kept, membership as recorded (today's membership back-filled before records
+    begin, flagged as such).
+  - *Needs from idx-method:* the daily valuation series and industry membership in its plan,
+    *Valuation history for investment-assist (planned 2026-10-26)*.
+  - *Done when:* the screen replays over month ends, its placebo verdict is journalled, and a
+    failing verdict names no candidate, as for the other three.
 
 ---
 
