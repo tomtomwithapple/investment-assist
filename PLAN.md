@@ -433,15 +433,20 @@ host, launchd for the server, changes to how stances or candidates are built.
 - **Stack.** Python 3.12 stdlib `http.server` and `html.escape`, as `status.py` already does. No
   new dependencies, no JavaScript, no templating library. The CSS tokens come from `status.PAGE`,
   with dark mode via `prefers-color-scheme`.
-- **Shape.** `src/assist/web.py` holds the shell: one `layout(title, body, nav)` with `status.PAGE`'s
-  CSS moved into it, the shared chips, and a route table of `(pattern, handler)` where a handler
-  returns `(html, json_obj)` or None for a 404. `status.serve` becomes the server for that table
-  and keeps its signature for tests. Views go one module each under `src/assist/views/`:
-  `overview.py`, `stance.py`, `candidates.py`, `paper.py` (paper plus journal).
+- **Shape.** `src/assist/web.py` holds the server loop and the shell:
+  - an `App` dataclass with the paths and callables (out, snapshots, journal, paper, health),
+    defaulting to `pipeline.Paths.default()` and `paper.paper_track`;
+  - `layout(title, body, active)`, with `status.PAGE`'s CSS and dark mode moved into it;
+  - the shared chips;
+  - a route table of `(regex, handler(app, match) -> View(title, html, data) | None)`, where
+    None means 404 and a trailing `.json` returns `data`.
+  `status.py` imports `web`, never the reverse, and `status.serve` stays as a wrapper so the CLI
+  is unchanged until S28. Views go one module each under `src/assist/views/`: `overview.py`,
+  `stance.py`, `candidates.py`, `paper.py` (paper plus journal).
 - **Reads.** Stances come from `brief.load_out(out)`, the previous snapshot from
   `brief.previous_snapshot`, and candidates from `out/candidates/*.json`. The journal goes
   through `journal.Journal(...).verify()` and `segments()`. Paper is
-  `paper.paper_track(journal=..., until=today)`, read-only against the stores (0.5 s here). Every
+  `paper.paper_track(journal=..., until=today)`, read-only against the stores (0.5 s here). It can hit dbnomics' mutual lock, so an error is a notice and the report is cached per day and journal mtime. Every
   page is rebuilt on each request, as `/status` is. A missing or invalid file shows a notice,
   never a 500.
 - **URLs.** `/stance/IDN/bonds` is matched against the loaded stances, so it is never turned
@@ -458,6 +463,26 @@ host, launchd for the server, changes to how stances or candidates are built.
 - [ ] **S27 Paper + journal** (P44-ui-paper). Benchmark, segments, chain check.
 - [ ] **S28 Fan-in** (F7-ui). README and CLI help, a live check of every page against the real
   `out/`, Progress rows.
+
+**Review** (2026-10-27, fresh subagent, folded into the notes in `plan.yaml`):
+- redirect at `/` broke `test_status.py`: fixed. P40 moves that test to `/status`, and every slice touching `web.py` runs it.
+- no wiring for paths and the paper callable before F7: fixed (`App` with real defaults in P40).
+- import cycle between `status` and `web`: fixed (`web` owns `serve`).
+- PLAN and `plan.yaml` named the shell differently: fixed (`View`, `layout(title, body, active)`).
+- wrong field and function names: fixed with the real names:
+  - `previous_snapshot` returns a directory;
+  - `Loaded.problems`;
+  - `_grouped_line`;
+  - flags are objects;
+  - `held_idr`, `size.idr`, `size.tranches` is a list, `net_margin_pt`, `action`, `dropped`;
+  - tilt `passed` and `verdict`;
+  - paper `annualized` and `volatility`, worst week computed;
+  - segment fields;
+  - `verify()` raises.
+- stance fixtures are flat: fixed (`tests/fixtures/ui/out/` in the `out/` layout).
+- USA has no currency cell: fixed (tested).
+- escaping, URL guard and HEAD tested only once or not at all: fixed (a `<script>` value per view; the 404 cases are named).
+- `/paper` can hit dbnomics' lock: fixed (errors shown as a notice, report cached).
 
 ---
 
