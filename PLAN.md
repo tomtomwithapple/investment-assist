@@ -49,6 +49,7 @@ record.
 | D. Track record and ops | S13–S14 | 2 / 2 |
 | E. Layer 4 refinements | S15 | 0 / 1 |
 | F. Undervalued stocks, macro-weighted (IDN, then US, JP) | S16–S22 | 7 / 8 |
+| G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S28 | 0 / 6 |
 
 ### Open data gaps (fetcher side)
 
@@ -400,6 +401,63 @@ idx-method V2/V3 land):
 - **Unhedged.** Foreign expected returns are unhedged IDR returns with the adverse FX haircut;
   no hedge cost is modelled for candidates (`fx.py`'s hedged path stays for the stances).
 - **Size positions.** S20 sizes each candidate (S20a below).
+
+### Phase G — local UI view (planned 2026-10-27)
+
+**Why.** The output is spread over 49 stance JSONs, two candidate lists, a Markdown brief, the
+journal and `assist paper`. Reading it means opening files. `assist status` (commit `35606ff`,
+never planned) already serves a page on 127.0.0.1:8790, but it only shows source health and
+launchd jobs. Phase G puts the output itself on that server.
+
+**Done when** (each one covered by a slice's test):
+1. `/` shows the regime and dollar banner and a country × asset grid (stocks, bonds, currency),
+   with stance, score and confidence per cell, and a marker on cells with stale inputs.
+   Commodities are listed below the grid. Cells link to their detail page (S24).
+2. `/stance/<SUBJECT>/<asset>` shows drivers, risks, watch, entry, portfolio (current, target,
+   delta), flags, stale inputs, sources, layer-1 score, fingerprint, and the change since the
+   previous snapshot. An unknown subject or asset returns 404. A path never comes from the URL
+   (S25).
+3. `/candidates` shows each market's hurdle, the styles with verdict, t, p and pool, the ranked
+   rows with margin, sizes and tranches, the sizing budget, trims and excluded names (S26).
+4. `/paper` shows the 60/40 benchmark summary and each model segment. `/journal` shows the
+   chain check and records per model (S27).
+5. The existing health page moves to `/status`. Every page has the same nav, the disclaimer and
+   a `.json` twin, and the HTML escapes every value read from a file (S23).
+6. Everything is read-only: no page writes to `out/` or `journal/`, fetches anything, or sends
+   Telegram. The server still listens on 127.0.0.1 only (S23, S28).
+
+**Out of scope.** Editing, triggering a run or a send, auth, charts or a JS framework, any other
+host, launchd for the server, changes to how stances or candidates are built.
+
+**How.**
+- **Stack.** Python 3.12 stdlib `http.server` and `html.escape`, as `status.py` already does. No
+  new dependencies, no JavaScript, no templating library. The CSS tokens come from `status.PAGE`,
+  with dark mode via `prefers-color-scheme`.
+- **Shape.** `src/assist/web.py` holds the shell: one `layout(title, body, nav)` with `status.PAGE`'s
+  CSS moved into it, the shared chips, and a route table of `(pattern, handler)` where a handler
+  returns `(html, json_obj)` or None for a 404. `status.serve` becomes the server for that table
+  and keeps its signature for tests. Views go one module each under `src/assist/views/`:
+  `overview.py`, `stance.py`, `candidates.py`, `paper.py` (paper plus journal).
+- **Reads.** Stances come from `brief.load_out(out)`, the previous snapshot from
+  `brief.previous_snapshot`, and candidates from `out/candidates/*.json`. The journal goes
+  through `journal.Journal(...).verify()` and `segments()`. Paper is
+  `paper.paper_track(journal=..., until=today)`, read-only against the stores (0.5 s here). Every
+  page is rebuilt on each request, as `/status` is. A missing or invalid file shows a notice,
+  never a 500.
+- **URLs.** `/stance/IDN/bonds` is matched against the loaded stances, so it is never turned
+  into a path. `/candidates/<MKT>` works the same way.
+- **CLI.** `assist status` keeps its name and flags. Its help text and the README line name the
+  new pages (S28).
+
+- [ ] **S23 Shell + router** (P40-ui-shell). Shared layout and nav, the route table, `/status`,
+  404s, `.json` twins, escaping.
+- [ ] **S24 Overview** (P41-ui-overview). Regime banner, stance grid, commodities, stale markers.
+- [ ] **S25 Stance detail** (P42-ui-stance). One stance's fields, plus the change since the last
+  snapshot.
+- [ ] **S26 Candidates** (P43-ui-candidates). IDN and USA lists with verdicts, sizes and trims.
+- [ ] **S27 Paper + journal** (P44-ui-paper). Benchmark, segments, chain check.
+- [ ] **S28 Fan-in** (F7-ui). README and CLI help, a live check of every page against the real
+  `out/`, Progress rows.
 
 ---
 

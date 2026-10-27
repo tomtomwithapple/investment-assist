@@ -595,3 +595,110 @@ slices:
       Add USA to the undervalued assembly: out/candidates/USA.json, a US block in the brief
       section, sizing from the USA stocks stance budget in IDR. No sector tilt for the US yet
       (S16 is IDN only): default caps. Tick S16-S21 in PLAN.md and record live numbers.
+
+  # ---------------- phase G: local UI view (PLAN S23-S28, planned 2026-10-27) ----------------
+  # Serial chain: every view registers in web.py's route table. Stdlib only (http.server,
+  # html.escape), no JS, no new deps. Read-only: no writes to out/ or journal/, no fetch, no send.
+  - id: P40-ui-shell
+    title: "PLAN S23: UI shell: shared layout and nav, route table, /status, 404s, .json twins, escaping"
+    depends_on: [F6-us-stocks]
+    owns: ["src/assist/web.py", "src/assist/status.py", "src/assist/views/__init__.py",
+           "tests/test_web.py", "tests/test_status.py", "docs/results/P40-ui-shell.md"]
+    accept: uv run pytest -q tests/test_web.py tests/test_status.py && uv run ruff check src/assist/web.py src/assist/status.py
+    estimate: 1
+    notes: >-
+      Move status.PAGE's CSS and _chip into web.py: layout(title, body, active) -> full page with
+      a nav (Overview /, Candidates /candidates, Paper /paper, Journal /journal, Status /status),
+      the disclaimer "Heuristic, not investment advice." in the footer, and the same dark-mode
+      tokens. Route table: list of (compiled regex, handler(match) -> View(title, html, data) |
+      None); GET <path>.json returns View.data as JSON; None or an unmatched path -> 404 page in
+      the layout. Only GET and HEAD. status.serve(build, port, ready) keeps its signature: the
+      health page moves to /status (and /status.json); /json stays as an alias for /status.json.
+      Until S24, / redirects to /status (302). A handler exception -> 500 page with the error
+      escaped, never a dropped connection. Tests: route matching, 404, 500, escaping of a value
+      with <script>, nav on every page, json twin, host stays 127.0.0.1. Live: start `assist
+      status --port 8799`, curl /status and /nope.
+
+  - id: P41-ui-overview
+    title: "PLAN S24: UI overview: regime and dollar banner, country x asset stance grid, commodities, stale markers"
+    depends_on: [P40-ui-shell]
+    owns: ["src/assist/views/overview.py", "src/assist/web.py", "tests/test_view_overview.py",
+           "docs/results/P41-ui-overview.md"]
+    accept: uv run pytest -q tests/test_view_overview.py tests/test_web.py && uv run ruff check src/assist/views/overview.py src/assist/web.py
+    estimate: 1
+    notes: >-
+      / (replaces the S23 redirect): stances from brief.load_out(out_dir) (out_dir injected, so
+      tests use tests/fixtures/stance/ or a tmp out/). Banner: as_of, regime and dollar (the
+      mode across stances, as the brief does; mixed values listed), count per stance. Grid: rows =
+      country subjects (ordered as brief sorts), columns stocks | bonds | currency; cell = stance
+      chip (overweight good, underweight/avoid bad, neutral muted), score, confidence, a "stale"
+      marker when stale_inputs is non-empty, and a link to /stance/<SUBJECT>/<asset>; a missing
+      cell is "-". Commodities (asset commodities) in a second table. Empty out/ -> a notice
+      "no stances in out/ yet: run `assist run`". JSON twin: the rows used. Live: count of cells
+      on the real out/ (49 stances).
+
+  - id: P42-ui-stance
+    title: "PLAN S25: UI stance detail: drivers, risks, watch, entry, portfolio, sources, change since last snapshot"
+    depends_on: [P41-ui-overview]
+    owns: ["src/assist/views/stance.py", "src/assist/web.py", "tests/test_view_stance.py",
+           "docs/results/P42-ui-stance.md"]
+    accept: uv run pytest -q tests/test_view_stance.py tests/test_web.py && uv run ruff check src/assist/views/stance.py src/assist/web.py
+    estimate: 1
+    notes: >-
+      /stance/<SUBJECT>/<asset>: look the pair up in the loaded stances (never build a path from
+      the URL; ../ or an unknown pair -> 404). Show stance, score, layer1_score, confidence,
+      regime, dollar, drivers, risks, watch, entry (style, tranches, spacing_days), portfolio
+      (current_pct, target_pct, delta), flags, stale_inputs, sources, model_fingerprint (short)
+      and the disclaimer. Change since the previous snapshot: brief.previous_snapshot(snapshots,
+      before=as_of) and the same stance's old stance and score, else "no earlier snapshot".
+      JSON twin: the stance dict as written. Live: /stance/IDN/bonds on the real out/.
+
+  - id: P43-ui-candidates
+    title: "PLAN S26: UI candidates: per-market hurdle, style verdicts, ranked rows, sizes, trims, excluded"
+    depends_on: [P42-ui-stance]
+    owns: ["src/assist/views/candidates.py", "src/assist/web.py", "tests/test_view_candidates.py",
+           "tests/fixtures/ui/**", "docs/results/P43-ui-candidates.md"]
+    accept: uv run pytest -q tests/test_view_candidates.py tests/test_web.py && uv run ruff check src/assist/views/candidates.py src/assist/web.py
+    estimate: 1.5
+    notes: >-
+      /candidates (every out/candidates/*.json, IDN first) and /candidates/<MKT> (matched against
+      the files found). Read the shape from schema/candidates.schema.json and the real
+      out/candidates/IDN.json and USA.json (copy a trimmed one into tests/fixtures/ui/). Per
+      market: as_of, bar_date, currency, regime, stance, hurdle required_pt and drivers, tilt
+      verdict; each style with verdict, t, p, pool and its ranked rows (symbol, sector, margin,
+      net margin, expected, entry, held, size IDR, tranches); a failed style shows its verdict
+      and no rows; sizing budget, trims and excluded with reasons; stale_inputs. Render whatever
+      optional fields are absent as "-", never a KeyError. An invalid JSON file shows a notice.
+      Live: both real files render; note row counts.
+
+  - id: P44-ui-paper
+    title: "PLAN S27: UI paper track vs IDR 60/40 per model segment, and journal chain check per model"
+    depends_on: [P43-ui-candidates]
+    owns: ["src/assist/views/paper.py", "src/assist/web.py", "tests/test_view_paper.py",
+           "docs/results/P44-ui-paper.md"]
+    accept: uv run pytest -q tests/test_view_paper.py tests/test_web.py && uv run ruff check src/assist/views/paper.py src/assist/web.py
+    estimate: 1
+    notes: >-
+      /paper: paper.paper_track(journal=Journal(path), until=today) injected as a callable so
+      tests pass a canned report; show the benchmark summary (weeks scored, cumulative,
+      annualised, vol, worst week), stale weeks and reason, and each segment (fingerprint short,
+      span, scored weeks, return vs benchmark), as brief.paper_lines does, plus the disclaimer.
+      An exception -> a notice with the error, the page still renders. /journal: verify() (chain
+      ok or BROKEN with the reason), records, and segments() per model (records, stances, span),
+      as cli._journal prints. Never writes the journal. Live: both pages on the real journal.
+
+  - id: F7-ui
+    kind: integration
+    title: "PLAN S28 fan-in: UI wired into assist status, README and CLI help, live check of every page"
+    depends_on: [P44-ui-paper]
+    owns: ["src/assist/cli.py", "src/assist/web.py", "README.md", "tests/test_ui_e2e.py", "PLAN.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+    notes: >-
+      cli._status passes the real out/, snapshots, candidates and journal paths and the paper
+      callable into the server; help text "local pages: stances, candidates, paper, journal,
+      source health". README line names the pages. e2e test: start the server on an ephemeral
+      port over a tmp copy of fixtures, GET every route and its .json, assert 200, nav and
+      disclaimer, and that out/ and journal/ are byte-identical afterwards. Live: start on the
+      real repo, curl every page, record status codes and sizes; tick S23-S28 in PLAN.md
+      (phase table, slice checkboxes, STATUS line, Progress row).
