@@ -732,3 +732,34 @@ slices:
       200, nav and disclaimer, and that the tmp out/ and journal are byte-identical afterwards.
       Live: start on the real repo, curl every page, record status codes and sizes; tick
       S23-S28 in PLAN.md (phase table, slice checkboxes, STATUS line, Progress row).
+
+  - id: P45-start
+    title: "PLAN S29: one-step ./start.sh (uv check, sync, doctor, run if out/ is stale, serve, open), README quick start and data gaps"
+    depends_on: [F7-ui]
+    owns: ["start.sh", "tests/test_start.py", "README.md", "PLAN.md", "docs/results/P45-start.md"]
+    accept: uv run pytest -q tests/test_start.py && uv run ruff check . && sh -n start.sh
+    estimate: 1
+    notes: >-
+      POSIX sh like launchd/install.sh and job.sh (set -eu, a header comment with usage, stamp()
+      log lines, usage() and a case over flags; unknown flag -> exit 2). It cds to its own dir, so
+      it works from anywhere, and refuses with a clear message when uv is missing. Steps: uv sync
+      -> uv run assist doctor (informational, never fails the script) -> run decision -> uv run
+      assist status --port P in the background, poll http://127.0.0.1:P/ with curl until it
+      answers (timeout ~30 s, then show the server's log tail and exit 1) -> `open` the URL
+      unless --no-open -> wait on the server, with a trap so Ctrl-C stops it. The run decision:
+      run `assist run --no-send` (or `assist run` with --send) when out/ has no stance JSON or the
+      newest out/*/*.json as_of is before today; --run forces, --no-run skips; a failed run is
+      reported and the pages still start on whatever out/ holds. --install-jobs runs
+      `sh launchd/install.sh` after the sync; without it the script never touches
+      ~/Library/LaunchAgents. Env: ASSIST_START_TODAY (tests pin the date), and UV/OPEN/CURL can be
+      overridden or stubbed via PATH. Tests (as test_ops.py's launchd tests do): copy start.sh into
+      a tmp repo, put stub uv, open, curl and launchctl on PATH that log their argv, and assert
+      the call order for each case: fresh out/ (no run), stale or empty out/ (run --no-send),
+      --send, --run, --no-run, --no-open, --install-jobs (install.sh called), no flag ->
+      install.sh never called, uv missing -> exit 1 with the message, bad flag -> exit 2,
+      server never answering -> exit 1. README: a *Quick start* section at the top
+      (`./start.sh`, its flags), and fix *Data gaps the brief will flag* to match the live
+      doctor (P40-F7 found PHEI fresh at 2026-10-26 and VIXCLS at 2026-10-23; the paper track
+      scores no week because JCI ends 2026-09-30 and IGSYC starts in October). Tick S29 in
+      PLAN.md (phase G row 7 / 7, Progress row). Live: ./start.sh --no-open on the real repo,
+      curl / and stop it; record what it did and how long it took.

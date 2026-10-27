@@ -52,7 +52,7 @@ it), then install the jobs and let the journal build a record.
 | D. Track record and ops | S13–S14 | 2 / 2 |
 | E. Layer 4 refinements | S15 | 0 / 1 |
 | F. Undervalued stocks, macro-weighted (IDN, then US, JP) | S16–S22 | 7 / 8 |
-| G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S28 | 6 / 6 |
+| G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S29 | 6 / 7 |
 
 ### Open data gaps (fetcher side)
 
@@ -488,6 +488,19 @@ host, launchd for the server, changes to how stances or candidates are built.
 - USA has no currency cell: fixed (tested).
 - escaping, URL guard and HEAD tested only once or not at all: fixed (a `<script>` value per view; the 404 cases are named).
 - `/paper` can hit dbnomics' lock: fixed (errors shown as a notice, report cached).
+
+- [ ] **S29 One-step start** (P45-start, added 2026-10-27). `./start.sh` at the repo root goes
+  from a fresh checkout to the pages in one command:
+  1. check `uv` is installed;
+  2. `uv sync`;
+  3. `assist doctor`;
+  4. `assist run --no-send` when `out/` is empty or its newest stance is older than today (`--run` forces a run, `--no-run` skips it);
+  5. start `assist status`, wait until it answers, then open the browser (`--no-open` skips that).
+
+  `--send` lets the run send Telegram, `--install-jobs` also runs `launchd/install.sh` (opt-in,
+  never the default), and `--port` passes through. The README gets a *Quick start* and its
+  *Data gaps* section is brought up to date: PHEI is fresh here since 2026-10-26, FRED since
+  2026-10-23, and the paper track is blocked by the missing JCI fetcher.
 
 **F7-ui notes (2026-10-27).** Per-slice details are in `docs/results/P40-ui-shell.md` …
 `P44-ui-paper.md`.
