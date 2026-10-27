@@ -1,16 +1,16 @@
 """The industries pages (/industries and /industries/<id>): each IDN name against its industry and
 sector median in valuation, dividend, profitability and solvency (S30, `candidates.peers`).
 
-Reads `app.out_dir/industries/IDN.json` as written by `assist run` or `assist industries`; the
-page never opens a store. `/industries` lists the industries by sector with their size by cap
-tier and the industry median beside Stockbit's average. `/industries/<id>` draws one chart of
-four small multiples (a row per name, grouped big / mid / small cap by market cap): the bar is
-the category score against the industry median, the ring against the sector median, both on a
-log axis from 1/4x to 4x, right (blue) better and left (red) worse, so direction carries the
-sign without colour. Below it, a table per category gives every value with its deviation, and
-the benchmarks (medians, then Stockbit's averages) as the first rows. Names on the S20
-undervalued list (`out/candidates/IDN.json`) are starred. <id> is matched exactly against the
-ids in the file and never becomes a path. Every value read from a file goes through `esc`.
+Reads `app.out_dir/industries/IDN.json` as written by `assist run` or `assist industries`; the page
+never opens a store. `/industries` is one table of the names whose overall score (the mean of their
+category scores vs the industry median) is above 1×, most positive first. `/industries/<id>` draws
+one chart of four small multiples (a row per name, grouped big / mid / small cap by market cap):
+the bar is the category score against the industry median, the ring against the sector median, both
+on a log axis from 1/4x to 4x, right (blue) better and left (red) worse, so direction carries the
+sign without colour. Below it, a table per category gives every value with its deviation, and the
+benchmarks (medians, then Stockbit's averages) as the first rows. Names on the S20 undervalued list
+(`out/candidates/IDN.json`) are starred. <id> is matched exactly against the ids in the file and
+never becomes a path. Every value read from a file goes through `esc`.
 """
 
 from __future__ import annotations
@@ -34,8 +34,6 @@ EMPTY = "no peer comparison in out/industries/ yet: run `assist industries` or `
 TIERS = (("big", "Big cap (≥ IDR 10T)"), ("mid", "Mid cap (IDR 1–10T)"),
          ("small", "Small cap (< IDR 1T)"), (None, "No market cap"))
 PCT = {"div_yield", "payout", "roe", "roa", "roic", "npm", "opm", "gpm"}
-INDEX_METRICS = (("pe", "PE"), ("pbv", "PBV"), ("div_yield", "Yield %"), ("roe", "ROE %"),
-                 ("der", "D/E"))
 
 # chart geometry (SVG user units; the SVG scales to the card's width)
 LABEL_W, PANEL_W, GAP, ROW_H, HEAD_H, BAR_H = 112, 200, 30, 18, 34, 10
@@ -65,6 +63,7 @@ STYLE = """<style>
 .peers td .dev { display:block; color:var(--muted); font-size:11px; }
 .peers tr.bench td { color:var(--muted); }
 .peers details summary { cursor:pointer; font-weight:600; }
+.peers td.score.pos { color:var(--pos); } .peers td.score.neg { color:var(--neg); }
 </style>"""
 
 
@@ -148,51 +147,88 @@ def _caption(p: Mapping) -> str:
 # ---------------- /industries ----------------
 
 
-def _tier_counts(ind: Mapping) -> str:
-    counts = {t: 0 for t, _ in TIERS}
-    for s in ind.get("stocks") or []:
-        t = _d(s).get("tier")
-        counts[t if t in counts else None] += 1
-    return " / ".join(str(counts[t]) for t in ("big", "mid", "small"))
+def overall(s: Mapping) -> float | None:
+    """The mean of a name's category scores vs its industry median; None when none is scored."""
+    xs = [v for v in map(_f, _d(s.get("score_industry")).values()) if v is not None]
+    return round(sum(xs) / len(xs), 4) if xs else None
+
+
+LEVEL = 0.005  # a score within this of 0 (about 1.00x) is drawn level, neither blue nor red
+NO_RED = ("valuation", "profitability")  # the ranked list drops a name red or unscored in these
+
+
+def _red(score: Any) -> bool:
+    v = _f(score)
+    return v is not None and v <= -LEVEL
+
+
+def _score_cell(score: Any) -> str:
+    v = _f(score)
+    cls = "" if v is None or abs(v) < LEVEL else " pos" if v > 0 else " neg"
+    return f'<td class="num score{cls}">{esc(times(v))}</td>'
+
+
+def rows(p: Mapping) -> list[dict]:
+    """The names above their industry median overall (score > 0, i.e. more than 1x) that have a
+    dividend score and are not red (below 1x) on valuation or profitability, most positive first,
+    ties by market cap. Left out: names at or below 1x overall, unscored names, names without a
+    dividend score (no yield, or no industry median yield) and names red or unscored (shown as -)
+    in a `NO_RED` category, which count as below 1x."""
+    out = []
+    for ind in p.get("industries") or []:
+        ind = _d(ind)
+        for s in ind.get("stocks") or []:
+            s = _d(s)
+            score = overall(s)
+            cats = _d(s.get("score_industry"))
+            if (score is None or score <= 0 or _f(cats.get("dividend")) is None
+                    or any(_f(cats.get(c)) is None or _red(cats.get(c)) for c in NO_RED)):
+                continue
+            out.append({"symbol": s.get("symbol"), "name": s.get("name"),
+                        "industry": ind.get("id"), "industry_label": ind.get("label"),
+                        "sector": s.get("sector") or ind.get("sector"), "tier": s.get("tier"),
+                        "mktcap": s.get("mktcap"), "score": score,
+                        "score_industry": dict(_d(s.get("score_industry")))})
+    out.sort(key=lambda r: (-r["score"], -(_f(r["mktcap"]) or 0), str(r["symbol"])))
+    return out
 
 
 def index(app: web.App, _m: re.Match[str]) -> web.View:
     p, problem = load(app.out_dir, app.cache)
     if p is None:
         body = f"<h1>Industries</h1>{web.notice(problem or EMPTY)}"
-        return web.View(TITLE, body, {"industries": [], "problem": problem})
-    by_sector: dict[str, list[Mapping]] = {}
-    for ind in p["industries"]:
-        if isinstance(ind, Mapping):
-            by_sector.setdefault(str(ind.get("sector") or "Unknown sector"), []).append(ind)
-    cards = []
-    for sector, inds in by_sector.items():
-        head = "".join(f'<th class="num">{esc(lb)}<br><span class="muted">median · avg</span></th>'
-                       for _, lb in INDEX_METRICS)
-        rows = []
-        for ind in inds:
-            avg, med = _d(ind.get("average")), _d(ind.get("median"))
-            cells = "".join(f'<td class="num">{esc(value(k, med.get(k)))}<span class="dev">'
-                            f"{esc(value(k, avg.get(k)))}</span></td>" for k, _ in INDEX_METRICS)
-            href = "/industries/" + quote(str(ind.get("id", "")), safe="")
-            leaders = ", ".join(str(x) for x in ind.get("leaders") or [])
-            rows.append(f'<tr><td><a href="{href}">{esc(leaders or str(ind.get("id")))}</a></td>'
-                        f'<td class="num">{esc(str(ind.get("n", DASH)))}</td>'
-                        f'<td class="num">{esc(_tier_counts(ind))}</td>{cells}</tr>')
-        cards.append(f'<section class="card sector"><header><h2>{esc(sector)}</h2>'
-                     f'<span class="muted">{len(inds)} industr{"y" if len(inds) == 1 else "ies"}'
-                     f'</span></header><table><tr><th>Industry (largest names)</th>'
-                     f'<th class="num">Names</th><th class="num">Big / mid / small</th>{head}</tr>'
-                     f'{"".join(rows)}</table></section>')
-    n = sum(int(_d(i).get("n") or 0) for i in p["industries"])
+        return web.View(TITLE, body, {"rows": [], "problem": problem})
+    cats = [_d(c) for c in p.get("categories") or []]
+    stars = starred(app.out_dir)
+    table = rows(p)
+    head = "".join(f'<th class="num">{esc(str(c.get("label", "")))}</th>' for c in cats)
+    trs = []
+    for i, r in enumerate(table, 1):
+        sym = str(r["symbol"] or "")
+        star = f' <span class="muted">★ {esc(", ".join(stars[sym]))}</span>' if sym in stars else ""
+        href = "/industries/" + quote(str(r["industry"] or ""), safe="")
+        cells = "".join(_score_cell(r["score_industry"].get(c.get("key"))) for c in cats)
+        trs.append(f'<tr><td class="num muted">{i}</td><td><strong>{esc(sym)}</strong>{star}'
+                   f'<span class="dev">{esc(str(r["name"] or ""))}</span></td>'
+                   f'<td><a href="{href}">{esc(str(r["industry_label"] or r["industry"]))}</a></td>'
+                   f'<td>{esc(str(r["tier"] or DASH))}</td>'
+                   f'<td class="num">{esc(value("mktcap", r["mktcap"]))}</td>'
+                   f'{_score_cell(r["score"])}{cells}</tr>')
+    n = sum(len(_d(i).get("stocks") or []) for i in p["industries"])
     body = (f'{STYLE}<div class="peers"><h1>Industries</h1>{_caption(p)}'
-            f'<p class="muted">{len(p["industries"])} industries, {n} names. An industry is the '
-            "set of names Stockbit gives the same industry average; it has no name in the data, so "
-            f'it is labelled by its largest names.</p>{"".join(cards)}</div>')
-    data = {"as_of": p.get("as_of"), "industries": [
-        {k: _d(i).get(k) for k in ("id", "label", "sector", "n", "leaders", "average", "median")}
-        for i in p["industries"]]}
-    return web.View(TITLE, body, data)
+            f'<p class="muted">{len(table)} of {n} names across {len(p["industries"])} industries '
+            "score above their industry median overall, have a dividend score and are above 1× on"
+            " valuation and profitability; the rest (at or below 1× overall, nothing to score, no"
+            " dividend yield to compare, or red or - on valuation or profitability, which counts "
+            "as below 1×) are left out. A score is the multiple of the industry median (above 1× "
+            "is better: cheaper, higher yield, more profitable, more solvent); overall is the "
+            "mean of the category scores on a log scale. Sorted by overall score, most positive "
+            "first. Solvency can still be red or -. An industry has no name in the data, so it is"
+            " labelled by its largest names; open one for the chart and every name.</p>"
+            f'<section class="card"><table class="ranked"><tr><th class="num">#</th><th>Name</th>'
+            f'<th>Industry</th><th>Tier</th><th class="num">Mkt cap</th>'
+            f'<th class="num">Overall</th>{head}</tr>{"".join(trs)}</table></section></div>')
+    return web.View(TITLE, body, {"as_of": p.get("as_of"), "rows": table})
 
 
 # ---------------- /industries/<id> ----------------

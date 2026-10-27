@@ -519,6 +519,14 @@ host, launchd for the server, changes to how stances or candidates are built.
   - **Output.** `out/industries/IDN.json` from `assist run` (never fails the run) or
     `assist industries`; `/industries` and `/industries/<id>` (chart of four small multiples,
     bar vs the industry, ring vs the sector, plus a table per category; S20 names starred).
+  - **Ranked list (2026-10-27).** `/industries` is one table, not cards per sector and cap
+    tier: the names whose overall score (mean of the four category scores vs the industry
+    median, on the log scale) is above 1×, that have a dividend score and that are not red
+    (below 1×) on valuation or profitability, sorted most positive first. Names at or below 1×,
+    unscored names, names without a dividend score (no yield, or no industry median yield) and
+    names red or unscored on valuation or profitability (no score counts as below 1×) are left
+    out there (solvency may be red or unscored); every name stays on its `/industries/<id>`
+    page.
 
 **F7-ui notes (2026-10-27).** Per-slice details are in `docs/results/P40-ui-shell.md` …
 `P44-ui-paper.md`.
