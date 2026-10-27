@@ -56,8 +56,14 @@ Phase F (F5, PLAN S20) adds the undervalued list when `Sources.undervalued` is s
     P21 entry + costs, layer 5 ──────┤        (+ P38 sizes from the IDN stocks stance)
     IDN stocks stance (this run) ────┘        └→ brief *Undervalued candidates*, Telegram top 5
 
-It runs after the stances are built (sizing reads the IDN stocks stance) and never fails the
-run: an error becomes a stale input and no file. Each run journals one `undervalued` record per
+F6 (PLAN S21) adds the US list beside it when `Sources.undervalued_us` is set (`Sources.default`:
+`undervalued.gather_live_usa`): P39's US dividend and GARP engines on sec-edgar, in IDR against the
+binding USA or IDN hurdle, sized from the USA stocks stance, no tilt (S16 is IDN only) →
+`out/candidates/USA.json`, the brief's USA block and Telegram. Each market is built on its own:
+one failing leaves the other.
+
+It runs after the stances are built (sizing reads each market's stocks stance) and never fails
+the run: an error becomes a stale input and no file. Each run journals one `undervalued` record per
 market (verdicts, sizing, config) and one `undervalued_row` record per row, each carrying the
 config (tilt yaml hash, hurdle constants, sizing caps, screen CONFIGs) beside the model
 fingerprint. Nothing here moves a stance.
@@ -246,8 +252,8 @@ class Sources:
     skips Indonesia's layers 2–4 (phase B), `foreign` None the foreign layers (phase C).
     `doctor(day)` (a `doctor.SourceStatus` list) and `paper(day, journal)` (a
     `paper.PaperReport`) feed the brief's *Data health* and *Paper track* sections (S14); None
-    leaves the section out. `undervalued(day, regime)` gives the inputs of the S20 list; None
-    writes no `out/candidates/`."""
+    leaves the section out. `undervalued(day, regime)` gives the inputs of the S20 list (IDN) and
+    `undervalued_us(day, regime)` those of the US one (F6); None writes no file for it."""
 
     worldbankscape: Any
     fred: Any
@@ -257,6 +263,7 @@ class Sources:
     doctor: Callable[[date], Sequence[Any]] | None = None
     paper: Callable[[date, journal.Journal], Any] | None = None
     undervalued: Callable[[date, Regime], undervalued.UndervaluedInputs] | None = None
+    undervalued_us: Callable[[date, Regime], undervalued.UndervaluedInputs] | None = None
 
     @classmethod
     def default(cls) -> Sources:
@@ -267,7 +274,8 @@ class Sources:
         return cls(worldbankscape=WorldbankscapeSource.from_config(), fred=FredSource(),
                    financer=FinancerSource.from_config(), idn=IdnSources.default(),
                    foreign=ForeignSources.default(), doctor=live_doctor, paper=live_paper,
-                   undervalued=undervalued.gather_live)
+                   undervalued=undervalued.gather_live,
+                   undervalued_us=undervalued.gather_live_usa)
 
 
 def live_doctor(day: date) -> list[Any]:
@@ -825,30 +833,43 @@ def _undervalued_lines(payloads: Sequence[Mapping]) -> list[str]:
 
 def _undervalued(day: date, sources: Sources, layers: Layers, stances: Sequence[Mapping],
                  fp: str, paths: Paths) -> tuple[list[dict], list[str]]:
-    """The S20 list per market → (payloads written to out/candidates, stale inputs). Never
-    raises: the stances are already written."""
-    if sources.undervalued is None:
+    """The S20 list per market (IDN, then USA) → (payloads written to out/candidates, stale
+    inputs). Never raises: the stances are already written; one market failing skips only it."""
+    gathers = [(m, fn) for m, fn in (("IDN", sources.undervalued), ("USA", sources.undervalued_us))
+               if fn is not None]
+    if not gathers:
         return [], []
     try:
-        inp = sources.undervalued(day, layers.regime)
+        statements = list(sources.financer.statements())
+    except SourceUnavailable:
+        statements = []
+    payloads, stale = [], []
+    for market, fn in gathers:
         try:
-            held = undervalued.holdings_from(sources.financer.statements())
-        except SourceUnavailable:
-            held = {}
-        st = next((s for s in stances if (s["subject"], s["asset"]) == (inp.market, "stocks")),
-                  None)
-        value = layers.weights.total_idr if layers.weights is not None else None
-        payload = undervalued.assemble(inp, day=day, stance=st, portfolio_value_idr=value,
-                                       holdings=held, regime=layers.regime, fingerprint=fp)
-        payload = journal.jsonable(payload)
-        errors = list(undervalued.validator().iter_errors(payload))
-        if errors:
-            raise ValueError(f"candidates payload fails the schema: {errors[0].message}")
-    except Exception as e:  # noqa: BLE001 - a candidates failure never fails the run
-        first = str(e).splitlines()[0][:160] if str(e) else ""
-        return [], [f"undervalued candidates failed: {type(e).__name__}: {first}"]
-    undervalued.write(payload, paths.out)
-    return [payload], []
+            payload = _undervalued_one(fn(day, layers.regime), day, statements, layers,
+                                       stances, fp)
+        except Exception as e:  # noqa: BLE001 - a candidates failure never fails the run
+            first = str(e).splitlines()[0][:160] if str(e) else ""
+            label = "undervalued" if market == "IDN" else f"undervalued {market}"
+            stale.append(f"{label} candidates failed: {type(e).__name__}: {first}")
+            continue
+        undervalued.write(payload, paths.out)
+        payloads.append(payload)
+    return payloads, stale
+
+
+def _undervalued_one(inp: undervalued.UndervaluedInputs, day: date, statements: Sequence[Any],
+                     layers: Layers, stances: Sequence[Mapping], fp: str) -> dict:
+    held = undervalued.holdings_from(statements, inp.market)
+    st = next((s for s in stances if (s["subject"], s["asset"]) == (inp.market, "stocks")), None)
+    value = layers.weights.total_idr if layers.weights is not None else None
+    payload = undervalued.assemble(inp, day=day, stance=st, portfolio_value_idr=value,
+                                   holdings=held, regime=layers.regime, fingerprint=fp)
+    payload = journal.jsonable(payload)
+    errors = list(undervalued.validator().iter_errors(payload))
+    if errors:
+        raise ValueError(f"candidates payload fails the schema: {errors[0].message}")
+    return payload
 
 
 def _journal_undervalued(j: journal.Journal, payloads: Sequence[Mapping], fp: str,

@@ -18,8 +18,10 @@ exactly as before.
 
 *Undervalued candidates* (PLAN S20) is rendered from `out/candidates/*.json`
 (`schema/candidates.schema.json`) when that directory holds any valid file, so `assist brief`
-reprints it too: per market the hurdle, stance and budget, the tilt's verdict, each style's
-verdict (a failed one with no names) and its rows ranked by margin, then trims.
+reprints it too: per market (IDN, then USA from F6) the hurdle and its drivers (for the US, which
+market's hurdle binds), stance and budget, the tilt's verdict, each style's verdict (a failed one
+with no names) and its rows ranked by margin, then trims. Amounts and prices are in IDR; a US row's
+drivers carry its USD price and its margins over both hurdles.
 """
 
 from __future__ import annotations
@@ -226,15 +228,23 @@ def undervalued_lines(p: Mapping) -> list[str]:
     if p["sizing"]["budget_idr"]:
         head += f" ({_idr(p['sizing']['unspent_idr'])} unspent)"
     t = p["tilt"]
-    tilt = (f"- Sector tilt: passed ({t['verdict']}); margins shifted and sector caps set"
-            if t["passed"] else
-            f"- Sector tilt: verdict failed ({t['verdict']}); no margin shift, default caps")
-    out = [head + ".", "", tilt]
+    if t["passed"]:
+        tilt = f"- Sector tilt: passed ({t['verdict']}); margins shifted and sector caps set"
+    elif t["fingerprint"] is None and not t["sectors"]:  # no tilt run at all (USA: by design)
+        tilt = f"- Sector tilt: {t['verdict']}; no margin shift, default caps"
+    else:
+        tilt = f"- Sector tilt: verdict failed ({t['verdict']}); no margin shift, default caps"
+    out = [head + ".", ""]
+    if p["hurdle"]["drivers"]:
+        out.append("- Hurdle: " + "; ".join(p["hurdle"]["drivers"]))
+    out.append(tilt)
     for s in p["styles"]:
         stats = ", ".join(x for x in (
             None if s.get("t") is None else f"t {s['t']:.2f}",
             None if s.get("p") is None else f"p {s['p']:.3f}") if x)
-        stats = f", {stats}" if stats else ""
+        # not when the verdict already says them, nor for a replay with no quarters to judge
+        shown = re.search(r"\bt -?\d", s["verdict"]) or not s.get("quarters")
+        stats = f", {stats}" if stats and not shown else ""
         if s["passed"]:
             drop = f", {len(s['dropped'])} dropped" if s["dropped"] else ""
             out.append(f"- {s['style']}: passed ({s['verdict']}){stats}, pool {s['pool']}, "
@@ -258,6 +268,9 @@ def undervalued_lines(p: Mapping) -> list[str]:
                      _idr(r["held_idr"]) if r["held"] else "no", act]
             out.append("| " + " | ".join(_cell(c) for c in cells) + " |")
         out.append("")
+        for r in s["rows"]:
+            if r["drivers"][1:]:
+                out.append(f"- {r['symbol']}: " + "; ".join(r["drivers"][1:]))
         for d in s["dropped"]:
             out.append(f"- dropped {d['symbol']}: {d['reason']}")
     for x in p["sizing"]["trims"]:

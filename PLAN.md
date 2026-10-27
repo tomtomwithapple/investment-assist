@@ -8,7 +8,7 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-10-23. **All phases are done** (F4-ops).
+**Last updated:** 2026-10-27. **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. S15 and S22 are open.
 
 What `assist run` does:
 - It reads layers 0, 1 and 5 for every subject.
@@ -19,6 +19,9 @@ What `assist run` does:
 - It writes 49 stance JSONs to `out/`, and journals them with every rule call, override and
   candidate decision.
 - It writes the brief, which now opens with the doctor and carries the paper track (S13/S14).
+- It writes one ranked undervalued list per market (S20/S21: `out/candidates/IDN.json` and
+  `USA.json`) with paper sizes, adds them to the brief and the Telegram top 5, and journals every
+  row.
 - It sends one Telegram summary a day.
 
 Two launchd jobs are ready in `launchd/` but are **not installed**; the user decides that
@@ -45,7 +48,7 @@ record.
 | C. Foreign markets | S11–S12 | 2 / 2 |
 | D. Track record and ops | S13–S14 | 2 / 2 |
 | E. Layer 4 refinements | S15 | 0 / 1 |
-| F. Undervalued stocks, macro-weighted (IDN, then US, JP) | S16–S22 | 0 / 8 |
+| F. Undervalued stocks, macro-weighted (IDN, then US, JP) | S16–S22 | 7 / 8 |
 
 ### Open data gaps (fetcher side)
 
@@ -305,7 +308,7 @@ Rules that hold for every slice:
 **Slices** (order: S17 → S16 → S18 ∥ S19 → S20 → S20a → S21 → S22; S15 slots in before S20 when
 idx-method V2/V3 land):
 
-- [ ] **S16 Macro sector tilt (IDN).** A journalled, hand-set sensitivity table: each IDX-IC
+- [x] **S16 Macro sector tilt (IDN).** A journalled, hand-set sensitivity table: each IDX-IC
   sector against the drivers the layers already read. Coal, nickel and CPO against Pink Sheet
   trends and China momentum (worldbankscape, dbnomics `cn.*`). Banks and property against the BI
   rate direction, the real yield and the credit gap (bisfetcher `WS_CBPOL`, `WS_CREDIT_GAP`).
@@ -316,13 +319,13 @@ idx-method V2/V3 land):
   per-sector cap moves between 3 and 7 names. *Replay:* sector-month tilts against the
   next-quarter sector returns built from `factor_series` mktcap, with a placebo. *Done when* the
   tilt and its verdict are journalled and shown in the brief.
-- [ ] **S17 IDR hurdle per market.** The required return each name must beat. IDN: SBN 10Y
+- [x] **S17 IDR hurdle per market.** The required return each name must beat. IDN: SBN 10Y
   (PHEI `igsyc_point`, else the dbnomics proxy, flagged) plus US implied ERP (`damodaran_erp`)
   plus IDN CRP (`damodaran_crp`). Foreign: the local 10Y plus ERP plus that country's CRP,
   converted to IDR (unhedged) with the expected FX move. Risk-off adds a premium (start: +1 pt, journalled
   in the model fingerprint). This builds on S10's JCI earnings yield vs SBN and P29's index
   test, so one function serves the index and the single names.
-- [ ] **S18 Undervalued dividend (IDN).** This upgrades the `dividend` screen from "high
+- [x] **S18 Undervalued dividend (IDN).** This upgrades the `dividend` screen from "high
   trailing yield" to "the dividend return beats the hurdle and is safe":
   - Expected return = forward yield + sustainable growth (ROE × retention, capped at nominal
     GDP growth).
@@ -333,7 +336,7 @@ idx-method V2/V3 land):
   - Banks are judged on dividends with their prudential floor; holding companies are skipped.
   - Replay: quarter ends with trailing data, 3-month forward return, placebo as for the other
     screens.
-- [ ] **S19 Undervalued growth, GARP (IDN).** Growth at a price the hurdle allows:
+- [x] **S19 Undervalued growth, GARP (IDN).** Growth at a price the hurdle allows:
   - Reverse DCF: the 10-year earnings growth the price implies at the S17 hurdle, against the
     name's realised growth (5-year `ni_ttm` and `cfo_ttm` CAGR) and consensus
     (`consensus.json`). A candidate is a name whose implied growth is clearly below both.
@@ -343,13 +346,13 @@ idx-method V2/V3 land):
   - Replay uses realised growth only: there is **no consensus history** (16 snapshots since
     2026-08-30, none holding consensus). The consensus leg is live and journalled, and is
     judged once about 24 months of monthly snapshots exist (fetcher ask below).
-- [ ] **S20 One ranked list.** S15, S18 and S19 plus the S16 tilt and S17 hurdle make one list
+- [x] **S20 One ranked list.** S15, S18 and S19 plus the S16 tilt and S17 hurdle make one list
   per market. Each row carries style, expected IDR return, margin over the hurdle, drivers,
   risks, entry (`entry.py`, with P21's bound), costs (`costs.py`) and layer-5 fit (held or not,
   add or trim from financer). It extends the output contract with an `out/candidates/*.json`,
   a brief section *Undervalued candidates* and the top 5 in the Telegram summary. Within a
   style, rank by margin; across styles, never by a mixed score.
-- [ ] **S20a Position sizing.** Each candidate that passes gets an IDR amount, top-down:
+- [x] **S20a Position sizing.** Each candidate that passes gets an IDR amount, top-down:
   - **Budget.** The asset-class budget is the layer-5 `target_pct` minus `current_pct` for that
     country × stocks stance, times the portfolio value from financer. An `underweight` or
     `avoid` stance gives no new money, only trims of names already held.
@@ -364,7 +367,7 @@ idx-method V2/V3 land):
     a trim line instead of an add.
   - Sizes are journalled with the model fingerprint and paper-tracked (S13) before real money.
     The per-name and sector caps are starting values for the user to confirm.
-- [ ] **S21 US single stocks.** The same engines on sec-edgar data, in USD and then IDR:
+- [x] **S21 US single stocks.** The same engines on sec-edgar data, in USD and then IDR:
   - Fundamentals from `xbrl_as_of(d)` (point in time by filed date, 122.7M facts; one scan
     per screen through `usfin serve` `/screen` or a read-only open).
   - Prices from `alpaca_bar_adjusted_lookup(sym)`, identity across renames from
@@ -430,6 +433,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S13 paper tracking (P30-paper, F4-ops) | done | 2026-10-23 | `93a154d`, F4 this commit | 18 paper, 4 F4 paper | benchmark 60/40 live: 674 weeks scored (2012 → 2025-01-03), cumulative +102.1%, annualised 5.6%, vol 9.8%; worst week 2020-03-20 −8.7%; 94 stale weeks after 2025-01-03 (SBN leg on dbnomics `idn.rate.long`, ends 2024-12; JCI frozen 2026-09-30); one model segment from 2026-10-23, nothing scored yet |
 | S14 launchd + doctor header + README (F4-ops) | done | 2026-10-23 | F4 this commit | 31 ops | jobs rendered, not installed; live `run --no-send`: brief opens with *Data health* (9 of 14 sources fresh: sec-edgar, jquantster, idx-method stale, satudatascape missing, idxscape PHEI absent) and *Paper track*; rerun brief byte-identical; `regime --check --no-send`: neutral, dollar flat, unchanged |
 | S20 one ranked undervalued list (F5-undervalued, with P35-sector-tilt, P36-dividend-value, P37-garp, P38-sizing) | done | 2026-10-27 | F5 this commit | 20 F5 run (1114 total) | IDN, bars 2026-10-09, hurdle 13.74%: dividend **passed** (t 2.79, p 0.004), pool 35, 3 names (BMRI +2.51pt, JPFA +1.12, BBNI +0.84), 3 dropped on cost (ELSA, CPIN, STAA); GARP **failed** (t 1.30), pool 30, no names; tilt **failed** (t −1.11): no shift, caps 5; IDN stocks neutral 60.4% → 60.4%, so budget IDR 0, no adds; 6 trim lines (BMRI and BBNI to the 5% cap, AMRT, KLBF, PWON, SRSN below the hurdle); rerun byte-identical |
+| S21 US single stocks (F6-us-stocks, with P39-us-stocks) | done | 2026-10-27 | F6 this commit | 19 F6 run (1133 total) | `out/candidates/USA.json` written: **no names**, sec-edgar's Alpaca tables are empty on this Mac (universe 0, pool 0), so dividend and GARP both *insufficient sample (0 quarters)*; USA hurdle 8.92% in IDR, IDN 13.61% binds (a US name needs 14.45% in USD), JISDOR IDR 18,116; no tilt (S16 is IDN only), caps 5; USA stocks overweight 0% → 5%, so budget IDR 1.48M of IDR 29.6M; nothing held in USD; journal 1 `undervalued` per run, 0 rows; rerun byte-identical |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`
@@ -471,6 +475,49 @@ market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidat
   is larger than the thin dividend margins (0.3–0.5pt) and drops half the list; F6 should
   judge costs at the sized tranche once a budget exists. Sizes stay paper until the weight
   bands are confirmed (Open questions).
+
+**F6-us-stocks notes (2026-10-27).** `assist run` adds the US list beside IDN's
+(`Sources.undervalued_us` = `undervalued.gather_live_usa`). Each market is gathered and assembled
+on its own, so a failing US store leaves IDN alone (stale input "undervalued USA candidates
+failed: …").
+- **Inputs.** `undervalued.us_inputs` turns P39's `us_stocks.run` output into F5's inputs, all
+  in IDR at JISDOR on the last session:
+  - `expected_pt` is the unhedged IDR return.
+  - The payload hurdle is the **binding** one, the higher of the USA and IDN hurdles. That way
+    `margin_pt` (P39's lower margin) still equals expected − hurdle.
+  - The hurdle drivers name the binding market and the USD return it needs. Each row's drivers
+    carry its USD price and its margins over both hurdles.
+- **No tilt**, as the slice notes say. There is no margin shift and the default caps apply.
+  sec-edgar has no SIC, so in sizing every name is its own sector bucket (as in P39's
+  `select`); otherwise all US names would share one 5-name cap.
+- **Costs.** P21's model is IDX-only (board lots, tick grid, sales tax), so a hand-set
+  `US_COST` stands in, and it is journalled in `config.market`:
+  - 10bp broker fee and 25bp IDR↔USD conversion per side;
+  - 2bp half spread;
+  - P21's square-root impact.
+  A tranche below one share is `below_one_lot`. There are no entry levels, because P21 reads
+  idx-method history.
+- **Sizing.** P38's `size` from the USA stocks stance budget (target − current × the financer
+  total). P38 counts IDX lots of 100, so it sees the IDR price ÷ 100 and its shares are divided
+  back by 100. That is exact for whole shares.
+  - At today's portfolio the budget is IDR 1.48M (about US$82), and so is the 5% per-name cap.
+    Whole shares will therefore rule out most US$2bn+ names once there are candidates.
+    Fractional shares would need a schema change (`shares` is an integer).
+- **Layer 5.** financer's 2,155 holding lines are all IDR, and layer 5's `classify` maps no USD
+  line. So nothing is held in the US list and no trim is called.
+- **Brief.** Each market block now also prints its hurdle drivers and, under each style table,
+  one line per row with its drivers after the first. The USA block follows IDN's.
+- **Live** (`--no-send`, about 2 m 20 s). See the Progress row. sec-edgar is still at `51c36ec`
+  (P39's read), with `alpaca_*` empty here; that is P39's finding 1, and nothing new disagreed
+  with the slice notes.
+  - USA.json was byte-identical across three reruns.
+  - IDN.json changed once, between the first and second runs after the model fingerprint
+    changed, and was identical after that. The cause was not pinned down: either journal
+    history read by the IDN rules, or a sibling store updating mid-session.
+  - Fixed here: F5 read `t` and `p` from the verdict dict, but `placebo.Verdict.to_dict` names
+    them `score_t` and `p_value`, so every style's `t` and `p` were null. They are filled now
+    (IDN dividend t 2.79, p 0.004).
+  - Still open: F5's suggestion to judge costs at the sized tranche. IDN's budget is 0 today.
 
 **F4-ops notes (2026-10-23).**
 - **Brief.** `brief.render` takes optional `health` and `paper` lines:

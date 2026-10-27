@@ -1,6 +1,6 @@
 """Undervalued candidates, one ranked list per market (PLAN S20, with S20a's sizes).
 
-Assembles, for one market (IDN today):
+Assembles, for one market (IDN; USA from F6, see *US* below):
 
 - **Styles.** P36's dividend screen and P37's GARP screen (S15's value screen plugs in as one
   more entry in `UndervaluedInputs.screens`). A style whose placebo verdict failed is listed with
@@ -27,6 +27,22 @@ The payload (`schema/candidates.schema.json`) carries the run's model fingerprin
 the tilt yaml's sha256, the hurdle constants, the sizing caps and each screen's CONFIG, so the
 journal records exactly what produced each row. Context only: nothing here moves a stance, and
 sizes stay paper until the user confirms the weight bands (PLAN Open questions).
+
+**US (F6, PLAN S21).** `us_inputs` turns P39's `us_stocks.run` results into the same inputs, all
+in IDR at the USD/IDR rate of the last session (JISDOR):
+- `expected_pt` is the unhedged IDR return and the hurdle is the **binding** one, the higher of
+  the USA and IDN hurdles in IDR, so `margin_pt` (P39's lower of the two margins) is still
+  expected − hurdle. Prices, `med_value_60d` and sizes are in IDR; the USD price is a driver.
+- **No tilt** (S16 is IDN only): no margin shift, default caps. sec-edgar has no SIC, so every
+  name is its own sector bucket in sizing too (`sector_buckets=False`), as in P39's `select`.
+- **Costs**: P21's model is IDX's (board lots, tick grid, IDX tax), so a hand-set `US_COST`
+  stands in: broker fee and the IDR↔USD conversion per side, a large-cap half spread and P21's
+  square-root impact; a tranche below one share is `below_one_lot`. No entry levels (P21 reads
+  idx-method history): entry basis `none`.
+- **Sizing**: P38's `size` counts IDX board lots of `costs.LOT` shares; a US lot is one share, so
+  sizing sees the price ÷ `LOT` and its shares are divided back (`lot`, exact for whole shares).
+- **Layer 5**: financer's lines are all IDR; `holdings_from(..., "USA")` maps none (layer 5's
+  `classify` maps no USD line), so nothing is held and no trim is called.
 """
 
 from __future__ import annotations
@@ -41,8 +57,8 @@ from typing import Any
 
 import jsonschema
 
+from assist.candidates import costs, sizing
 from assist.candidates import hurdle as hurdle_mod
-from assist.candidates import sizing
 from assist.layers.portfolio import classify
 from assist.layers.types import DISCLAIMER, SCHEMA_DIR, Regime
 
@@ -51,14 +67,19 @@ __all__ = [
     "SCHEMA_VERSION",
     "STYLES",
     "TRANCHE_IDR",
+    "US_COST",
     "UndervaluedInputs",
     "assemble",
     "gather_live",
+    "gather_live_usa",
     "holdings_from",
     "load_out",
     "telegram_lines",
     "top",
+    "us_cost",
+    "us_inputs",
     "validator",
+    "vol_1y",
     "write",
 ]
 
@@ -68,6 +89,13 @@ STYLES = ("dividend_value", "garp")  # S15's "value" joins here once idx-method 
 TRANCHE_IDR = 10e6  # P21's DEFAULT_ORDER: the tranche costs and capacity are judged at
 DROP_FLAGS = ("over_participation", "below_one_lot")
 OUT_DIR = "candidates"
+# Hand-set US execution costs (bps of notional), in the config of every USA row
+US_COST = {
+    "broker_bps": 10.0,  # per side, an IDR retail broker's US commission
+    "fx_bps": 25.0,  # per side, IDR→USD in and USD→IDR out
+    "half_spread_bps": 2.0,  # per side, a US$2bn+ name with US$20m+ a day
+}
+US_TILT_NOTE = "none for USA (S16 is IDN only)"
 
 
 @dataclass
@@ -85,6 +113,10 @@ class UndervaluedInputs:
     order_idr: float = TRANCHE_IDR
     stale_inputs: tuple[str, ...] = ()
     sources: tuple[str, ...] = ()
+    tilt_note: str | None = None  # why there is no tilt, when that is by design (USA)
+    lot: int = costs.LOT  # shares per board lot (US: 1)
+    sector_buckets: bool = True  # False: every name its own sector (no SIC in sec-edgar)
+    config: dict = field(default_factory=dict)  # market-specific settings for the journal
 
 
 @cache
@@ -99,12 +131,13 @@ def validator() -> jsonschema.Draft202012Validator:
 # ---------------- layer 5 ----------------
 
 
-def holdings_from(statements: Iterable[Any]) -> dict[str, float]:
-    """IDR held per IDX ticker over financer's latest statements (layer 5's own mapping)."""
+def holdings_from(statements: Iterable[Any], market: str = "IDN") -> dict[str, float]:
+    """IDR held per ticker of `market`'s stocks over financer's latest statements (layer 5's own
+    mapping)."""
     out: dict[str, float] = {}
     for s in statements:
         for h in s.holdings:
-            if classify(h.symbol, h.currency) == ("IDN", "stocks"):
+            if classify(h.symbol, h.currency) == (market, "stocks"):
                 out[h.symbol] = out.get(h.symbol, 0.0) + float(h.value)
     return dict(sorted(out.items()))
 
@@ -112,10 +145,10 @@ def holdings_from(statements: Iterable[Any]) -> dict[str, float]:
 # ---------------- assembly ----------------
 
 
-def _tilt_view(t: Mapping | None) -> tuple[bool, dict[str, dict], dict]:
+def _tilt_view(t: Mapping | None, note: str | None = None) -> tuple[bool, dict[str, dict], dict]:
     """(passed, sector → applied {margin_shift_pt, cap}, the payload's tilt block)."""
     if not t:
-        return False, {}, {"passed": False, "verdict": "no tilt (unavailable)",
+        return False, {}, {"passed": False, "verdict": note or "no tilt (unavailable)",
                            "fingerprint": None, "sectors": []}
     passed = bool(t.get("passed"))
     sectors = {}
@@ -173,7 +206,7 @@ def _drivers(style: str, r: Mapping, hurdle_pt: float | None, shift: float) -> l
             out.append(line)
     if r.get("bank"):
         out.append("bank (BANK_FLOOR)")
-    return out
+    return out + list(r.get("extra_drivers") or [])
 
 
 def _style(style: str, res: Mapping, sectors: Mapping[str, dict],
@@ -183,7 +216,9 @@ def _style(style: str, res: Mapping, sectors: Mapping[str, dict],
     out = {"style": style, "passed": passed,
            "verdict": verdict.get("reason") or res.get("blocked") or (
                "passed" if passed else "failed"),
-           "t": verdict.get("t"), "p": verdict.get("p"), "quarters": res.get("quarters"),
+           # placebo.Verdict.to_dict names them score_t and p_value
+           "t": verdict.get("t", verdict.get("score_t")),
+           "p": verdict.get("p", verdict.get("p_value")), "quarters": res.get("quarters"),
            "pool": int(res.get("pool") or 0), "rows": [], "dropped": []}
     if not passed:
         return out
@@ -255,19 +290,23 @@ def _size_rows(styles: Sequence[dict], factors: Mapping[str, Mapping],
     return out
 
 
-def config(tilt_fp: str | None, caps: Mapping | None, screens: Mapping[str, Mapping]) -> dict:
+def config(tilt_fp: str | None, caps: Mapping | None, screens: Mapping[str, Mapping],
+           market: Mapping | None = None) -> dict:
     """What the payload and every journalled row carry besides the model fingerprint."""
-    return {"tilt_fingerprint": tilt_fp, "hurdle": dict(hurdle_mod.CONFIG),
-            "sizing": sizing.config(caps), "tranche_idr": TRANCHE_IDR,
-            "round_trips_per_year": 1,
-            "screens": {k: dict(v.get("fingerprint") or {}) for k, v in sorted(screens.items())}}
+    out = {"tilt_fingerprint": tilt_fp, "hurdle": dict(hurdle_mod.CONFIG),
+           "sizing": sizing.config(caps), "tranche_idr": TRANCHE_IDR,
+           "round_trips_per_year": 1,
+           "screens": {k: dict(v.get("fingerprint") or {}) for k, v in sorted(screens.items())}}
+    if market:
+        out["market"] = dict(market)
+    return out
 
 
 def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
              portfolio_value_idr: float | None, holdings: Mapping[str, float],
              regime: Regime | str | None, fingerprint: str) -> dict:
     """Pure: one market's inputs + its stocks stance + layer 5 → the candidates payload."""
-    t_passed, sectors, tilt_block = _tilt_view(inp.tilt)
+    t_passed, sectors, tilt_block = _tilt_view(inp.tilt, inp.tilt_note)
     order = [s for s in STYLES if s in inp.screens] + sorted(set(inp.screens) - set(STYLES))
     styles = [_style(s, inp.screens[s], sectors, inp.plan, inp.order_idr) for s in order]
     any_passed = any(s["passed"] for s in styles)
@@ -277,6 +316,12 @@ def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
     caps = ({"sector_names": {k: v["cap"] for k, v in sectors.items()}} if t_passed else None)
     held = {k: float(v) for k, v in holdings.items() if v and v > 0}
     rows = _size_rows(styles, inp.factors, held, ranking)
+    scale = costs.LOT // inp.lot  # P38 counts IDX lots: a lot of `inp.lot` shares is one share
+    for r in rows:
+        if scale != 1 and r.get("price"):
+            r["price"] = r["price"] / scale
+        if not inp.sector_buckets:
+            r["sector"] = r.get("sector") or r["symbol"]
     plan = {k: {"levels": v.get("levels")} for k, v in inp.plan.items()}
     st = stance or {}
     sz = sizing.size(rows, st, portfolio_value_idr or 0.0, held if any_passed else {},
@@ -297,8 +342,10 @@ def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
             if z is not None and sized_style.get(sym) == s["style"]:
                 r["action"] = "add"
                 r["size"] = {"idr": z.idr, "reason": z.reason,
-                             "tranches": [{"day": x.day, "idr": x.idr, "shares": x.shares,
-                                           "limit": x.limit} for x in z.tranches]}
+                             "tranches": [{"day": x.day, "idr": x.idr,
+                                           "shares": x.shares // scale,
+                                           "limit": None if x.limit is None
+                                           else x.limit * scale} for x in z.tranches]}
             else:
                 r["action"] = "hold" if r["held"] else "watch"
                 if z is not None:
@@ -307,9 +354,9 @@ def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
     stale = list(inp.stale_inputs)
     for s in order:
         stale += inp.screens[s].get("stale_inputs") or []
-    if inp.tilt is None:
+    if inp.tilt is None and inp.tilt_note is None:
         stale.append("sector tilt (unavailable): no shift, default caps")
-    else:
+    elif inp.tilt is not None:
         stale += inp.tilt.get("stale_inputs") or []
     hurdles = [inp.screens[s] for s in order if inp.screens[s].get("hurdle_pt") is not None]
     h = hurdles[0] if hurdles else {}
@@ -334,7 +381,7 @@ def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
                              for x in trims],
                    "excluded": [{"symbol": a, "reason": b} for a, b in excluded],
                    "fingerprint": sz.fingerprint},
-        "config": config(tilt_block["fingerprint"], caps, inp.screens),
+        "config": config(tilt_block["fingerprint"], caps, inp.screens, inp.config),
         "stale_inputs": list(dict.fromkeys(stale)),
         "sources": list(dict.fromkeys([*inp.sources, "financer"])) or ["idx-method"],
         "disclaimer": DISCLAIMER,
@@ -476,3 +523,134 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
         plan=plan, stale_inputs=tuple(stale),
         sources=(SOURCE, "dbnomics", "idxscape", "bisfetcher", "bps-looker", "worldbankscape",
                  "sec-edgar"))
+
+
+# ---------------- US (F6, PLAN S21) ----------------
+
+
+def us_cost(row: Mapping, order_idr: float) -> costs.Cost | None:
+    """One US tranche of about `order_idr` (row in IDR: price, med_value_60d, vol_1y): whole
+    shares, `US_COST` fees and spread, P21's square-root impact. None without a price."""
+    price = row.get("price")
+    if not price or price <= 0:
+        return None
+    mv, vol = row.get("med_value_60d"), row.get("vol_1y")
+    shares = int(order_idr // price)
+    notional = shares * price
+    flags = []
+    if not mv or mv <= 0:
+        flags.append("no_turnover")
+    participation = notional / mv if mv and mv > 0 else None
+    if participation is not None and participation > costs.MAX_PARTICIPATION:
+        flags.append("over_participation")
+    if shares == 0:
+        flags.append("below_one_lot")
+    fee = US_COST["broker_bps"] + US_COST["fx_bps"]
+    return costs.Cost(price=float(price), shares=shares, notional=float(notional),
+                      fee_buy_bps=fee, fee_sell_bps=fee, spread_bps=US_COST["half_spread_bps"],
+                      impact_bps=costs.impact_bps(notional, mv, vol), amihud_impact_bps=None,
+                      participation=participation, flags=tuple(flags))
+
+
+def vol_1y(bars: Sequence[Any], as_of: date, sessions: int = 252) -> float | None:
+    """Annualised stdev of daily log returns over the last `sessions` bars up to `as_of`
+    (P39's split-adjusted engine bars); None with fewer than half a year of returns."""
+    from math import log, sqrt
+    from statistics import stdev
+
+    px = [b.price for b in bars if b.date <= as_of and b.price and b.price > 0][-(sessions + 1):]
+    rets = [log(b / a) for a, b in zip(px, px[1:], strict=False)]
+    if len(rets) < sessions // 2:
+        return None
+    return stdev(rets) * sqrt(costs.YEAR)
+
+
+def _us_row(r: Mapping, fx: float | None) -> dict:
+    price = r.get("price")
+    out = {**r, "expected_pt": r.get("expected_idr_pt"),
+           "price": None if fx is None or price is None else price * fx}
+    usd, m_usa, m_idn = r.get("expected_usd_pt"), r.get("margin_usa_pt"), r.get("margin_idn_pt")
+    extra = []
+    if price is not None:
+        extra.append(f"US${price:,.2f} a share" + ("" if fx is None else f" at IDR {fx:,.0f}"))
+    if usd is not None:
+        line = f"expected {usd:.2f}% in USD"
+        if m_usa is not None and m_idn is not None:
+            line += f"; margin vs USA hurdle {m_usa:+.2f}pt, vs IDN {m_idn:+.2f}pt"
+        extra.append(line)
+    out["extra_drivers"] = extra
+    return out
+
+
+def us_inputs(results: Mapping[str, Mapping], *, idr_per_usd: float | None,
+              vols: Mapping[str, float | None], bar_date: date | None,
+              stale: Sequence[str] = (), sources: Sequence[str] = ()) -> UndervaluedInputs:
+    """P39's `us_stocks.run` output per style → the USA list's inputs, in IDR (see *US* above).
+    `vols` is `vol_1y` per symbol; `idr_per_usd` the rate on the last session."""
+    fx = idr_per_usd
+    screens: dict[str, dict] = {}
+    factors: dict[str, dict] = {}
+    for style, res in results.items():
+        usa, idn = res.get("hurdle_pt"), res.get("idn_hurdle_pt")
+        binding = None if usa is None or idn is None else max(usa, idn)
+        drivers = list(res.get("hurdle_drivers") or [])
+        if binding is not None:
+            drivers.append(f"binding: {'IDN' if idn >= usa else 'USA'} {binding:.2f}% in IDR"
+                           + ("" if res.get("usd_bar_pt") is None
+                              else f" (a US name needs {res['usd_bar_pt']:.2f}% in USD)"))
+        ranking = [_us_row(r, fx) for r in res.get("ranking") or []]
+        screens[style] = {**res, "hurdle_pt": binding, "hurdle_drivers": drivers,
+                          "ranking": ranking,
+                          "candidates": [_us_row(r, fx) for r in res.get("candidates") or []]}
+        for r in ranking:
+            med = r.get("med_value")
+            factors[r["symbol"]] = {
+                "price": r["price"], "vol_1y": vols.get(r["symbol"]),
+                "med_value_60d": None if fx is None or med is None else med * fx}
+    syms = sorted({c["symbol"] for s in screens.values() for c in s["candidates"]})
+    plan = {s: {"levels": None, "cost": us_cost(factors.get(s) or {}, TRANCHE_IDR)}
+            for s in syms}
+    st = list(stale)
+    if fx is None:
+        st.append("USD/IDR rate (JISDOR) unavailable: no US price in IDR, no name judged")
+    return UndervaluedInputs(
+        market="USA", bar_date=bar_date, screens=screens, tilt=None, factors=factors, plan=plan,
+        stale_inputs=tuple(st), sources=tuple(sources), tilt_note=US_TILT_NOTE, lot=1,
+        sector_buckets=False,
+        config={"idr_per_usd": fx, "us_cost": dict(US_COST), "lot": 1,
+                "sector_buckets": "one per name (no SIC in sec-edgar)"})
+
+
+def _idr_per_usd(as_of: date) -> tuple[float | None, list[str]]:
+    """JISDOR on or before `as_of` (idxscape, read-only), as P29 reads it."""
+    from assist.layers import candidates_foreign as cf
+
+    rd = cf._Reader(cf.default_sources(), as_of, [cf.JISDOR])
+    rows = rd.series(cf.JISDOR)
+    if not rows:
+        return None, [*rd.stale, f"{cf.JISDOR.label}: no data"]
+    stale = list(rd.stale)
+    if (as_of - rows[-1].date).days > cf.JISDOR.max_age_days:
+        stale.append(f"{cf.JISDOR.label} (stale, last {rows[-1].date})")
+    return rows[-1].value, stale
+
+
+def gather_live_usa(day: date, regime: Regime | str | None) -> UndervaluedInputs:
+    """USA's inputs from the real stores (read-only): P39's universe, bars and point-in-time XBRL
+    from sec-edgar, both styles against the P34 USA and IDN hurdles on the last session under
+    this run's regime, and JISDOR for IDR. A missing store is a stale input, never a crash."""
+    from assist.candidates import us_stocks
+    from assist.candidates.hurdle import hurdles
+
+    data = us_stocks.load(as_of=day)
+    lasts = [b[-1].date for b in data.bars.values() if b]
+    as_of = max(lasts) if lasts else day
+    usa, idn = hurdles(["USA", "IDN"], as_of, regime)
+    results = {s: us_stocks.run(s, data, as_of=as_of, usa=usa, idn=idn) for s in us_stocks.STYLES}
+    fx, stale = _idr_per_usd(as_of)
+    syms = {r["symbol"] for res in results.values() for r in res["ranking"]}
+    vols = {s: vol_1y(data.bars.get(s) or [], as_of) for s in sorted(syms)}
+    return us_inputs(results, idr_per_usd=fx, vols=vols, bar_date=max(lasts) if lasts else None,
+                     stale=[*data.stale, *stale],
+                     sources=tuple(dict.fromkeys(["sec-edgar", "idxscape", *usa.sources,
+                                                  *idn.sources])))
