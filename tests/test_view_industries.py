@@ -91,8 +91,7 @@ def _ranked_out(tmp_path) -> Path:
 def test_index_is_one_ranked_table_after_every_filter(tmp_path):
     o = _ranked_out(tmp_path)
     body = _get(o, "/industries").body
-    assert body.count("<table") == 1 and "<h2>Keuangan</h2>" not in body
-    assert "Big / mid / small" not in body
+    assert "<table" not in body and "Big / mid / small" not in body
     data = json.loads(_get(o, "/industries.json").body)
     scores = [r["score"] for r in data["rows"]]
     assert all(x > 0 for x in scores) and scores == sorted(scores, reverse=True)
@@ -114,13 +113,24 @@ def test_index_is_one_ranked_table_after_every_filter(tmp_path):
         assert sc[cat] < math.log(0.8) and min(sc["valuation"], sc["profitability"]) > 0
         assert peers_overall(every[sym]) > 0
     assert every["EEEE"]["score_industry"]["solvency"] is None  # no D/E: fails the floor too
-    order = re.findall(r"<strong>(\w+)</strong>", body)
-    assert order == [r["symbol"] for r in data["rows"]]
-    assert order == ["AAAA"]
-    assert "1 of 20 names across 1 industries" in body
-    aaaa = re.search(r"<strong>AAAA</strong>.*?</tr>", body, re.S).group(0)
-    assert '<a href="/industries/bank2">' in aaaa and ">big<" in aaaa
-    assert 'class="num score pos"' in aaaa and "PBV<br>" in body
+    assert [r["symbol"] for r in data["rows"]] == ["AAAA"]
+    assert data["industries"][0]["symbols"] == ["AAAA"]
+    assert "1 of 20 names in 1 of 1 industries pass" in body
+    card = re.search(r'<section class="card chart industry" data-industry="bank2">.*?</section>',
+                     body, re.S).group(0)
+    assert '<h2><a href="/industries/bank2">Keuangan</a></h2>' in card
+    assert "1 of 20 names pass" in card
+    svg = re.search(r"<svg.*?</svg>", card, re.S).group(0)
+    for lb in ("PE", "PBV", "Yield %", "ROE %", "D/E"):
+        assert f">{lb}</text>" in svg
+    assert ">Industry median</text>" in svg and ">Industry avg (Stockbit)</text>" in svg
+    assert ">AAAA</tspan>" in svg and "· big</tspan>" in svg
+    assert svg.count('class="hit"') == 5 * 3  # 5 panels × (median, average, AAAA)
+    assert svg.count('class="median"') == 5  # every metric has a median here
+    # AAAA: PE 5 vs 10 and D/E 0.45 vs 0.5 better (blue); every bar of it is blue
+    assert "AAAA PE: 5.00, 0.50× the industry median (10.00)" in svg
+    assert 'class="neg"' not in svg and svg.count('class="pos"') == 5
+    assert ">» 11.00</text>" in svg  # Stockbit's average PE: past the axis end (10), cut
 
 
 def test_index_stars_and_twin(out):

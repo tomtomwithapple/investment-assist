@@ -523,18 +523,18 @@ host, launchd for the server, changes to how stances or candidates are built.
   - **Output.** `out/industries/IDN.json` from `assist run` (never fails the run) or
     `assist industries`; `/industries` and `/industries/<id>` (chart of four small multiples,
     bar vs the industry, ring vs the sector, plus a table per category; S20 names starred).
-  - **Ranked list (2026-10-27).** `/industries` is one table, not cards per sector and cap
-    tier: the names whose overall score (mean of the four category scores vs the industry
-    median, on the log scale) is above 1×, that have a dividend score and that are not red
-    (below 1×) on valuation or profitability, sorted most positive first. Names at or below 1×,
-    unscored names, names without a dividend score (no yield, or no industry median yield) and
-    names red or unscored on valuation or profitability (no score counts as below 1×) are left
-    out there and so are names whose PE or PBV is not below
-    the industry median or is missing: the valuation score averages four ratios, so a cheap P/S
-    or EV/EBITDA could hide a dear PE or PBV (CNMA, PE 2.2× its median, scored blue). The table
-    shows PE and PBV with their multiple of the median; the values match idx-method's
-    `factors.json`. Dividend and solvency need at least 0.8× the industry median (below, or no
-    score, is left out). Every name stays on its `/industries/<id>` page.
+  - **Ranked list (2026-10-27).** `/industries` shows one chart per industry, no table: per
+    metric (PE, PBV, yield, ROE, D/E) the industry median and Stockbit's industry average as
+    grey bars, then a bar per passing name (blue better than the median, red worse), the
+    median dashed; the industry of the best overall score first, its names in that order. A
+    name passes when its overall score (mean of the four category scores vs the industry
+    median, log scale) and its valuation and profitability scores are above 1×, its dividend
+    and solvency scores are at least 0.8×, and its PE and PBV are each below the industry
+    median; a missing score or value fails. PE and PBV are checked on their own because the
+    valuation score averages four ratios, so a cheap P/S or EV/EBITDA could hide a dear PE or
+    PBV (CNMA, PE 2.2× its median, scored blue); the values match idx-method's
+    `factors.json`. 41 of 836 names in 18 industries pass on 2026-10-26. Every name stays on
+    its `/industries/<id>` page.
 
 **F7-ui notes (2026-10-27).** Per-slice details are in `docs/results/P40-ui-shell.md` …
 `P44-ui-paper.md`.
