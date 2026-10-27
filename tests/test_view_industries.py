@@ -61,20 +61,20 @@ def test_nav_has_industries(out):
 
 
 def _ranked_out(tmp_path) -> Path:
-    """bank2 has the yields a median needs; EEEE beats the median but has no yield, FFFF and GGGG
-    beat it overall but are red on valuation and profitability, HHHH has no
-    profitability score."""
+    """bank2's medians are pinned by eleven identical names (PE 10, PBV 2, yield 5, ROE 10), so
+    each test name is scored against those: AAAA passes every filter, the others fail one."""
     c = Comparison(date=date(2026, 10, 26))
-    rows = {
-        "AAAA": {PE: 3.0, PBV: 0.6, YIELD: 14.0, ROE: 30.0, MKTCAP: 100e12},  # above, yield
-        "BBBB": {PE: 10.0, PBV: 2.0, YIELD: 5.0, ROE: 10.0, MKTCAP: 5e12},  # below
+    rows = {f"M{i:03d}": {PE: 10.0, PBV: 2.0, YIELD: 5.0, ROE: 10.0, MKTCAP: 1e12}
+            for i in range(11)}  # level: overall 1.00x
+    rows.update({
+        "AAAA": {PE: 5.0, PBV: 1.0, YIELD: 10.0, ROE: 20.0, MKTCAP: 100e12},  # passes
         "CCCC": {PE: 20.0, PBV: 4.0, YIELD: 1.0, ROE: 5.0, MKTCAP: 0.5e12},  # below
-        "DDDD": {PE: 4.5, PBV: 0.9, YIELD: 12.0, ROE: 25.0, MKTCAP: 1e12},  # just below overall
-        "EEEE": {PE: 2.0, PBV: 0.5, ROE: 30.0, MKTCAP: 2e12},  # above, no yield
-        "FFFF": {PE: 9.0, PBV: 1.8, YIELD: 30.0, ROE: 60.0, MKTCAP: 3e12},  # red valuation
-        "GGGG": {PE: 2.0, PBV: 0.4, YIELD: 40.0, ROE: 20.0, MKTCAP: 4e12},  # red profit
-        "HHHH": {PE: 2.5, PBV: 0.5, YIELD: 35.0, MKTCAP: 6e12},  # above, no profitability
-    }
+        "EEEE": {PE: 5.0, PBV: 1.0, ROE: 20.0, MKTCAP: 2e12},  # no yield
+        "FFFF": {PE: 15.0, PBV: 3.0, YIELD: 20.0, ROE: 40.0, MKTCAP: 3e12},  # red valuation
+        "GGGG": {PE: 5.0, PBV: 1.0, YIELD: 20.0, ROE: 5.0, MKTCAP: 4e12},  # red profitability
+        "HHHH": {PE: 5.0, PBV: 1.0, YIELD: 20.0, MKTCAP: 6e12},  # no profitability
+        "IIII": {PE: 2.0, PBV: 3.0, YIELD: 20.0, ROE: 20.0, MKTCAP: 7e12},  # dear PBV
+    })
     for sym, vals in rows.items():
         c.ratios[sym], c.industry[sym], c.sectors[sym] = dict(vals), "bank2", "Keuangan"
         c.names[sym] = f"{sym} Tbk"
@@ -84,7 +84,7 @@ def _ranked_out(tmp_path) -> Path:
     return o
 
 
-def test_index_is_one_table_of_names_above_1x_with_a_dividend_score(tmp_path):
+def test_index_is_one_ranked_table_after_every_filter(tmp_path):
     o = _ranked_out(tmp_path)
     body = _get(o, "/industries").body
     assert body.count("<table") == 1 and "<h2>Keuangan</h2>" not in body
@@ -101,14 +101,17 @@ def test_index_is_one_table_of_names_above_1x_with_a_dividend_score(tmp_path):
     assert every["GGGG"]["score_industry"]["profitability"] < 0 < peers_overall(every["GGGG"])
     assert every["HHHH"]["score_industry"]["profitability"] is None
     assert peers_overall(every["HHHH"]) > 0
+    iiii = every["IIII"]["score_industry"]
+    assert min(iiii["valuation"], iiii["profitability"], iiii["dividend"]) > 0
+    assert every["IIII"]["dev_industry"]["pbv"] > 0  # blue on valuation, but PBV above median
+    assert all(r["dev_industry"][k] < 0 for r in data["rows"] for k in ("pe", "pbv"))
     order = re.findall(r"<strong>(\w+)</strong>", body)
     assert order == [r["symbol"] for r in data["rows"]]
-    assert order[0] == "AAAA" and not {"BBBB", "CCCC", "EEEE", "FFFF", "GGGG",
-                                                 "HHHH"} & set(order)
-    assert f"{len(order)} of 8 names across 1 industries" in body
+    assert order == ["AAAA"]
+    assert "1 of 18 names across 1 industries" in body
     aaaa = re.search(r"<strong>AAAA</strong>.*?</tr>", body, re.S).group(0)
     assert '<a href="/industries/bank2">' in aaaa and ">big<" in aaaa
-    assert 'class="num score pos"' in aaaa
+    assert 'class="num score pos"' in aaaa and "PBV<br>" in body
 
 
 def test_index_stars_and_twin(out):

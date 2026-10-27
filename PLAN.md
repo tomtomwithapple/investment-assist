@@ -525,8 +525,11 @@ host, launchd for the server, changes to how stances or candidates are built.
     (below 1×) on valuation or profitability, sorted most positive first. Names at or below 1×,
     unscored names, names without a dividend score (no yield, or no industry median yield) and
     names red or unscored on valuation or profitability (no score counts as below 1×) are left
-    out there (solvency may be red or unscored); every name stays on its `/industries/<id>`
-    page.
+    out there (solvency may be red or unscored), and so are names whose PE or PBV is not below
+    the industry median or is missing: the valuation score averages four ratios, so a cheap P/S
+    or EV/EBITDA could hide a dear PE or PBV (CNMA, PE 2.2× its median, scored blue). The table
+    shows PE and PBV with their multiple of the median; the values match idx-method's
+    `factors.json`. Every name stays on its `/industries/<id>` page.
 
 **F7-ui notes (2026-10-27).** Per-slice details are in `docs/results/P40-ui-shell.md` …
 `P44-ui-paper.md`.

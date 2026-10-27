@@ -155,10 +155,17 @@ def overall(s: Mapping) -> float | None:
 
 LEVEL = 0.005  # a score within this of 0 (about 1.00x) is drawn level, neither blue nor red
 NO_RED = ("valuation", "profitability")  # the ranked list drops a name red or unscored in these
+CHEAPER = (("pe", "PE"), ("pbv", "PBV"))  # ... and one not below its industry median on each
 
 
 def _red(score: Any) -> bool:
     v = _f(score)
+    return v is not None and v <= -LEVEL
+
+
+def _cheaper(dev: Any) -> bool:
+    """A lower-is-better deviation that is below the industry median by more than `LEVEL`."""
+    v = _f(dev)
     return v is not None and v <= -LEVEL
 
 
@@ -172,23 +179,28 @@ def rows(p: Mapping) -> list[dict]:
     """The names above their industry median overall (score > 0, i.e. more than 1x) that have a
     dividend score and are not red (below 1x) on valuation or profitability, most positive first,
     ties by market cap. Left out: names at or below 1x overall, unscored names, names without a
-    dividend score (no yield, or no industry median yield) and names red or unscored (shown as -)
-    in a `NO_RED` category, which count as below 1x."""
+    dividend score (no yield, or no industry median yield), names red or unscored (shown as -)
+    in a `NO_RED` category, which count as below 1x, and names whose PE or PBV is not below the
+    industry median (or missing), so that a cheap P/S or EV/EBITDA cannot hide a dear PE or PBV
+    in the valuation mean."""
     out = []
     for ind in p.get("industries") or []:
         ind = _d(ind)
         for s in ind.get("stocks") or []:
             s = _d(s)
             score = overall(s)
-            cats = _d(s.get("score_industry"))
+            cats, dev = _d(s.get("score_industry")), _d(s.get("dev_industry"))
             if (score is None or score <= 0 or _f(cats.get("dividend")) is None
-                    or any(_f(cats.get(c)) is None or _red(cats.get(c)) for c in NO_RED)):
+                    or any(_f(cats.get(c)) is None or _red(cats.get(c)) for c in NO_RED)
+                    or not all(_cheaper(dev.get(k)) for k, _ in CHEAPER)):
                 continue
             out.append({"symbol": s.get("symbol"), "name": s.get("name"),
                         "industry": ind.get("id"), "industry_label": ind.get("label"),
                         "sector": s.get("sector") or ind.get("sector"), "tier": s.get("tier"),
                         "mktcap": s.get("mktcap"), "score": score,
-                        "score_industry": dict(_d(s.get("score_industry")))})
+                        "score_industry": dict(cats),
+                        "values": {k: _d(s.get("values")).get(k) for k, _ in CHEAPER},
+                        "dev_industry": {k: dev.get(k) for k, _ in CHEAPER}})
     out.sort(key=lambda r: (-r["score"], -(_f(r["mktcap"]) or 0), str(r["symbol"])))
     return out
 
@@ -202,12 +214,16 @@ def index(app: web.App, _m: re.Match[str]) -> web.View:
     stars = starred(app.out_dir)
     table = rows(p)
     head = "".join(f'<th class="num">{esc(str(c.get("label", "")))}</th>' for c in cats)
+    head += "".join(f'<th class="num">{esc(lb)}<br><span class="muted">vs ind</span></th>'
+                    for _, lb in CHEAPER)
     trs = []
     for i, r in enumerate(table, 1):
         sym = str(r["symbol"] or "")
         star = f' <span class="muted">★ {esc(", ".join(stars[sym]))}</span>' if sym in stars else ""
         href = "/industries/" + quote(str(r["industry"] or ""), safe="")
         cells = "".join(_score_cell(r["score_industry"].get(c.get("key"))) for c in cats)
+        cells += "".join(f'<td class="num">{esc(value(k, r["values"].get(k)))}<span class="dev">'
+                         f'{esc(times(r["dev_industry"].get(k)))}</span></td>' for k, _ in CHEAPER)
         trs.append(f'<tr><td class="num muted">{i}</td><td><strong>{esc(sym)}</strong>{star}'
                    f'<span class="dev">{esc(str(r["name"] or ""))}</span></td>'
                    f'<td><a href="{href}">{esc(str(r["industry_label"] or r["industry"]))}</a></td>'
@@ -217,14 +233,17 @@ def index(app: web.App, _m: re.Match[str]) -> web.View:
     n = sum(len(_d(i).get("stocks") or []) for i in p["industries"])
     body = (f'{STYLE}<div class="peers"><h1>Industries</h1>{_caption(p)}'
             f'<p class="muted">{len(table)} of {n} names across {len(p["industries"])} industries '
-            "score above their industry median overall, have a dividend score and are above 1× on"
-            " valuation and profitability; the rest (at or below 1× overall, nothing to score, no"
-            " dividend yield to compare, or red or - on valuation or profitability, which counts "
-            "as below 1×) are left out. A score is the multiple of the industry median (above 1× "
-            "is better: cheaper, higher yield, more profitable, more solvent); overall is the "
-            "mean of the category scores on a log scale. Sorted by overall score, most positive "
-            "first. Solvency can still be red or -. An industry has no name in the data, so it is"
-            " labelled by its largest names; open one for the chart and every name.</p>"
+            "score above their industry median overall, have a dividend score, are above 1× on "
+            "valuation and profitability, and have a PE and a PBV each below their industry "
+            "median; the rest are left out (at or below 1× overall, nothing to score, no dividend"
+            " yield to compare, red or - on valuation or profitability, which counts as below 1×,"
+            " or a PE or PBV at or above the median or missing). The PE and PBV columns give the "
+            "value and its multiple of the industry median, so a cheap P/S or EV/EBITDA cannot "
+            "hide a dear PE or PBV. A score is the multiple of the industry median (above 1× is "
+            "better: cheaper, higher yield, more profitable, more solvent); overall is the mean "
+            "of the category scores on a log scale. Sorted by overall score, most positive first."
+            " Solvency can still be red or -. An industry has no name in the data, so it is "
+            "labelled by its largest names; open one for the chart and every name.</p>"
             f'<section class="card"><table class="ranked"><tr><th class="num">#</th><th>Name</th>'
             f'<th>Industry</th><th>Tier</th><th class="num">Mkt cap</th>'
             f'<th class="num">Overall</th>{head}</tr>{"".join(trs)}</table></section></div>')
