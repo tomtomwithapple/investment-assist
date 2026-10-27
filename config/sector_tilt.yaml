@@ -1,0 +1,49 @@
+# PLAN S16 (P35): IDN macro sector tilt. Hand-set; read by src/assist/candidates/tilt.py.
+# The sha256 of this file is the tilt's fingerprint: any edit segments the journal.
+#
+# Every driver is a direction in -1..+1 (positive = the reading is "up", as named below):
+#   direction = clip((reading - center) / scale, -1, +1)
+# A sector's tilt = clip(sum(sensitivity x direction), -1, +1). A missing driver adds 0 and is
+# named stale. Sensitivities are signed: + means the sector gains when the driver is up.
+
+drivers:
+  coal:          {center: 50, scale: 25}    # worldbankscape COAL_AUS commodity score (live only)
+  nickel:        {center: 50, scale: 25}    # worldbankscape NICKEL commodity score (live only)
+  palm_oil:      {center: 50, scale: 25}    # worldbankscape PALM_OIL commodity score (live only)
+  china:         {center: 50, scale: 2}     # dbnomics cn.pmi.mfg level (50 = no change)
+  bi_rate:       {center: 0, scale: 0.75}   # bisfetcher WS_CBPOL.M.ID change over 6 months, pt (+ = hiking)
+  real_yield:    {center: 2.0, scale: 2.0}  # BI rate minus CPI y/y, pt (+ = tight)
+  credit_gap:    {center: 0, scale: 5}      # bisfetcher WS_CREDIT_GAP.Q.ID.P.A.C, pt of GDP (+ = credit above trend)
+  usd_idr:       {center: 0, scale: 3}      # JISDOR % change over 3 months, else -(REER % change) (+ = IDR weaker)
+  inflation:     {center: 0, scale: 1.0}    # CPI y/y change over 3 months, pt (bps-looker, else dbnomics)
+  consumer:      {center: 100, scale: 1.5}  # dbnomics idn.cci (OECD, long-term average = 100)
+  regime:        {center: 0, scale: 1}      # layer 0: risk_on +1, neutral 0, risk_off -1
+
+# IDX-IC sectors, named as in idx-method data/sectors.json and factor_universe.
+# Plantations (CPO) sit in Barang Konsumen Primer under IDX-IC; nickel and metals in Barang Baku.
+sectors:
+  Energi:                       {coal: 0.5, china: 0.2, usd_idr: 0.2, regime: 0.1}
+  Barang Baku:                  {nickel: 0.35, china: 0.3, usd_idr: 0.15, regime: 0.1}
+  Barang Konsumen Primer:       {palm_oil: 0.25, inflation: -0.2, consumer: 0.2, usd_idr: -0.1}
+  Barang Konsumen Non-Primer:   {consumer: 0.4, inflation: -0.2, usd_idr: -0.2, bi_rate: -0.2, regime: 0.1}
+  Keuangan:                     {bi_rate: -0.3, real_yield: -0.2, credit_gap: -0.2, regime: 0.3}
+  Properti & Real Estat:        {bi_rate: -0.4, real_yield: -0.3, consumer: 0.2, regime: 0.1}
+  Infrastruktur:                {bi_rate: -0.3, real_yield: -0.2, usd_idr: -0.1, regime: 0.2}
+  Perindustrian:                {china: 0.2, consumer: 0.2, bi_rate: -0.2, regime: 0.2}
+  Teknologi:                    {regime: 0.5, real_yield: -0.3, bi_rate: -0.2}
+  Kesehatan:                    {usd_idr: -0.3, inflation: -0.1, consumer: 0.1, regime: -0.1}
+  Transportasi & Logistik:      {usd_idr: -0.3, consumer: 0.2, china: 0.1, regime: 0.2}
+
+# How the tilt is applied (PLAN S16, S20), only after the replay verdict passes.
+apply:
+  margin_pt_per_tilt: -2.0   # required-margin shift = -2 pt x tilt (tailwind needs less discount)
+  cap_base: 5                # sector cap = round(5 + 2 x tilt) names, kept in 3..7
+  cap_per_tilt: 2
+  cap_bounds: [3, 7]
+
+# Quarterly replay over factor_series (P33).
+replay:
+  k: 3                      # sectors on each side: top-k tilt vs bottom-k tilt
+  min_names: 5              # names a sector needs in a quarter to have a return
+  min_spread: 0.05          # top minus bottom tilt below this: the quarter makes no call
+  max_bar_gap_days: 10      # a name needs a bar this close to each quarter end
