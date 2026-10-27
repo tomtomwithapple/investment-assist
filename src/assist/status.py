@@ -2,27 +2,28 @@
 
 The doctor says how new each store is; this adds whether the jobs that fill it ran. Jobs are
 found in ~/Library/LaunchAgents by the repo path in their WorkingDirectory or arguments, and their
-state comes from `launchctl list` (pid, last exit). Everything is read-only. The page is served by
-the stdlib HTTP server on 127.0.0.1 only and rebuilt on every load; Ctrl-C stops it.
+state comes from `launchctl list` (pid, last exit). Everything is read-only. The page is /status
+(twin /status.json, alias /json) in the `assist.web` shell, on 127.0.0.1 only and rebuilt on every
+load; Ctrl-C stops it.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import html
-import json
 import plistlib
 import re
 import subprocess
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from assist import doctor
+from assist import doctor, web
 
-HOST = "127.0.0.1"
-DEFAULT_PORT = 8790
+HOST = web.HOST
+DEFAULT_PORT = web.DEFAULT_PORT
 AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
 TEMPLATES_DIR = doctor.REPO / "launchd"
 SELF = doctor.REPO.name
@@ -192,7 +193,7 @@ BAD = {"missing", "locked", "error", "failed", "down"}
 
 def _chip(state: str) -> str:
     tone = "good" if state in GOOD else "bad" if state in BAD else "warn"
-    return f'<span class="chip {tone}">{html.escape(state)}</span>'
+    return web.chip(state, tone)
 
 
 def _jobs_table(jobs: list[Job]) -> str:
@@ -224,7 +225,7 @@ def _probes_table(s: doctor.SourceStatus) -> str:
             "<th>Age / max</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>")
 
 
-def render(snap: Snapshot) -> str:
+def body(snap: Snapshot) -> str:
     by_repo: dict[str, list[Job]] = {}
     for j in snap.jobs:
         by_repo.setdefault(j.repo, []).append(j)
@@ -245,84 +246,34 @@ def render(snap: Snapshot) -> str:
     summary = ", ".join(f"{v} {k}" for k, v in counts.items() if v)
     failing = sum(j.state in BAD for j in snap.jobs)
     jobs_line = f"{len(snap.jobs)} jobs, {failing} failed or down"
-    return PAGE.format(built=snap.built.strftime("%Y-%m-%d %H:%M:%S"), summary=summary,
-                       jobs=jobs_line, cards="\n".join(cards))
+    return (f'<h1>investment-assist status</h1>\n<p class="muted">Built '
+            f'{snap.built.strftime("%Y-%m-%d %H:%M:%S")} (reload to refresh) · sources: '
+            f'{summary} · {jobs_line} ·\nread-only · <a href="/status.json">json</a></p>\n'
+            + "\n".join(cards))
 
 
-PAGE = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Assist Status</title>
-<style>
-:root {{ --bg:#f7f7f5; --card:#fff; --fg:#1d1d1b; --muted:#6b6b66; --line:#e3e3df;
-  --good:#1f7a3f; --good-bg:#e3f3e8; --warn:#8a5a00; --warn-bg:#fbf0d9;
-  --bad:#b3261e; --bad-bg:#fbe4e2; }}
-@media (prefers-color-scheme: dark) {{ :root {{ --bg:#141413; --card:#1e1e1c; --fg:#ececea;
-  --muted:#9a9a94; --line:#33332f; --good:#7bd69a; --good-bg:#1d3a27; --warn:#f0c46a;
-  --warn-bg:#3d2f12; --bad:#ff8a80; --bad-bg:#47201d; }} }}
-body {{ margin:0; padding:24px 16px; background:var(--bg); color:var(--fg);
-  font:14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
-main {{ max-width:980px; margin:0 auto; }}
-h1 {{ font-size:20px; margin:0 0 4px; }}
-h2 {{ font-size:15px; margin:0; }}
-.card {{ background:var(--card); border:1px solid var(--line); border-radius:10px;
-  padding:14px 16px; margin:12px 0; overflow-x:auto; }}
-.card header {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }}
-.muted {{ color:var(--muted); }}
-.chip {{ font-size:12px; padding:1px 8px; border-radius:999px; white-space:nowrap; }}
-.good {{ color:var(--good); background:var(--good-bg); }}
-.warn {{ color:var(--warn); background:var(--warn-bg); }}
-.bad {{ color:var(--bad); background:var(--bad-bg); }}
-table {{ width:100%; border-collapse:collapse; margin-top:10px; }}
-th, td {{ text-align:left; padding:5px 8px 5px 0; border-top:1px solid var(--line);
-  vertical-align:top; }}
-th {{ font-weight:500; color:var(--muted); font-size:12px; }}
-code {{ font-size:12px; }}
-.tail {{ color:var(--muted); font-size:12px; word-break:break-word; white-space:pre-wrap;
-  margin:2px 0 0; }}
-</style></head>
-<body><main>
-<h1>investment-assist status</h1>
-<p class="muted">Built {built} (reload to refresh) · sources: {summary} · {jobs} ·
-read-only · <a href="/json">json</a></p>
-{cards}
-</main></body></html>
-"""
+def render(snap: Snapshot) -> str:
+    return web.layout(TITLE, body(snap), "/status")
+
+
+TITLE = "Assist Status"
 
 
 # ---------------- server ----------------
 
 
+def page(app: web.App, m: re.Match[str]) -> web.View:
+    snap = app.health()
+    return web.View(TITLE, body(snap), snap.to_json())
+
+
+ROUTES: list[web.Route] = [(re.compile(r"^/status$"), page), *web.ROUTES]
+
+
 def serve(build: Callable[[], Snapshot], port: int = DEFAULT_PORT,
-          ready: Callable[[ThreadingHTTPServer], None] | None = None) -> None:
-    """Serve the page on 127.0.0.1 until interrupted. `ready` gets the server (tests)."""
-
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802 - http.server's name
-            path = self.path.split("?")[0]
-            if path not in ("/", "/json"):
-                self.send_error(404)
-                return
-            snap = build()
-            if path == "/json":
-                body, ctype = json.dumps(snap.to_json(), indent=2), "application/json"
-            else:
-                body, ctype = render(snap), "text/html; charset=utf-8"
-            data = body.encode()
-            self.send_response(200)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(data)
-
-        def log_message(self, fmt: str, *args) -> None:
-            pass
-
-    server = ThreadingHTTPServer((HOST, port), Handler)
-    if ready is not None:
-        ready(server)
-    try:
-        server.serve_forever()
-    finally:
-        server.server_close()
+          ready: Callable[[ThreadingHTTPServer], None] | None = None, *,
+          app: web.App | None = None) -> None:
+    """Serve the UI with this page as /status on 127.0.0.1 until interrupted (`build` is the
+    app's health). `ready` gets the server (tests)."""
+    app = web.App(health=build) if app is None else dataclasses.replace(app, health=build)
+    web.serve(app, port, ready, routes=ROUTES)

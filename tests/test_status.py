@@ -150,7 +150,7 @@ def test_render_shows_sources_jobs_and_escapes(setup):
     assert "prefers-color-scheme: dark" in page
 
 
-def test_serve_on_localhost_html_json_404(setup):
+def test_serve_on_localhost_status_json_404(setup):
     snap = _snapshot(setup)
     started = threading.Event()
     box = {}
@@ -168,13 +168,17 @@ def test_serve_on_localhost_html_json_404(setup):
     assert host == "127.0.0.1"
     try:
         base = f"http://127.0.0.1:{port}"
-        page = httpx.get(base + "/", trust_env=False)
+        page = httpx.get(base + "/status", trust_env=False)
         assert page.status_code == 200 and "com.x.broken" in page.text
+        assert "<title>Assist Status</title>" in page.text
+        assert 'href="/status.json"' in page.text
+        assert "Heuristic, not investment advice." in page.text
         assert page.headers["cache-control"] == "no-store"
-        data = httpx.get(base + "/json", trust_env=False).json()
-        assert data["built"] == "2026-10-27T09:00:00"
-        assert {s["name"] for s in data["sources"]} == {"fetcher", "gone"}
-        assert any(j["state"] == "failed" for j in data["jobs"])
+        for twin in ("/status.json", "/json"):
+            data = httpx.get(base + twin, trust_env=False).json()
+            assert data["built"] == "2026-10-27T09:00:00"
+            assert {s["name"] for s in data["sources"]} == {"fetcher", "gone"}
+            assert any(j["state"] == "failed" for j in data["jobs"])
         assert httpx.get(base + "/nope", trust_env=False).status_code == 404
     finally:
         server.shutdown()
