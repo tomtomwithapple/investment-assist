@@ -417,3 +417,181 @@ slices:
     notes: >-
       Daily regime job sends Telegram only on regime change. Install script mirrors bisfetcher's launchd/install.sh.
       Learned 2026-10-23: paper.py has a `python -m assist.paper` entry; wire it as `assist paper` and into the weekly job.
+
+  # ---------------- phase F: undervalued stocks, macro-weighted (PLAN S16–S21, added 2026-10-27) ----
+  # User decisions (PLAN Phase F): quarterly review, so replays score the 3-month forward return
+  # from quarter ends; foreign returns unhedged in IDR; S20a sizes positions. Every new screen or
+  # tilt is context only until its replay beats the placebo (assist.eval.placebo); a failing
+  # verdict names no candidate and sizes nothing. S15 (idx-method V2/V3) and S22 (JP/KR/TW
+  # prices) are not in this run.
+  - id: P33-factor-series
+    title: "Phase F: idx-method factor_series adapter (10y daily price/mktcap, quarterly fundamentals, point in time)"
+    depends_on: [S1-contracts, P19-factors]
+    owns: ["src/assist/sources/idxmethod_series.py", "tests/test_idxmethod_series.py",
+           "tests/fixtures/idxmethod_series/**", "docs/results/P33-factor-series.md"]
+    accept: uv run pytest -q tests/test_idxmethod_series.py && uv run ruff check src/assist/sources/idxmethod_series.py
+    estimate: 1.5
+    notes: >-
+      Read ../idx-method/store/data/stockbiter.db READ-ONLY (SQLite, use doctor.open_sqlite or the
+      base.py helper). factor_series(item, date, ...) holds daily price and mktcap from 2016-10 and
+      quarterly cfo_ttm, equity, net_debt, ni_ttm, op_income_ttm, roa, roce, total_assets,
+      total_debt from 2016-12 (checked 2026-10-27; inspect the real schema for the symbol and
+      value column names). Give: per-symbol daily (date, price, mktcap); per-symbol quarterly
+      fundamentals with an `available` date = period end + screens.LAG_DAYS (120) until
+      idx-method V3 says otherwise, and a `known_at(sym, d)` that returns only rows available by d;
+      derived point-in-time multiples PE = mktcap/ni_ttm, PBV = mktcap/equity, P/CFO,
+      EV/EBIT = (mktcap+net_debt)/op_income_ttm (None when the denominator <= 0); quarter-end
+      dates. Also dividends from the stockbiter.db `dividends` table (symbol, seq, ex, value, ccy)
+      if present, else IdxMethodStocks.dividends(). Delisted symbols kept. Missing db or table ->
+      SourceUnavailable. Live: count symbols, date span per item, multiples for 3 names
+      (e.g. BBCA, TLKM, ADRO) into docs/results.
+
+  - id: P34-hurdle
+    title: "PLAN S17: IDR hurdle per market (local 10Y + ERP + CRP, unhedged FX haircut, risk-off premium)"
+    depends_on: [S1-contracts, P16-dbnomics, P32-phei, P27-fx-idr, P29-candidates-foreign, P8-regime]
+    owns: ["src/assist/candidates/hurdle.py", "tests/test_hurdle.py", "docs/results/P34-hurdle.md"]
+    accept: uv run pytest -q tests/test_hurdle.py && uv run ruff check src/assist/candidates/hurdle.py
+    estimate: 1.5
+    notes: >-
+      One function serves index and single names: hurdle(market, as_of, regime, ...) -> Hurdle
+      (required annual IDR return, components, drivers, stale). IDN: SBN 10Y from PHEI igsyc_point
+      (P32), else dbnomics idn.rate.long flagged proxy, plus US implied ERP + IDN CRP (same series
+      and fallback as layers/rules/idn_stocks._hurdle; do not edit that file, reuse its constants
+      by import). Foreign (USA first, also JPN/EMU/AUS/SGP where data exist): local 10Y + US ERP +
+      that country's CRP, and the unhedged IDR view: expected_fx_move from
+      layers/candidates_foreign (adverse 5% quantile, else UIP) applied with fx.unhedged_idr_return;
+      no hedge cost (user decision 2026-10-27). Risk-off regime adds +1.0 pt; constants in a
+      module-level dict that is part of the model fingerprint. Also margin(expected_idr, hurdle,
+      sector_shift_pt=0) -> pt. Live: today's IDN and USA hurdles with components.
+
+  - id: P35-sector-tilt
+    title: "PLAN S16: IDN macro sector tilt (hand-set sensitivity table, drivers from layers 0-2, quarterly placebo replay)"
+    depends_on: [P33-factor-series, P8-regime, P1-worldbankscape, P12-bisfetcher, P16-dbnomics, P11-bps, P13-idx-flows]
+    owns: ["src/assist/candidates/tilt.py", "config/sector_tilt.yaml", "tests/test_tilt.py",
+           "tests/fixtures/tilt/**", "docs/results/P35-sector-tilt.md"]
+    accept: uv run pytest -q tests/test_tilt.py && uv run ruff check src/assist/candidates/tilt.py
+    estimate: 2.5
+    notes: >-
+      config/sector_tilt.yaml: per IDX-IC sector (names as in idx-method data/sectors.json), signed
+      sensitivities to drivers: commodity trend (worldbankscape commodity scores / Pink Sheet:
+      coal, nickel, palm oil), China momentum (dbnomics cn.*), BI rate direction and IDN real yield
+      (bisfetcher WS_CBPOL.M.ID, CPI), credit gap (WS_CREDIT_GAP), USD/IDR trend (JISDOR, WS_EER
+      REER), consumer (CPI, dbnomics CCI IDN), regime (risk_on/neutral/risk_off from layers/regime).
+      Each driver is a direction in -1..+1 with its reading as a driver string; tilt = clipped
+      weighted sum in -1..+1 per sector. Outputs SectorTilt(sector, tilt, drivers, stale) and two
+      mappings PLAN fixes: required-margin shift = -2 pt x tilt (tailwind needs less discount) and
+      sector cap = round(5 + 2 x tilt) names (3..7). Point in time: every driver read as of d.
+      Replay: quarter ends over the factor_series history (P33), sector return = mktcap-weighted
+      3-month forward return of the sector's names; observations = top-tilt minus bottom-tilt
+      sector returns; assist.eval.placebo.evaluate with shuffled tilts as control. Verdict and
+      fingerprint (hash of the yaml) returned; a failed verdict means S20 applies no shift and the
+      default cap 5. Live: today's tilts and the verdict into docs/results.
+
+  - id: P36-dividend-value
+    title: "PLAN S18: undervalued dividend screen (Gordon return vs hurdle, safety gates, own-yield history, quarterly placebo)"
+    depends_on: [P33-factor-series, P34-hurdle, P20-screens]
+    owns: ["src/assist/candidates/dividend_value.py", "tests/test_dividend_value.py",
+           "tests/fixtures/dividend_value/**", "docs/results/P36-dividend-value.md"]
+    accept: uv run pytest -q tests/test_dividend_value.py && uv run ruff check src/assist/candidates/dividend_value.py
+    estimate: 2.5
+    notes: >-
+      Expected return = forward yield (trailing 12m dividends by ex-date / price, screens.
+      trailing_dividend) + sustainable growth g = ROE x (1 - payout), capped at IDN nominal GDP
+      growth (default 8%, constant in the fingerprint). Safety gates: payout < 90% of ni_ttm,
+      dividends covered by cfo_ttm, paid in >= 4 of the last 5 years, no cut in the last 2 years
+      unless ni_ttm recovered; existing screens.passes_gates / passes_quality / BANK_FLOOR reused;
+      holding companies skipped if the sector map marks them. Cheapness leg: yield percentile vs
+      the name's own 5-year yield range. Output per name: expected IDR return, margin over the
+      P34 IDN hurdle, legs, gate reasons. Replay at quarter ends with point-in-time data from P33,
+      3-month forward return, top vs bottom quintile by margin, placebo via evaluate as
+      screens.evaluate_screen does. Failed verdict -> ranking reported, no candidate. Live: verdict,
+      pool size, top 10 into docs/results.
+
+  - id: P37-garp
+    title: "PLAN S19: undervalued growth (GARP) screen: reverse DCF vs realised and consensus growth, quality, quarterly placebo"
+    depends_on: [P33-factor-series, P34-hurdle, P20-screens]
+    owns: ["src/assist/candidates/garp.py", "tests/test_garp.py", "tests/fixtures/garp/**",
+           "docs/results/P37-garp.md"]
+    accept: uv run pytest -q tests/test_garp.py && uv run ruff check src/assist/candidates/garp.py
+    estimate: 2.5
+    notes: >-
+      Reverse DCF: the constant 10-year earnings growth that makes PV of earnings (payout from
+      dividends, terminal at the hurdle less nominal GDP growth) equal mktcap, discounted at the
+      P34 IDN hurdle; solve by bisection. Compare with realised growth (5-year CAGR of ni_ttm and
+      cfo_ttm from P33, both positive at both ends) and consensus EPS growth (IdxMethodStocks.
+      consensus(), live only). Candidate leg: gap = min(realised, consensus) - implied, in pt.
+      Cross-check PEG on forward PE. Quality gates: ROE or roce stable or rising over 3 years,
+      cfo_ttm / ni_ttm >= 0.8, equity dilution < 5%/yr (mktcap/price share-count proxy), plus the
+      existing quality floor. Replay at quarter ends with realised growth only (no consensus
+      history exists, PLAN S19), 3-month forward return, placebo as P36. Journal the consensus leg
+      but never let it rank in a replayed verdict. Live: verdict, pool, top 10.
+
+  - id: P38-sizing
+    title: "PLAN S20a: position sizing (stance budget, margin/vol split, per-name, sector and liquidity caps, tranches, trims)"
+    depends_on: [P21-cost-entry, P4-portfolio, P10-stance]
+    owns: ["src/assist/candidates/sizing.py", "tests/test_sizing.py", "docs/results/P38-sizing.md"]
+    accept: uv run pytest -q tests/test_sizing.py && uv run ruff check src/assist/candidates/sizing.py
+    estimate: 1.5
+    notes: >-
+      Pure function: size(candidates, stance, portfolio_value_idr, holdings, regime, caps) ->
+      list[Size(symbol, idr, tranches, reason)] plus trims. Budget = (target_pct - current_pct) of
+      that country x stocks stance x portfolio value; underweight/avoid -> no adds, only trims of
+      held names that fail or have negative margin. Split ∝ margin_pt / vol_1y (margin <= 0 ->
+      excluded). Caps: 5% of portfolio per name, sector cap from input (default 5 names), each
+      tranche under costs.py's participation limit (cost_for drop flags over_participation,
+      below_one_lot), leftover budget redistributed once then left unspent. Tranches from
+      entry.entry_plan, laddered when regime is risk_off. Caps are a dict in the fingerprint
+      (starting values pending the user's weight bands, PLAN Open questions). Unit tests only; no
+      live store needed, but record a worked example in docs/results.
+
+  - id: F5-undervalued
+    kind: integration
+    title: "PLAN S20: one ranked undervalued list per market (S16-S19 + sizing) into out/candidates, brief, Telegram, journal"
+    depends_on: [P35-sector-tilt, P36-dividend-value, P37-garp, P38-sizing, F4-ops]
+    owns: ["src/assist/layers/undervalued.py", "src/assist/pipeline.py", "src/assist/brief.py",
+           "src/assist/cli.py", "schema/candidates.schema.json", "tests/test_run_undervalued.py",
+           "PLAN.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 2
+    notes: >-
+      Assemble per market: dividend (P36) and GARP (P37) rows (S15 value plugs in later), the S16
+      tilt shifts each row's required margin and sets sector caps only if its verdict passed,
+      rank within style by margin (never a mixed score across styles), entry and costs as
+      layers/candidates.assemble does, layer-5 fit (held or not) and P38 sizes from the IDN stocks
+      stance. Write out/candidates/IDN.json against schema/candidates.schema.json (disclaimer and
+      sources required, like the stance contract), a brief section "Undervalued candidates", top 5
+      in the Telegram summary, journal every row with the model fingerprint (include the tilt yaml
+      hash, hurdle constants, sizing caps). Screens whose verdict failed are listed as such with no
+      names. Live `assist run --no-send`: counts per style, verdicts, sizes into PLAN.md Progress.
+
+  - id: P39-us-stocks
+    title: "PLAN S21: US single stocks: sec-edgar XBRL point in time + Alpaca adjusted bars; dividend and GARP engines in USD -> IDR"
+    depends_on: [P34-hurdle, P36-dividend-value, P37-garp, P2-usfin-fred]
+    owns: ["src/assist/sources/usfin_stocks.py", "src/assist/candidates/us_stocks.py",
+           "tests/test_us_stocks.py", "tests/fixtures/usfin_stocks/**", "docs/results/P39-us-stocks.md"]
+    accept: uv run pytest -q tests/test_us_stocks.py && uv run ruff check src/assist/sources/usfin_stocks.py src/assist/candidates/us_stocks.py
+    estimate: 3
+    notes: >-
+      Read ../sec-edgar first: docs/plans/us-fin-ingest.md (xbrl_as_of, statement view, /screen,
+      ticker_norm, edgar_company SIC) and docs/plans/alpaca-market-data.md (alpaca_bar_adjusted_lookup,
+      alpaca_security_lookup, alpaca_corp_action, alpaca_universe). usfin serve (127.0.0.1:8660)
+      holds the DuckDB lock: prefer its HTTP ?format=csv endpoints, else a read-only open when no
+      lock is held (as sources/usfin.Usfin does). Never scan the whole alpaca_bar_adjusted view;
+      use the lookup macros per symbol. Universe: operating companies, >= US$2bn mktcap, >= US$20m
+      median daily value. Fundamentals point in time by filed date (net income, equity, operating
+      cash flow, shares, dividends per share). Run the P36 and P37 engines with US inputs and the
+      P34 USA hurdle in unhedged IDR; a US name must beat the IDN hurdle in IDR too. Peers by SIC.
+      Replay at quarter ends, placebo as P36. Live: universe size, verdicts, top 10 per style.
+
+  - id: F6-us-stocks
+    kind: integration
+    title: "PLAN S21 fan-in: US undervalued list in out/candidates/USA.json, brief and journal"
+    depends_on: [F5-undervalued, P39-us-stocks]
+    owns: ["src/assist/layers/undervalued.py", "src/assist/pipeline.py", "src/assist/brief.py",
+           "tests/test_run_us_stocks.py", "PLAN.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 1
+    notes: >-
+      Add USA to the undervalued assembly: out/candidates/USA.json, a US block in the brief
+      section, sizing from the USA stocks stance budget in IDR. No sector tilt for the US yet
+      (S16 is IDN only): default caps. Tick S16-S21 in PLAN.md and record live numbers.
