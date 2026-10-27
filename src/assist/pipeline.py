@@ -47,6 +47,20 @@ Ops (S14): the brief opens with the doctor (`Sources.doctor`) and carries P30's 
 (`Sources.paper`, read after this run is journalled); either one failing becomes a line in its
 section, never a failed run. `regime_check` is the daily job: layer 0 against the last
 journalled regime, Telegram (kind `regime`) only when the state or dollar direction changed.
+
+Phase F (F5, PLAN S20) adds the undervalued list when `Sources.undervalued` is set
+(`Sources.default` sets it to `undervalued.gather_live`):
+
+    P36 dividend + P37 GARP screens ─┐
+    P35 sector tilt (if it passed) ──┼─ undervalued.assemble ─→ out/candidates/IDN.json
+    P21 entry + costs, layer 5 ──────┤        (+ P38 sizes from the IDN stocks stance)
+    IDN stocks stance (this run) ────┘        └→ brief *Undervalued candidates*, Telegram top 5
+
+It runs after the stances are built (sizing reads the IDN stocks stance) and never fails the
+run: an error becomes a stale input and no file. Each run journals one `undervalued` record per
+market (verdicts, sizing, config) and one `undervalued_row` record per row, each carrying the
+config (tilt yaml hash, hurdle constants, sizing caps, screen CONFIGs) beside the model
+fingerprint. Nothing here moves a stance.
 """
 
 from __future__ import annotations
@@ -65,7 +79,7 @@ from assist import brief, journal, notify, stance
 from assist.eval.placebo import Verdict
 from assist.fx import FxEdge, fx_edge
 from assist.layers import candidates_foreign as cf
-from assist.layers import portfolio, regime
+from assist.layers import portfolio, regime, undervalued
 from assist.layers.bonds import IdnBonds, idn_bonds
 from assist.layers.bonds import gated_stance as bonds_gate
 from assist.layers.bonds import rule_verdict as bonds_verdict
@@ -232,7 +246,8 @@ class Sources:
     skips Indonesia's layers 2–4 (phase B), `foreign` None the foreign layers (phase C).
     `doctor(day)` (a `doctor.SourceStatus` list) and `paper(day, journal)` (a
     `paper.PaperReport`) feed the brief's *Data health* and *Paper track* sections (S14); None
-    leaves the section out."""
+    leaves the section out. `undervalued(day, regime)` gives the inputs of the S20 list; None
+    writes no `out/candidates/`."""
 
     worldbankscape: Any
     fred: Any
@@ -241,6 +256,7 @@ class Sources:
     foreign: ForeignSources | None = None
     doctor: Callable[[date], Sequence[Any]] | None = None
     paper: Callable[[date, journal.Journal], Any] | None = None
+    undervalued: Callable[[date, Regime], undervalued.UndervaluedInputs] | None = None
 
     @classmethod
     def default(cls) -> Sources:
@@ -250,7 +266,8 @@ class Sources:
 
         return cls(worldbankscape=WorldbankscapeSource.from_config(), fred=FredSource(),
                    financer=FinancerSource.from_config(), idn=IdnSources.default(),
-                   foreign=ForeignSources.default(), doctor=live_doctor, paper=live_paper)
+                   foreign=ForeignSources.default(), doctor=live_doctor, paper=live_paper,
+                   undervalued=undervalued.gather_live)
 
 
 def live_doctor(day: date) -> list[Any]:
@@ -779,13 +796,16 @@ def _journal_idn(j: journal.Journal, layers: Layers, stances: Mapping, fp: str,
 
 
 def message(stances: Sequence[Mapping], *, regime: str | None, day: date,
-            brief_path: Path | None) -> str:
+            brief_path: Path | None, undervalued: Sequence[Mapping] = ()) -> str:
     """The Telegram text: every home-market stance plus every non-neutral one elsewhere, so the
-    message stays one Telegram part; the rest is counted and left to the brief."""
+    message stays one Telegram part; the rest is counted and left to the brief. `undervalued`
+    (candidates payloads) adds each market's style verdicts and its top 5 names."""
     shown = [s for s in stances if s.get("subject") == HOME or s.get("stance") != "neutral"]
     hidden = len(stances) - len(shown)
     text = notify.summary(shown, regime=regime, day=day)
-    notes = []
+    notes = list(_undervalued_lines(undervalued))
+    if notes:
+        notes.append("")
     if hidden:
         notes.append(f"{hidden} neutral stance(s) elsewhere not shown")
     if brief_path is not None:
@@ -794,6 +814,64 @@ def message(stances: Sequence[Mapping], *, regime: str | None, day: date,
         body, _, tail = text.rpartition("\n\n")  # keep the disclaimer last
         text = "\n".join([body, "", *notes, "", tail])
     return text
+
+
+def _undervalued_lines(payloads: Sequence[Mapping]) -> list[str]:
+    return undervalued.telegram_lines(payloads) if payloads else []
+
+
+# ---------------- undervalued (F5) ----------------
+
+
+def _undervalued(day: date, sources: Sources, layers: Layers, stances: Sequence[Mapping],
+                 fp: str, paths: Paths) -> tuple[list[dict], list[str]]:
+    """The S20 list per market → (payloads written to out/candidates, stale inputs). Never
+    raises: the stances are already written."""
+    if sources.undervalued is None:
+        return [], []
+    try:
+        inp = sources.undervalued(day, layers.regime)
+        try:
+            held = undervalued.holdings_from(sources.financer.statements())
+        except SourceUnavailable:
+            held = {}
+        st = next((s for s in stances if (s["subject"], s["asset"]) == (inp.market, "stocks")),
+                  None)
+        value = layers.weights.total_idr if layers.weights is not None else None
+        payload = undervalued.assemble(inp, day=day, stance=st, portfolio_value_idr=value,
+                                       holdings=held, regime=layers.regime, fingerprint=fp)
+        payload = journal.jsonable(payload)
+        errors = list(undervalued.validator().iter_errors(payload))
+        if errors:
+            raise ValueError(f"candidates payload fails the schema: {errors[0].message}")
+    except Exception as e:  # noqa: BLE001 - a candidates failure never fails the run
+        first = str(e).splitlines()[0][:160] if str(e) else ""
+        return [], [f"undervalued candidates failed: {type(e).__name__}: {first}"]
+    undervalued.write(payload, paths.out)
+    return [payload], []
+
+
+def _journal_undervalued(j: journal.Journal, payloads: Sequence[Mapping], fp: str,
+                         run_id: str | None) -> None:
+    """One `undervalued` record per market and one `undervalued_row` record per row."""
+    for p in payloads:
+        cfg = p["config"]
+        j.record(kind="undervalued", fingerprint=fp, subject=p["market"], asset="stocks",
+                 as_of=p["as_of"], run_id=run_id,
+                 inputs={"config": cfg, "hurdle": p["hurdle"], "stance": p["stance"],
+                         "tilt": p["tilt"], "bar_date": p["bar_date"]},
+                 outputs={"styles": {s["style"]: {k: v for k, v in s.items() if k != "rows"}
+                                     | {"names": [r["symbol"] for r in s["rows"]]}
+                                     for s in p["styles"]},
+                          "sizing": p["sizing"], "stale_inputs": p["stale_inputs"],
+                          "moves_stance": False})
+        for s in p["styles"]:
+            for r in s["rows"]:
+                j.record(kind="undervalued_row", fingerprint=fp, subject=p["market"],
+                         asset="stocks", as_of=p["as_of"], run_id=run_id,
+                         inputs={"style": s["style"], "verdict": s["verdict"],
+                                 "hurdle_pt": p["hurdle"]["required_pt"], "config": cfg},
+                         outputs=r)
 
 
 # ---------------- run ----------------
@@ -814,6 +892,7 @@ class RunResult:
     problems: dict[str, str] = field(default_factory=dict)
     idn: IdnLayers | None = None
     foreign: ForeignLayers | None = None
+    undervalued: list[dict] = field(default_factory=list)
 
 
 def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None,
@@ -834,7 +913,10 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
     res.fingerprint = fp
     res.stances = build(layers, fp)
     res.files = write_out(res.stances, paths.out)
+    res.undervalued, uv_stale = _undervalued(day, sources, layers, res.stances, fp, paths)
+    res.stale_inputs = sorted({*res.stale_inputs, *uv_stale})
     res.run_id = _journal(j, layers, res.stances, fp)
+    _journal_undervalued(j, res.undervalued, fp, res.run_id)
 
     health = _never_fail("doctor", sources.doctor, brief.health_lines, day)
     paper_track = _never_fail("paper tracking", sources.paper, brief.paper_lines, day, j)
@@ -846,7 +928,7 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
 
     if send:
         msg = message(res.stances, regime=f"{layers.regime.state}, dollar {layers.regime.dollar}",
-                      day=day, brief_path=res.brief_path)
+                      day=day, brief_path=res.brief_path, undervalued=res.undervalued)
         res.notify = notify.send(msg, kind="brief", day=day, state_dir=paths.notify,
                                  **dict(notify_kw or {}))
     return res

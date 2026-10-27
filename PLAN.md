@@ -429,6 +429,48 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S12 foreign candidates (P29-candidates-foreign, with P26-openkrx, P27-fx-idr, F3-foreign) | done | 2026-10-23 | `cb996f1` (`6ebb2b5`, `4b45770`), F3 this commit | 22 foreign candidates, 12 openkrx, 18 F3 run | 1 index candidate (S&P 500, CAPE EY 2.46% vs 10Y 4.99%, edge −6.47%, score 17.7, does not pass; IDR test survives hedged +8.11% vs IDN 10Y 7.01%); no JP/AU/SG/KR/TW index valuation in any store; openkrx index Parquet not on disk. Context only: no stance moved |
 | S13 paper tracking (P30-paper, F4-ops) | done | 2026-10-23 | `93a154d`, F4 this commit | 18 paper, 4 F4 paper | benchmark 60/40 live: 674 weeks scored (2012 → 2025-01-03), cumulative +102.1%, annualised 5.6%, vol 9.8%; worst week 2020-03-20 −8.7%; 94 stale weeks after 2025-01-03 (SBN leg on dbnomics `idn.rate.long`, ends 2024-12; JCI frozen 2026-09-30); one model segment from 2026-10-23, nothing scored yet |
 | S14 launchd + doctor header + README (F4-ops) | done | 2026-10-23 | F4 this commit | 31 ops | jobs rendered, not installed; live `run --no-send`: brief opens with *Data health* (9 of 14 sources fresh: sec-edgar, jquantster, idx-method stale, satudatascape missing, idxscape PHEI absent) and *Paper track*; rerun brief byte-identical; `regime --check --no-send`: neutral, dollar flat, unchanged |
+| S20 one ranked undervalued list (F5-undervalued, with P35-sector-tilt, P36-dividend-value, P37-garp, P38-sizing) | done | 2026-10-27 | F5 this commit | 20 F5 run (1114 total) | IDN, bars 2026-10-09, hurdle 13.74%: dividend **passed** (t 2.79, p 0.004), pool 35, 3 names (BMRI +2.51pt, JPFA +1.12, BBNI +0.84), 3 dropped on cost (ELSA, CPIN, STAA); GARP **failed** (t 1.30), pool 30, no names; tilt **failed** (t −1.11): no shift, caps 5; IDN stocks neutral 60.4% → 60.4%, so budget IDR 0, no adds; 6 trim lines (BMRI and BBNI to the 5% cap, AMRT, KLBF, PWON, SRSN below the hurdle); rerun byte-identical |
+
+**F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
+market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`
+(`schema/candidates.schema.json`: disclaimer, sources and model fingerprint required).
+- **Assembly.** P36 dividend and P37 GARP results, each ranked by its own margin over the S17
+  hurdle; S15's value screen is one more entry in `UndervaluedInputs.screens` when it lands. A
+  style whose verdict failed is listed with its verdict, t, p and pool, and no names. Across
+  styles nothing is ranked on a mixed score: the Telegram top 5 takes each passing style's ranks
+  in turn.
+- **Tilt.** S16's applied margin shift (clamped ±2 pt) and per-sector caps reach the rows and
+  sizing only when the tilt's verdict passed; otherwise shift 0, cap 5.
+- **Costs and entry** as `layers/candidates.assemble`: P21's cost at an IDR 10m tranche
+  (no estimate, `over_participation` or `below_one_lot` drops the name). Rows are reviewed
+  quarterly and held while they pass, so one round trip a year is charged against the annual
+  margin (`net_margin_pt`); a round trip that eats the margin drops the name. Entry =
+  `entry_typical`, else `entry_deep`.
+- **Layer 5 and sizes.** Held IDR per ticker from financer's statement lines
+  (`holdings_from`, layer 5's own mapping), P38's `size` from the IDN stocks stance and the
+  financer total. A name in two styles is sized once, under its larger margin. Trims only when a
+  style passed, and a full trim only for a held name a passing screen ranked: a held name no
+  passing screen rated is listed in `sizing.excluded` ("not rated: no trim call") instead of
+  P38's "not in the candidate list", which would otherwise have told the user to sell every
+  holding the dividend screen does not cover.
+- **Journal.** One `undervalued` record per market (verdicts, names, sizing, stale) and one
+  `undervalued_row` per row; both carry `config`: the tilt yaml sha256, `hurdle.CONFIG`,
+  `sizing.config(caps)`, the tranche and each screen's CONFIG, beside the model fingerprint.
+- **Brief and Telegram.** The brief gains *Undervalued candidates* (before *Paper track*), read
+  from `out/candidates/`, so `assist brief` reprints it; the golden brief is unchanged without
+  that directory. Telegram adds each market's style verdicts and top 5 (live: one part, 2.7k
+  chars).
+- **Never fails.** An error in the screens, the tilt or the assembly becomes a stale input
+  ("undervalued candidates failed: …") and no file; the stances are already written.
+- **Live** (`--no-send`, 2 m 20 s, most of it P35's regime replay): see the Progress row. Also:
+  portfolio IDR 29.6M; BMRI (IDR 4.01M) and BBNI (2.37M) are held, so both read `hold`;
+  9 held names unrated (ASII, ASSA, CTRA, DMAS, ERAA, KKGI, MSTI, PTSN, TOWR). Journal per
+  run: 1 `undervalued` + 3 `undervalued_row`. idx-method HEAD `71ef6ed`, unchanged since
+  P36/P37 read it; nothing in the siblings disagreed with the slice notes.
+- **For later slices.** At this portfolio size P21's round trip at a 10m tranche (80–145bp)
+  is larger than the thin dividend margins (0.3–0.5pt) and drops half the list; F6 should
+  judge costs at the sized tranche once a budget exists. Sizes stay paper until the weight
+  bands are confirmed (Open questions).
 
 **F4-ops notes (2026-10-23).**
 - **Brief.** `brief.render` takes optional `health` and `paper` lines:

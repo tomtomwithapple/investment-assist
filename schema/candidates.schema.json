@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tomtomtomdev/investment-assist/schema/candidates.schema.json",
+  "title": "investment-assist undervalued candidates (one market)",
+  "description": "PLAN S20: one ranked list of undervalued stocks per market, in IDR, written to out/candidates/{MARKET}.json. Each style (dividend_value, garp; S15's value later) is ranked by its own margin over the hurdle, never by a score mixed across styles. A style whose placebo verdict failed is listed with its verdict and no names. Extends the stance contract's model_fingerprint, stale_inputs, sources and disclaimer semantics. Heuristic context, not investment advice.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "market", "as_of", "bar_date", "currency", "model_fingerprint", "regime",
+    "hurdle", "stance", "tilt", "styles", "sizing", "config", "stale_inputs", "sources",
+    "disclaimer"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "market": {"type": "string", "pattern": "^[A-Z0-9_]+$", "description": "ISO3 market code."},
+    "as_of": {"$ref": "#/$defs/date", "description": "Run date."},
+    "bar_date": {"anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}], "description": "Last price bar the screens used."},
+    "currency": {"const": "IDR", "description": "Every return and amount is in IDR, unhedged."},
+    "model_fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "regime": {"enum": ["risk_on", "neutral", "risk_off", null]},
+    "hurdle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_pt", "drivers"],
+      "properties": {
+        "required_pt": {"type": ["number", "null"], "description": "The market's IDR hurdle (S17), % a year; null when unknown."},
+        "drivers": {"$ref": "#/$defs/texts"}
+      }
+    },
+    "stance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stance", "current_pct", "target_pct"],
+      "properties": {
+        "stance": {"enum": ["overweight", "neutral", "underweight", "avoid", null]},
+        "current_pct": {"type": ["number", "null"]},
+        "target_pct": {"type": ["number", "null"]}
+      }
+    },
+    "tilt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "verdict", "fingerprint", "sectors"],
+      "properties": {
+        "passed": {"type": "boolean", "description": "Only a passed verdict shifts margins and sets sector caps."},
+        "verdict": {"type": "string"},
+        "fingerprint": {"type": ["string", "null"], "description": "sha256 of config/sector_tilt.yaml."},
+        "sectors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sector", "tilt", "margin_shift_pt", "cap"],
+            "properties": {
+              "sector": {"type": "string"},
+              "tilt": {"type": "number", "minimum": -1, "maximum": 1},
+              "margin_shift_pt": {"type": "number", "description": "Applied shift of the required margin (0 unless the verdict passed)."},
+              "cap": {"type": "integer", "minimum": 0, "description": "Applied names-per-sector cap."}
+            }
+          }
+        }
+      }
+    },
+    "styles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["style", "passed", "verdict", "pool", "rows", "dropped"],
+        "properties": {
+          "style": {"type": "string", "minLength": 1},
+          "passed": {"type": "boolean"},
+          "verdict": {"type": "string", "description": "The placebo verdict's reason."},
+          "t": {"type": ["number", "null"]},
+          "p": {"type": ["number", "null"]},
+          "quarters": {"type": ["integer", "null"]},
+          "pool": {"type": "integer", "minimum": 0, "description": "Names that passed every gate today."},
+          "rows": {"type": "array", "items": {"$ref": "#/$defs/row"}, "description": "Empty when the verdict failed."},
+          "dropped": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["symbol", "reason"],
+              "properties": {"symbol": {"type": "string"}, "reason": {"type": "string"}}
+            }
+          }
+        },
+        "if": {"properties": {"passed": {"const": false}}},
+        "then": {"properties": {"rows": {"maxItems": 0}}}
+      }
+    },
+    "sizing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["portfolio_value_idr", "budget_idr", "unspent_idr", "trims", "excluded", "fingerprint"],
+      "properties": {
+        "portfolio_value_idr": {"type": ["number", "null"]},
+        "budget_idr": {"type": "number", "minimum": 0},
+        "unspent_idr": {"type": "number"},
+        "trims": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["symbol", "idr", "reason"],
+            "properties": {"symbol": {"type": "string"}, "idr": {"type": "number"}, "reason": {"type": "string"}}
+          }
+        },
+        "excluded": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["symbol", "reason"],
+            "properties": {"symbol": {"type": "string"}, "reason": {"type": "string"}}
+          }
+        },
+        "fingerprint": {"type": "string"}
+      }
+    },
+    "config": {"type": "object", "description": "What the model fingerprint does not show by name: the tilt yaml hash, hurdle constants, sizing caps and each screen's CONFIG."},
+    "stale_inputs": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "sources": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "disclaimer": {"type": "string", "pattern": "[Nn]ot investment advice"}
+  },
+  "$defs": {
+    "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "texts": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rank", "symbol", "style", "sector", "expected_pt", "margin_pt", "margin_shift_pt",
+        "net_margin_pt", "drivers", "risks", "price", "entry", "cost", "held", "held_idr",
+        "action", "size"
+      ],
+      "properties": {
+        "rank": {"type": "integer", "minimum": 1, "description": "Rank within the style, by margin."},
+        "symbol": {"type": "string", "minLength": 1},
+        "style": {"type": "string"},
+        "sector": {"type": ["string", "null"]},
+        "expected_pt": {"type": "number", "description": "Expected IDR return, % a year."},
+        "margin_pt": {"type": "number", "description": "Expected − (hurdle + the sector's applied tilt shift), pt."},
+        "margin_shift_pt": {"type": "number"},
+        "net_margin_pt": {"type": "number", "description": "margin_pt less one modelled round trip a year."},
+        "drivers": {"$ref": "#/$defs/texts"},
+        "risks": {"$ref": "#/$defs/texts"},
+        "price": {"type": ["number", "null"]},
+        "entry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["level", "basis", "status"],
+          "properties": {
+            "level": {"type": ["number", "null"]},
+            "basis": {"enum": ["typical", "deep", "none"]},
+            "status": {"type": "string"}
+          }
+        },
+        "cost": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["order_idr", "round_trip_bps", "flags"],
+          "properties": {
+            "order_idr": {"type": "number"},
+            "round_trip_bps": {"type": "number"},
+            "flags": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "held": {"type": "boolean"},
+        "held_idr": {"type": "number", "minimum": 0},
+        "action": {"enum": ["add", "hold", "watch"], "description": "add: sized; hold: held, nothing to add; watch: passes, not sized (see sizing.excluded)."},
+        "size": {
+          "anyOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["idr", "tranches", "reason"],
+              "properties": {
+                "idr": {"type": "number", "minimum": 0},
+                "reason": {"type": "string"},
+                "tranches": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["day", "idr", "shares", "limit"],
+                    "properties": {
+                      "day": {"type": "integer", "minimum": 0},
+                      "idr": {"type": "number"},
+                      "shares": {"type": "integer", "minimum": 0},
+                      "limit": {"type": ["number", "null"]}
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

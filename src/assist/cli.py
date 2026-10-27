@@ -91,6 +91,8 @@ def _run(args: argparse.Namespace) -> int:
                 print(f"    {c.symbol:<5} {c.screen}: {c.detail}")
         if res.foreign is not None:
             _print_foreign(res)
+        for p in res.undervalued:
+            _print_undervalued(p)
     else:
         print("no stance written: layer 1 (worldbankscape) unavailable; out/ left as it was")
     for s in res.stale_inputs:
@@ -104,6 +106,28 @@ def _run(args: argparse.Namespace) -> int:
     else:
         print("telegram: not sent (no stances)")
     return 0 if res.ok else 1
+
+
+def _print_undervalued(p: dict) -> None:
+    """S20: each style's verdict and names, the tilt's verdict, the budget, sizes and trims."""
+    h = p["hurdle"]["required_pt"]
+    sz = p["sizing"]
+    print(f"undervalued {p['market']} (bars {p['bar_date']}, hurdle "
+          f"{'n/a' if h is None else f'{h:.2f}%'}): tilt "
+          f"{'passed' if p['tilt']['passed'] else 'failed'} ({p['tilt']['verdict']}); budget "
+          f"IDR {sz['budget_idr']:,.0f}, unspent IDR {sz['unspent_idr']:,.0f}")
+    for s in p["styles"]:
+        head = "passed" if s["passed"] else "verdict failed"
+        print(f"  {s['style']}: {head} ({s['verdict']}), pool {s['pool']}, "
+              f"{len(s['rows'])} name(s), {len(s['dropped'])} dropped")
+        for r in s["rows"]:
+            size = f"add IDR {r['size']['idr']:,.0f}" if r["size"] else r["action"]
+            print(f"    #{r['rank']} {r['symbol']:<5} margin {r['margin_pt']:+.2f}pt "
+                  f"(net {r['net_margin_pt']:+.2f}pt); {size}")
+        for d in s["dropped"]:
+            print(f"    dropped {d['symbol']}: {d['reason']}")
+    for t in sz["trims"]:
+        print(f"  trim {t['symbol']} IDR {t['idr']:,.0f}: {t['reason']}")
 
 
 def _print_foreign(res: pipeline.RunResult) -> None:

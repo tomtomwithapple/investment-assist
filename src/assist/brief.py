@@ -15,6 +15,11 @@ the brief stays a pure function of its inputs: *Data health* (the doctor, one li
 locked or stale source; `health_lines`) right under the disclaimer, and *Paper track* (the 60/40
 benchmark and each model segment; `paper_lines`) before the details. Without them the brief is
 exactly as before.
+
+*Undervalued candidates* (PLAN S20) is rendered from `out/candidates/*.json`
+(`schema/candidates.schema.json`) when that directory holds any valid file, so `assist brief`
+reprints it too: per market the hurdle, stance and budget, the tilt's verdict, each style's
+verdict (a failed one with no names) and its rows ranked by margin, then trims.
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from assist.layers.types import DISCLAIMER, stance_validator
+from assist.layers.undervalued import load_out as load_candidates
 
 __all__ = [
     "ASSET_ORDER",
@@ -40,6 +46,7 @@ __all__ = [
     "health_lines",
     "load_out",
     "paper_lines",
+    "undervalued_lines",
     "previous_snapshot",
     "render",
     "save_snapshot",
@@ -117,9 +124,11 @@ def build_brief(out_dir: Path, snapshots_dir: Path, *, health: Sequence[str] | N
     as_of = _as_of(loaded.stances)
     prev_dir = previous_snapshot(snapshots_dir, before=as_of) if as_of else None
     previous = load_out(prev_dir).stances if prev_dir else None
+    cands = load_candidates(out_dir)
     return render(loaded.stances, previous, problems=loaded.problems,
                   previous_as_of=prev_dir.name if prev_dir else None, health=health,
-                  paper=paper)
+                  paper=paper, undervalued=[x for p in cands for x in undervalued_lines(p)]
+                  or None)
 
 
 # ---------------- doctor and paper lines ----------------
@@ -200,6 +209,61 @@ def paper_lines(report: Any) -> list[str]:
     lines += [f"Stale: {x}." for x in report.stale_inputs]
     lines.append(f"Legs: stocks = {report.legs['stocks']}; bonds = {report.legs['bonds']}.")
     return lines
+
+
+def _idr(x: float | None) -> str:
+    return "n/a" if x is None else f"IDR {x:,.0f}"
+
+
+def undervalued_lines(p: Mapping) -> list[str]:
+    """One market's candidates payload as Markdown lines (a few bullets and one table per
+    passing style). Rows are ranked within their style only."""
+    st, h = p["stance"], p["hurdle"]["required_pt"]
+    head = (f"**{p['market']}** (bars {p['bar_date'] or 'n/a'}): hurdle "
+            f"{'n/a' if h is None else f'{h:.2f}%'}, stocks stance {st['stance'] or 'n/a'} "
+            f"{_pct(st['current_pct'])} → {_pct(st['target_pct'])}, budget "
+            f"{_idr(p['sizing']['budget_idr'])}")
+    if p["sizing"]["budget_idr"]:
+        head += f" ({_idr(p['sizing']['unspent_idr'])} unspent)"
+    t = p["tilt"]
+    tilt = (f"- Sector tilt: passed ({t['verdict']}); margins shifted and sector caps set"
+            if t["passed"] else
+            f"- Sector tilt: verdict failed ({t['verdict']}); no margin shift, default caps")
+    out = [head + ".", "", tilt]
+    for s in p["styles"]:
+        stats = ", ".join(x for x in (
+            None if s.get("t") is None else f"t {s['t']:.2f}",
+            None if s.get("p") is None else f"p {s['p']:.3f}") if x)
+        stats = f", {stats}" if stats else ""
+        if s["passed"]:
+            drop = f", {len(s['dropped'])} dropped" if s["dropped"] else ""
+            out.append(f"- {s['style']}: passed ({s['verdict']}){stats}, pool {s['pool']}, "
+                       f"{len(s['rows'])} name(s){drop}")
+        else:
+            out.append(f"- {s['style']}: verdict failed ({s['verdict']}){stats}, pool "
+                       f"{s['pool']}: no names")
+    for s in p["styles"]:
+        if not s["rows"]:
+            continue
+        out += ["", f"*{s['style']}*, ranked by margin over the hurdle:", "",
+                "| # | Symbol | Sector | Expected | Margin | Net of cost | Entry | Held | Action |",
+                "|---:|---|---|---:|---:|---:|---|---|---|"]
+        for r in s["rows"]:
+            e = r["entry"]
+            entry = "n/a" if e["level"] is None else f"{e['level']:,.0f} ({e['basis']})"
+            act = r["action"] if r["size"] is None else f"add {_idr(r['size']['idr'])}"
+            cells = [str(r["rank"]), r["symbol"], r["sector"] or "n/a",
+                     f"{r['expected_pt']:.2f}%", f"{r['margin_pt']:+.2f}pt",
+                     f"{r['net_margin_pt']:+.2f}pt", entry,
+                     _idr(r["held_idr"]) if r["held"] else "no", act]
+            out.append("| " + " | ".join(_cell(c) for c in cells) + " |")
+        out.append("")
+        for d in s["dropped"]:
+            out.append(f"- dropped {d['symbol']}: {d['reason']}")
+    for x in p["sizing"]["trims"]:
+        out.append(f"- trim {x['symbol']} {_idr(x['idr'])}: {x['reason']}")
+    out.append("")
+    return out
 
 
 # ---------------- helpers ----------------
@@ -323,7 +387,8 @@ def diff(previous: Sequence[Mapping], current: Sequence[Mapping]) -> list[str]:
 
 def render(current: Sequence[Mapping], previous: Sequence[Mapping] | None = None, *,
            problems: Sequence[str] = (), previous_as_of: str | None = None,
-           health: Sequence[str] | None = None, paper: Sequence[str] | None = None) -> str:
+           health: Sequence[str] | None = None, paper: Sequence[str] | None = None,
+           undervalued: Sequence[str] | None = None) -> str:
     """The brief as Markdown. `previous` None means there is no earlier run to diff against.
     `health` (doctor lines) and `paper` (paper-track lines) add their sections when given."""
     stances = _sorted(current)
@@ -370,6 +435,11 @@ def render(current: Sequence[Mapping], previous: Sequence[Mapping] | None = None
         changes = diff(previous, stances)
         out += [f"- {c}" for c in changes] if changes else ["No changes."]
     out.append("")
+
+    if undervalued is not None:
+        out += ["## Undervalued candidates", "",
+                "Context only: no stance moves on these, and sizes are paper until the weight "
+                "bands are confirmed.", "", *undervalued]
 
     if paper is not None:
         out += ["## Paper track", ""] + [f"- {x}" for x in paper] + [""]
