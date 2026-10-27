@@ -632,7 +632,7 @@ slices:
   - id: P41-ui-overview
     title: "PLAN S24: UI overview: regime and dollar banner, country x asset stance grid, commodities, stale markers"
     depends_on: [P40-ui-shell]
-    owns: ["src/assist/views/overview.py", "src/assist/web.py", "tests/test_view_overview.py",
+    owns: ["tests/test_web.py", "src/assist/views/overview.py", "src/assist/web.py", "tests/test_view_overview.py",
            "tests/fixtures/ui/out/**", "docs/results/P41-ui-overview.md"]
     accept: uv run pytest -q tests/test_view_overview.py tests/test_web.py tests/test_status.py && uv run ruff check src/assist/views/overview.py src/assist/web.py
     estimate: 1
@@ -655,7 +655,7 @@ slices:
   - id: P42-ui-stance
     title: "PLAN S25: UI stance detail: drivers, risks, watch, entry, portfolio, flags, sources, change since last snapshot"
     depends_on: [P41-ui-overview]
-    owns: ["src/assist/views/stance.py", "src/assist/web.py", "tests/test_view_stance.py",
+    owns: ["tests/test_web.py", "src/assist/views/stance.py", "src/assist/web.py", "tests/test_view_stance.py",
            "tests/fixtures/ui/out/**", "tests/fixtures/ui/snapshots/**", "docs/results/P42-ui-stance.md"]
     accept: uv run pytest -q tests/test_view_stance.py tests/test_web.py tests/test_status.py && uv run ruff check src/assist/views/stance.py src/assist/web.py
     estimate: 1
@@ -675,7 +675,7 @@ slices:
   - id: P43-ui-candidates
     title: "PLAN S26: UI candidates: per-market hurdle, tilt, style verdicts, ranked rows, sizes, trims, excluded"
     depends_on: [P42-ui-stance]
-    owns: ["src/assist/views/candidates.py", "src/assist/web.py", "tests/test_view_candidates.py",
+    owns: ["tests/test_web.py", "src/assist/views/candidates.py", "src/assist/web.py", "tests/test_view_candidates.py",
            "tests/fixtures/ui/candidates/**", "docs/results/P43-ui-candidates.md"]
     accept: uv run pytest -q tests/test_view_candidates.py tests/test_web.py tests/test_status.py && uv run ruff check src/assist/views/candidates.py src/assist/web.py
     estimate: 1.5
@@ -698,7 +698,7 @@ slices:
   - id: P44-ui-paper
     title: "PLAN S27: UI paper track vs IDR 60/40 per model segment, and journal chain check per model"
     depends_on: [P43-ui-candidates]
-    owns: ["src/assist/views/paper.py", "src/assist/web.py", "tests/test_view_paper.py",
+    owns: ["tests/test_web.py", "src/assist/views/paper.py", "src/assist/web.py", "tests/test_view_paper.py",
            "docs/results/P44-ui-paper.md"]
     accept: uv run pytest -q tests/test_view_paper.py tests/test_web.py tests/test_status.py && uv run ruff check src/assist/views/paper.py src/assist/web.py
     estimate: 1
@@ -720,7 +720,7 @@ slices:
     kind: integration
     title: "PLAN S28 fan-in: UI wired into assist status, README and CLI help, live check of every page"
     depends_on: [P44-ui-paper]
-    owns: ["src/assist/cli.py", "src/assist/web.py", "src/assist/status.py", "README.md",
+    owns: ["tests/test_web.py", "src/assist/cli.py", "src/assist/web.py", "src/assist/status.py", "README.md",
            "tests/test_ui_e2e.py", "PLAN.md"]
     accept: uv run pytest -q && uv run ruff check .
     estimate: 0.5
