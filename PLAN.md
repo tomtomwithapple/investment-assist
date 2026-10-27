@@ -8,7 +8,7 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-10-27. **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. S15 and S22 are open.
+**Last updated:** 2026-10-27 (F7-ui). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin). S15 and S22 are open.
 
 What `assist run` does:
 - It reads layers 0, 1 and 5 for every subject.
@@ -35,11 +35,14 @@ No stance has moved in phases B–D:
 - The foreign overrides and candidates are hand-set, so they move scores but not bands until they
   beat a placebo.
 
-Paper tracking has nothing to score yet. Both legs have no current data (no JCI after
-2026-09-30; no IDN 10Y after 2024-12 until PHEI lands here).
+**Paper tracking cannot score a single week, and gap 2b (no JCI fetcher) blocks it entirely**
+(P44). The JCI leg ends 2026-09-30 (idx-method CSVs frozen). The SBN leg now reads the IGSYC 10Y
+from idxscape's PHEI tables, which are on this Mac but start in October, so the first week both
+legs have data (2026-10-06) is already after the last JCI close: the legs never overlap. Every
+model segment shows 0 weeks scored. Only a JCI series that runs past 2026-10-06 unblocks it.
 
-**Next up:** the fetcher-side data gaps below, then install the jobs and let the journal build a
-record.
+**Next up:** the fetcher-side data gaps below (a JCI fetcher first, since paper tracking needs
+it), then install the jobs and let the journal build a record.
 
 | Phase | Slices | Done |
 |---|---|---|
@@ -49,28 +52,30 @@ record.
 | D. Track record and ops | S13–S14 | 2 / 2 |
 | E. Layer 4 refinements | S15 | 0 / 1 |
 | F. Undervalued stocks, macro-weighted (IDN, then US, JP) | S16–S22 | 7 / 8 |
-| G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S28 | 0 / 6 |
+| G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S28 | 6 / 6 |
 
 ### Open data gaps (fetcher side)
 
 Each gap is fixed in the repo named, never here. The brief flags each one under *Data health* or
 *Stale inputs*.
 
-- **idxscape: the PHEI tables are missing on this Mac.** It is at migration 8, and the tables
-  arrive with migration 9 (J4 is done upstream). Until then both IDN rules make no call, the IDN
-  10Y falls back to dbnomics `idn.rate.long` (last value 2024-12), every IDR edge rests on that
-  proxy, and the paper track's SBN leg stops at 2024-12-31.
+- ~~**idxscape: the PHEI tables are missing on this Mac.**~~ Resolved by 2026-10-27: the F7-ui
+  live doctor shows `igsyc_point PHEI` fresh (2026-10-26), and the paper track's SBN leg reads
+  IGSYC.10 (P44). The IGSYC history starts in October 2026, so the rules' walk-forwards still
+  have little to test on.
 - **There is no JCI fetcher.** idx-method's index CSVs have been frozen at 2026-09-30 since
   2026-10-19. The paper track's JCI leg, the stocks rule's journalled verdict and JCI's earnings
-  yield history all stop there.
+  yield history all stop there. Because the IGSYC 10Y leg starts in October, the two paper legs
+  never overlap, so **paper tracking scores no week at all** until this is fixed (P44, F7-ui).
 - **jquantster runs on the J-Quants free plan.** `investor_types` is empty (no TSE flows), and
   daily bars end 2026-07-31.
 - **openkrx has no index Parquet on disk** (`tw_index`, KR index). There is no KR or TW index
   valuation, and its HANDOFF read contract (R1) is still pending.
 - **singstat's refresh has been stale since 2026-10-07.** This covers the MAS SORA, SGS 2Y and
   10Y, and EURSGD and IDRSGD. SGP confidence is the lowest of all subjects.
-- **sec-edgar's FRED data on this Mac has been stale since 2026-10-12.** All five core regime
-  inputs are stale, so every stance's confidence carries ×0.9⁵.
+- **sec-edgar's FRED data on this Mac was stale from 2026-10-12** (all five core regime inputs,
+  ×0.9⁵ on every stance's confidence). The F7-ui live doctor (2026-10-27) shows VIXCLS fresh at
+  2026-10-23.
 - **There are no USD/IDR forwards in any store.** Hedged IDR returns use the policy-rate
   differential as carry (P27).
 - **idx-method's stock history is short and unadjusted.** It holds about 5 years of closes,
@@ -454,14 +459,14 @@ host, launchd for the server, changes to how stances or candidates are built.
 - **CLI.** `assist status` keeps its name and flags. Its help text and the README line name the
   new pages (S28).
 
-- [ ] **S23 Shell + router** (P40-ui-shell). Shared layout and nav, the route table, `/status`,
+- [x] **S23 Shell + router** (P40-ui-shell). Shared layout and nav, the route table, `/status`,
   404s, `.json` twins, escaping.
-- [ ] **S24 Overview** (P41-ui-overview). Regime banner, stance grid, commodities, stale markers.
-- [ ] **S25 Stance detail** (P42-ui-stance). One stance's fields, plus the change since the last
+- [x] **S24 Overview** (P41-ui-overview). Regime banner, stance grid, commodities, stale markers.
+- [x] **S25 Stance detail** (P42-ui-stance). One stance's fields, plus the change since the last
   snapshot.
-- [ ] **S26 Candidates** (P43-ui-candidates). IDN and USA lists with verdicts, sizes and trims.
-- [ ] **S27 Paper + journal** (P44-ui-paper). Benchmark, segments, chain check.
-- [ ] **S28 Fan-in** (F7-ui). README and CLI help, a live check of every page against the real
+- [x] **S26 Candidates** (P43-ui-candidates). IDN and USA lists with verdicts, sizes and trims.
+- [x] **S27 Paper + journal** (P44-ui-paper). Benchmark, segments, chain check.
+- [x] **S28 Fan-in** (F7-ui). README and CLI help, a live check of every page against the real
   `out/`, Progress rows.
 
 **Review** (2026-10-27, fresh subagent, folded into the notes in `plan.yaml`):
@@ -483,6 +488,26 @@ host, launchd for the server, changes to how stances or candidates are built.
 - USA has no currency cell: fixed (tested).
 - escaping, URL guard and HEAD tested only once or not at all: fixed (a `<script>` value per view; the 404 cases are named).
 - `/paper` can hit dbnomics' lock: fixed (errors shown as a notice, report cached).
+
+**F7-ui notes (2026-10-27).** Per-slice details are in `docs/results/P40-ui-shell.md` …
+`P44-ui-paper.md`.
+- **Wiring.** `cli._status` builds `web.App` from `pipeline.Paths.default()` (out/,
+  data/snapshots/, journal/) with the doctor + launchd snapshot as `health`, and calls
+  `web.serve(app, routes=status.ROUTES)`. `--siblings-root` still reaches the paper track through
+  `ASSIST_SIBLINGS_ROOT`. `status.serve` stays as a wrapper for its own test. The subcommand's help
+  and the startup line read "local pages: stances, candidates, paper, journal, source health"
+  (the startup line is flushed, so it shows in a background log).
+- **Disclaimer once.** The stance page no longer repeats the stance's `disclaimer` above the
+  footer; it shows it only when the text differs from `web.DISCLAIMER` (P42's finding).
+- **Costs.** Every page but `/status` answers in 2–120 ms. `/status` (and its twins, and HEAD)
+  takes about 3.5 s, all of it the doctor probes; the UI pages do not wait on it.
+- **What the pages show today.** No stance moved and no candidate is sized (IDN budget IDR 0,
+  USA no names), and `/paper` scores 0 weeks for every one of 8 model segments: see the STATUS
+  section. Several fingerprints start on the same day, so only the last of each day can ever
+  rule a week (P44).
+- **Phase G findings carried over:** HEAD builds the whole page (P40); 30 of 35 country cells are
+  stale, so the stale chip is the norm (P41); the size and tranche rendering is covered only by a
+  made-up fixture until a market has a budget (P43).
 
 ---
 
@@ -517,6 +542,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S14 launchd + doctor header + README (F4-ops) | done | 2026-10-23 | F4 this commit | 31 ops | jobs rendered, not installed; live `run --no-send`: brief opens with *Data health* (9 of 14 sources fresh: sec-edgar, jquantster, idx-method stale, satudatascape missing, idxscape PHEI absent) and *Paper track*; rerun brief byte-identical; `regime --check --no-send`: neutral, dollar flat, unchanged |
 | S20 one ranked undervalued list (F5-undervalued, with P35-sector-tilt, P36-dividend-value, P37-garp, P38-sizing) | done | 2026-10-27 | F5 this commit | 20 F5 run (1114 total) | IDN, bars 2026-10-09, hurdle 13.74%: dividend **passed** (t 2.79, p 0.004), pool 35, 3 names (BMRI +2.51pt, JPFA +1.12, BBNI +0.84), 3 dropped on cost (ELSA, CPIN, STAA); GARP **failed** (t 1.30), pool 30, no names; tilt **failed** (t −1.11): no shift, caps 5; IDN stocks neutral 60.4% → 60.4%, so budget IDR 0, no adds; 6 trim lines (BMRI and BBNI to the 5% cap, AMRT, KLBF, PWON, SRSN below the hurdle); rerun byte-identical |
 | S21 US single stocks (F6-us-stocks, with P39-us-stocks) | done | 2026-10-27 | F6 this commit | 19 F6 run (1133 total) | `out/candidates/USA.json` written: **no names**, sec-edgar's Alpaca tables are empty on this Mac (universe 0, pool 0), so dividend and GARP both *insufficient sample (0 quarters)*; USA hurdle 8.92% in IDR, IDN 13.61% binds (a US name needs 14.45% in USD), JISDOR IDR 18,116; no tilt (S16 is IDN only), caps 5; USA stocks overweight 0% → 5%, so budget IDR 1.48M of IDR 29.6M; nothing held in USD; journal 1 `undervalued` per run, 0 rows; rerun byte-identical |
+| S23–S28 local UI view (F7-ui, with P40–P44) | done | 2026-10-27 | F7 this commit (`02ca075`, `9d7253a`, `b6726bd`, `bde605d`, `c43dac8`) | 24 web, 18 status, 9 overview, 23 stance, 23 candidates, 22 paper, 2 F7 e2e (1236 total) | live `assist status --port 8799` on the real out/ and journal: `/` 200 15,190 B 21 ms, `/stance/IDN/bonds` 200 5,284 B 41 ms, `/candidates` 200 10,536 B 3 ms, `/candidates/IDN` 200 7,916 B, `/candidates/USA` 200 4,982 B, `/paper` 200 6,107 B 122 ms, `/journal` 200 3,667 B 116 ms, `/status` 200 14,796 B 3.4 s; every `.json` twin 200 (`/json` alias too), `/nope` and `/stance/IDN/..%2Fx` 404, HEAD `/paper` 200; nav and one disclaimer on every page, no notices; 49 stances, journal 865 records chain ok over 8 models; **paper 0 weeks scored** (JCI ends 2026-09-30, IGSYC 10Y starts in October: gap 2b blocks it); out/ (51 files) and `journal/decisions.jsonl` sha-identical before and after |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

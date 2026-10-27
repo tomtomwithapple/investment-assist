@@ -123,8 +123,14 @@ def body(s: Mapping, c: Mapping | None) -> str:
         _card("flags", "Flags", _flags(s.get("flags") or [])),
         _card("stale", "Stale inputs", _list(s["stale_inputs"])),
         _card("sources", "Sources", _list(s["sources"])),
-        f'<p class="muted">{esc(s["disclaimer"])}</p>',
+        _own_disclaimer(s),
     ])
+
+
+def _own_disclaimer(s: Mapping) -> str:
+    """The footer carries web.DISCLAIMER; the stance's own text only when it says more."""
+    text = (s.get("disclaimer") or "").strip()
+    return "" if not text or text == web.DISCLAIMER else f'<p class="muted">{esc(text)}</p>'
 
 
 def page(app: web.App, m: re.Match[str]) -> web.View | None:

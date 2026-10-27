@@ -158,3 +158,19 @@ def test_overview_cells_link_to_pages_that_exist():
     body = _get("/").body
     for href in sorted(set(re.findall(r'href="(/stance/[^"]+)"', body))):
         assert _get(href).status == 200, href
+
+
+def test_disclaimer_once_in_the_footer():
+    body = _get("/stance/IDN/bonds").body
+    assert body.count(web.DISCLAIMER) == 1
+    assert f"<footer>{web.DISCLAIMER}" in body
+
+
+def test_a_different_disclaimer_is_shown(out_copy):
+    f = out_copy / "IDN" / "bonds.json"
+    s = json.loads(f.read_text())
+    s["disclaimer"] = f"Heuristic, not investment advice. {EVIL}"
+    f.write_text(json.dumps(s))
+    body = _get("/stance/IDN/bonds", out_copy).body
+    assert body.count(web.DISCLAIMER) == 2
+    assert '<p class="muted">Heuristic, not investment advice. &lt;script&gt;' in body

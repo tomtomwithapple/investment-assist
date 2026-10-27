@@ -11,8 +11,10 @@ from pathlib import Path
 
 import httpx
 
-from assist import brief, doctor, journal, notify, paper, pipeline, stance, status
+from assist import brief, doctor, journal, notify, paper, pipeline, stance, status, web
 from assist.layers import regime as regime_layer
+
+STATUS_HELP = "local pages: stances, candidates, paper, journal, source health"
 
 
 def _today(args: argparse.Namespace) -> date:
@@ -50,9 +52,13 @@ def _status(args: argparse.Namespace) -> int:
                 client.close()
         return status.Snapshot(datetime.now(), statuses, status.find_jobs(repos), repo_of)
 
-    print(f"assist status on http://{status.HOST}:{args.port}/ (read-only; Ctrl-C stops it)")
+    paths = pipeline.Paths.default()
+    app = web.App(out_dir=paths.out, snapshots_dir=paths.snapshots, journal_path=paths.journal,
+                  health=build)
+    print(f"assist status on http://{status.HOST}:{args.port}/ ({STATUS_HELP}; "
+          "read-only; Ctrl-C stops it)", flush=True)
     try:
-        status.serve(build, port=args.port)
+        web.serve(app, port=args.port, routes=status.ROUTES)
     except KeyboardInterrupt:
         pass
     except OSError as e:
@@ -269,7 +275,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     d.set_defaults(func=_doctor)
 
-    st = sub.add_parser("status", help="local page: source health and launchd jobs per repo")
+    st = sub.add_parser("status", help=STATUS_HELP,
+                        description=f"{STATUS_HELP}, on 127.0.0.1, read-only: / overview, "
+                        "/stance/<SUBJECT>/<asset>, /candidates[/<MKT>], /paper, /journal, "
+                        "/status (each with a .json twin)")
     st.add_argument("--port", type=int, default=status.DEFAULT_PORT,
                     help=f"port on {status.HOST} (default {status.DEFAULT_PORT})")
     st.add_argument("--config", default=str(doctor.DEFAULT_CONFIG))
