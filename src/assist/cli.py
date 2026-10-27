@@ -1,4 +1,4 @@
-"""`assist` command line: doctor | run | brief | regime | paper | journal."""
+"""`assist` command line: doctor | status | run | brief | regime | paper | journal."""
 
 from __future__ import annotations
 
@@ -6,12 +6,12 @@ import argparse
 import json
 import os
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import httpx
 
-from assist import brief, doctor, journal, notify, paper, pipeline, stance
+from assist import brief, doctor, journal, notify, paper, pipeline, stance, status
 from assist.layers import regime as regime_layer
 
 
@@ -33,6 +33,32 @@ def _doctor(args: argparse.Namespace) -> int:
     else:
         print(doctor.format_report(statuses, today))
     return 0  # a missing, locked or stale source is reported, never a failure
+
+
+def _status(args: argparse.Namespace) -> int:
+    root = Path(args.root) if args.root else doctor.siblings_root(dict(os.environ))
+    sources = doctor.load_sources(Path(args.config), root=root)
+    repos = status.repo_dirs(sources, root)
+    repo_of = {s.name: s.repo or s.name for s in sources}
+
+    def build() -> status.Snapshot:
+        client = None if args.no_http else httpx.Client(trust_env=False)
+        try:
+            statuses = doctor.run_doctor(sources, date.today(), http_client=client)
+        finally:
+            if client is not None:
+                client.close()
+        return status.Snapshot(datetime.now(), statuses, status.find_jobs(repos), repo_of)
+
+    print(f"assist status on http://{status.HOST}:{args.port}/ (read-only; Ctrl-C stops it)")
+    try:
+        status.serve(build, port=args.port)
+    except KeyboardInterrupt:
+        pass
+    except OSError as e:
+        print(f"cannot listen on {status.HOST}:{args.port}: {e}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def _run(args: argparse.Namespace) -> int:
@@ -218,6 +244,15 @@ def main(argv: list[str] | None = None) -> int:
         "--no-http", action="store_true", help="skip local HTTP servers, read the stores directly"
     )
     d.set_defaults(func=_doctor)
+
+    st = sub.add_parser("status", help="local page: source health and launchd jobs per repo")
+    st.add_argument("--port", type=int, default=status.DEFAULT_PORT,
+                    help=f"port on {status.HOST} (default {status.DEFAULT_PORT})")
+    st.add_argument("--config", default=str(doctor.DEFAULT_CONFIG))
+    st.add_argument("--root", help="siblings root (default ../ or $ASSIST_SIBLINGS_ROOT)")
+    st.add_argument("--no-http", action="store_true",
+                    help="skip local HTTP servers, read the stores directly")
+    st.set_defaults(func=_status)
 
     r = sub.add_parser("run", help="stances → out/, journal, brief, Telegram (once a day)")
     r.add_argument("--today", help="YYYY-MM-DD run date (default today)")

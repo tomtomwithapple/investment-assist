@@ -15,6 +15,7 @@ its sources.
 ```sh
 uv sync
 uv run assist doctor                  # every source: present / missing / locked / stale
+uv run assist status                  # local page http://127.0.0.1:8790/: doctor + each repo's launchd jobs (Ctrl-C stops)
 uv run assist run                     # stances → out/, journal/, data/briefs/<day>.md, Telegram once a day
 uv run assist run --no-send           # the same, without Telegram
 uv run assist brief                   # print the brief for the current out/ (--send: summary, once a day)
