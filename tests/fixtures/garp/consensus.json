@@ -1,0 +1,225 @@
+{
+ "AADI": {
+  "rec": "Buy",
+  "analysts": 20,
+  "buy": 20,
+  "hold": 0,
+  "sell": 0,
+  "target": 13689,
+  "target_low": 12000,
+  "target_high": 16050,
+  "price": 11525,
+  "updated": "26 Oct 26",
+  "forecast": {
+   "Revenue": [
+    {
+     "year": 2025,
+     "est": false,
+     "value": "80,909 B",
+     "num": 80909000000000.0
+    },
+    {
+     "year": 2026,
+     "est": true,
+     "value": "100,039 B",
+     "num": 100039000000000.0
+    },
+    {
+     "year": 2027,
+     "est": true,
+     "value": "99,902 B",
+     "num": 99902000000000.0
+    }
+   ],
+   "Op. Profit": [
+    {
+     "year": 2025,
+     "est": false,
+     "value": "17,181 B",
+     "num": 17181000000000.0
+    },
+    {
+     "year": 2026,
+     "est": true,
+     "value": "24,238 B",
+     "num": 24238000000000.0
+    },
+    {
+     "year": 2027,
+     "est": true,
+     "value": "23,651 B",
+     "num": 23651000000000.0
+    }
+   ],
+   "Net Income": [
+    {
+     "year": 2025,
+     "est": false,
+     "value": "12,526 B",
+     "num": 12526000000000.0
+    },
+    {
+     "year": 2026,
+     "est": true,
+     "value": "18,341 B",
+     "num": 18341000000000.0
+    },
+    {
+     "year": 2027,
+     "est": true,
+     "value": "17,511 B",
+     "num": 17511000000000.0
+    }
+   ],
+   "EPS": [
+    {
+     "year": 2025,
+     "est": false,
+     "value": "1608.59",
+     "num": 1608.59
+    },
+    {
+     "year": 2026,
+     "est": true,
+     "value": "2284.18",
+     "num": 2284.18
+    },
+    {
+     "year": 2027,
+     "est": true,
+     "value": "2008.00",
+     "num": 2008.0
+    }
+   ]
+  }
+ },
+ "ACES": {
+  "rec": "Buy",
+  "analysts": 28,
+  "buy": 24,
+  "hold": 4,
+  "sell": 0,
+  "target": 468,
+  "target_low": 400,
+  "target_high": 630,
+  "price": 336,
+  "updated": "26 Oct 26",
+  "forecast": {
+   "Revenue": [
+    {
+     "year": 2025,
+     "est": false,
+     "value": "8,639 B",
+     "num": 8639000000000.0
+    },
+    {
+     "year": 2026,
+     "est": true,
+     "value": "9,336 B",
+     "num": 9336000000000.0
+    },
+    {
+     "year": 2027,
+     "est": true,
+     "value": "10,079 B",
+     "num": 10079000000000.0
+    }
+   ],
+   "Op. Profit": [
+    {
+     "year": 2025,
+     "est": false,
+     "value": "875 B",
+     "num": 875000000000.0
+    },
+    {
+     "year": 2026,
+     "est": true,
+     "value": "832 B",
+     "num": 832000000000.0
+    },
+    {
+     "year": 2027,
+     "est": true,
+     "value": "929 B",
+     "num": 929000000000.0
+    }
+   ],
+   "Net Income": [
+    {
+     "year": 2025,
+     "est": false,
+     "value": "669 B",
+     "num": 669000000000.0
+    },
+    {
+     "year": 2026,
+     "est": true,
+     "value": "725 B",
+     "num": 725000000000.0
+    },
+    {
+     "year": 2027,
+     "est": true,
+     "value": "779 B",
+     "num": 779000000000.0
+    }
+   ],
+   "EPS": [
+    {
+     "year": 2025,
+     "est": false,
+     "value": "39.06",
+     "num": 39.06
+    },
+    {
+     "year": 2026,
+     "est": true,
+     "value": "41.43",
+     "num": 41.43
+    },
+    {
+     "year": 2027,
+     "est": true,
+     "value": "45.40",
+     "num": 45.4
+    }
+   ]
+  }
+ },
+ "NOEP": {
+  "rec": "Hold",
+  "analysts": 1,
+  "price": 500,
+  "updated": "26 Oct 26",
+  "forecast": {}
+ },
+ "LOSS": {
+  "rec": "Sell",
+  "analysts": 2,
+  "price": 200,
+  "updated": "26 Oct 26",
+  "forecast": {
+   "EPS": [
+    {
+     "year": 2025,
+     "est": false,
+     "value": "-3.10",
+     "num": -3.1
+    },
+    {
+     "year": 2026,
+     "est": true,
+     "value": "1.00",
+     "num": 1.0
+    },
+    {
+     "year": 2027,
+     "est": true,
+     "value": "2.00",
+     "num": 2.0
+    }
+   ]
+  }
+ }
+}
