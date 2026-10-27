@@ -4,7 +4,8 @@ A route is (regex, handler(app, match) -> View | None). A trailing `.json` is st
 matching and returns the view's data as JSON (the page's twin); None or no match is a 404 page, a
 handler error a 500 page with the error escaped. GET and HEAD only. Every page is rebuilt on each
 request and shows the same nav and disclaimer; every value read from a file goes through `esc`.
-Views live in `assist.views.*` and `assist.status`; they import this module, never the reverse.
+Views live in `assist.views.*` and `assist.status`; they import this module at load time, and this
+module imports a view only inside its route handler.
 """
 
 from __future__ import annotations
@@ -61,7 +62,7 @@ class View:
     title: str
     html: str  # the page body, wrapped by `layout`
     data: Any = None  # the .json twin
-    redirect: str | None = None  # a 302 to this location instead of a page
+    redirect: str | None = None  # a 302 to this location instead of a page (none use it yet)
 
 
 Handler = Callable[[App, "re.Match[str]"], View | None]
@@ -143,11 +144,12 @@ footer {{ color:var(--muted); font-size:12px; margin-top:24px; }}
 # ---------------- routes ----------------
 
 
-def _root(app: App, m: re.Match[str]) -> View:
-    return View("Assist", "", redirect="/status")  # until the overview lands (S24)
+def _overview(app: App, m: re.Match[str]) -> View:
+    from assist.views import overview  # views import this module at load time, so import late
+    return overview.page(app, m)
 
 
-ROUTES: list[Route] = [(re.compile(r"^/$"), _root)]
+ROUTES: list[Route] = [(re.compile(r"^/$"), _overview)]
 
 
 def to_json(data: Any) -> str:

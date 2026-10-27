@@ -130,10 +130,13 @@ def test_other_methods_are_refused(base):
     assert _get(url + "/hello/ann", "POST").status_code == 501
 
 
-def test_root_redirects_to_status(base):
+def test_root_is_the_overview(base):
     url, _ = base
     r = _get(url + "/")
-    assert r.status_code == 302 and r.headers["location"] == "/status"
+    assert r.status_code == 200 and "location" not in r.headers
+    assert '<a href="/" class="active">Overview</a>' in r.text
+    for href, label in web.NAV:
+        assert f'href="{href}"' in r.text and label in r.text
 
 
 def test_layout_has_nav_disclaimer_and_dark_mode():

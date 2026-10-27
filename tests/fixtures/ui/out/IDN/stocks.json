@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0.0",
+  "subject": "IDN",
+  "subject_type": "country",
+  "asset": "stocks",
+  "as_of": "2026-10-13",
+  "model_version": "0.1.0",
+  "model_fingerprint": "sha256:3f2a9c0d1e4b5a6f7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+  "stance": "neutral",
+  "score": 52,
+  "layer1_score": 55.5,
+  "confidence": 0.61,
+  "regime": "neutral",
+  "dollar": "up",
+  "drivers": ["macro score 55.5", "IDX foreign flow -Rp1.1T/4w"],
+  "risks": ["JCI index series frozen at 2026-09-30"],
+  "watch": ["BI meeting 2026-10-22"],
+  "entry": {"style": "lump", "tranches": 1, "spacing_days": 0},
+  "portfolio": {"current_pct": 30, "target_pct": 30, "delta": "hold"},
+  "flags": [
+    {"code": "stale_index", "severity": "warn", "message": "JCI daily series frozen at 2026-09-30"}
+  ],
+  "stale_inputs": ["idx-method jkse_daily.csv"],
+  "sources": ["worldbankscape", "sec-edgar FRED", "idxscape", "kseistat", "financer"],
+  "disclaimer": "Heuristic, not investment advice."
+}

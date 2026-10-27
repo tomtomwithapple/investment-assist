@@ -1,0 +1,44 @@
+{
+  "as_of": "2026-10-13",
+  "asset": "commodities",
+  "confidence": 1.0,
+  "disclaimer": "Heuristic, not investment advice.",
+  "dollar": "flat",
+  "drivers": [
+    "layer-1 score 31.1",
+    "10Y real yield 2.66% (risk-off)"
+  ],
+  "entry": {
+    "spacing_days": 0,
+    "style": "none",
+    "tranches": 0
+  },
+  "flags": [
+    {
+      "code": "extreme_volatility",
+      "message": "12-month price volatility at the 99% percentile of its 10-year history (> 95%) [2026M09]",
+      "severity": "info"
+    }
+  ],
+  "layer1_score": 31.1,
+  "model_fingerprint": "sha256:3f2a9c0d1e4b5a6f7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+  "model_version": "0.3.0",
+  "portfolio": {
+    "current_pct": 0.0,
+    "delta": "0.0pt hold",
+    "target_pct": 0.0
+  },
+  "regime": "neutral",
+  "risks": [],
+  "schema_version": "1.0.0",
+  "score": 31.1,
+  "sources": [
+    "financer",
+    "sec-edgar",
+    "worldbankscape"
+  ],
+  "stale_inputs": [],
+  "stance": "underweight",
+  "subject": "GOLD",
+  "watch": []
+}
