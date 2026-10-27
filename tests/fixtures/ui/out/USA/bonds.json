@@ -17,7 +17,11 @@
   "watch": ["US CPI 2026-10-15"],
   "entry": {"style": "none", "tranches": 0, "spacing_days": 0},
   "portfolio": {"current_pct": null, "target_pct": 0, "delta": "unknown: holdings unavailable"},
-  "flags": [],
+  "flags": [
+    {"code": "high_gov_debt", "message": "Gross government debt 136% of GDP (> 120%) [2026Q2]", "severity": "critical"},
+    {"code": "large_fiscal_deficit", "message": "Fiscal balance -7.1% of GDP (< -5%) [2025]", "severity": "warn"},
+    {"code": "data_gap", "message": "Debt series ends 2026Q2", "severity": "info"}
+  ],
   "stale_inputs": ["financer (locked)"],
   "sources": ["worldbankscape", "sec-edgar FRED"],
   "disclaimer": "Heuristic, not investment advice."

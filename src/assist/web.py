@@ -149,7 +149,13 @@ def _overview(app: App, m: re.Match[str]) -> View:
     return overview.page(app, m)
 
 
-ROUTES: list[Route] = [(re.compile(r"^/$"), _overview)]
+def _stance(app: App, m: re.Match[str]) -> View | None:
+    from assist.views import stance
+    return stance.page(app, m)
+
+
+ROUTES: list[Route] = [(re.compile(r"^/$"), _overview),
+                       (re.compile(r"^/stance/([^/]+)/([^/]+)$"), _stance)]
 
 
 def to_json(data: Any) -> str:

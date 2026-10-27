@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0.0",
+  "subject": "IDN",
+  "subject_type": "country",
+  "asset": "bonds",
+  "as_of": "2026-10-13",
+  "model_version": "0.1.0",
+  "model_fingerprint": "sha256:3f2a9c0d1e4b5a6f7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+  "stance": "avoid",
+  "score": 10,
+  "layer1_score": 58.0,
+  "confidence": 0.74,
+  "regime": "neutral",
+  "dollar": "flat",
+  "drivers": [
+    "real yield 3.1% (82nd pct)",
+    "foreign SBN +Rp4.2T/4w"
+  ],
+  "risks": [
+    "USD/IDR at 6m high"
+  ],
+  "watch": [
+    "BI meeting 2026-10-22",
+    "US CPI 2026-10-15"
+  ],
+  "entry": {
+    "style": "ladder",
+    "tranches": 3,
+    "spacing_days": 10
+  },
+  "portfolio": {
+    "current_pct": 8,
+    "target_pct": 15,
+    "delta": "+7pt over 3 tranches"
+  },
+  "flags": [],
+  "stale_inputs": [],
+  "sources": [
+    "worldbankscape",
+    "sec-edgar FRED",
+    "idxscape",
+    "bisfetcher",
+    "financer"
+  ],
+  "disclaimer": "Heuristic, not investment advice."
+}
