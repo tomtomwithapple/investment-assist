@@ -8,7 +8,7 @@ Heuristic context, **not investment advice**. Every stance, brief and message sa
 its sources.
 
 - Decision flow: [`CLAUDE.md`](CLAUDE.md), section *Investment decision flow*.
-- Build plan and progress: [`PLAN.md`](PLAN.md). All phases (A–D, S0–S14) are built.
+- Build plan and progress: [`PLAN.md`](PLAN.md). Phases A–D and G are built, F up to S21; S15 and S22 are open.
 
 ## Quick start
 

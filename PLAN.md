@@ -31,7 +31,7 @@ Two launchd jobs are ready in `launchd/` but are **not installed**; the user dec
   Telegram only on a regime or dollar change.
 
 No stance has moved in phases B–D:
-- The IDN rules make no call on this Mac.
+- With PHEI fresh here since 2026-10-26, both IDN rules now propose a call (bonds neutral, stocks underweight), but neither is applied: each placebo sample is still too small (P45-start).
 - The foreign overrides and candidates are hand-set, so they move scores but not bands until they
   beat a placebo.
 
