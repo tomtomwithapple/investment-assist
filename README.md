@@ -10,6 +10,30 @@ its sources.
 - Decision flow: [`CLAUDE.md`](CLAUDE.md), section *Investment decision flow*.
 - Build plan and progress: [`PLAN.md`](PLAN.md). All phases (A–D, S0–S14) are built.
 
+## Quick start
+
+```sh
+./start.sh                  # uv sync, doctor, run if out/ is stale, then the pages on http://127.0.0.1:8790/
+```
+
+`start.sh` works from any directory. It stops with a message if `uv` is not installed
+(https://docs.astral.sh/uv/). Then it:
+
+1. runs `uv sync`;
+2. runs `assist doctor` (informational, never stops the script);
+3. runs `assist run --no-send` when `out/` holds no stance or its newest `as_of` is before
+   today; a failed run is reported and the pages still start on whatever `out/` holds;
+4. starts `assist status`, waits up to 30 s for it to answer (else shows its log and exits 1),
+   opens the browser and keeps serving until Ctrl-C.
+
+| Flag | Effect |
+|---|---|
+| `--run` / `--no-run` | always run / never run, whatever the age of `out/` |
+| `--send` | the run sends its Telegram summary (`assist run`, still once a day) |
+| `--no-open` | do not open the browser |
+| `--port N` | serve on another port (default 8790) |
+| `--install-jobs` | also run `sh launchd/install.sh` after the sync; without it `~/Library/LaunchAgents` is never touched |
+
 ## Use
 
 ```sh
@@ -100,22 +124,30 @@ or the environment, to send.
 ## Data gaps the brief will flag
 
 These are fetcher-side gaps. They are fixed in the sibling repo, never here (details in
-`PLAN.md`, *Open data gaps*, and `docs/results/`).
+`PLAN.md`, *Open data gaps*, and `docs/results/`). As of the 2026-10-27 doctor: 11 of 14
+sources present and fresh, 2 stale (jquantster, idx-method), 1 missing (satudatascape).
 
-- **PHEI tables are missing on this Mac.** idxscape is at migration 8, so there is no IGSYC
-  curve. Both IDN rules make no call, and the IDN 10Y falls back to dbnomics `idn.rate.long`,
-  which ends 2024-12.
-- **There is no JCI fetcher.** idx-method's index CSVs are frozen at 2026-09-30. The paper
-  track's JCI leg and the stocks rule's verdict stop there.
-- **jquantster is on the J-Quants free plan.** TSE investor types are empty and daily bars run
-  about 12 weeks behind.
+- **There is no JCI fetcher.** idx-method's index CSVs are frozen at 2026-09-30, so the doctor
+  shows idx-method stale. The paper track's JCI leg, the stocks rule's verdict and the JCI
+  earnings yield history stop there. The SBN leg reads idxscape's IGSYC 10Y, which starts in
+  October 2026, so the two legs never overlap and **the paper track scores no week at all**
+  (0 weeks for the benchmark and for all 8 model segments) until a JCI series runs past
+  2026-10-06.
+- **The PHEI curve is fresh but short.** idxscape's `igsyc_point` is current (2026-10-26), so
+  both IDN rules now propose a call (bonds neutral, stocks underweight), but neither is applied:
+  their walk-forwards have an insufficient sample until the IGSYC history grows.
+- **jquantster is on the J-Quants free plan.** TSE investor types are empty and daily bars end
+  2026-08-03, about 12 weeks behind.
 - **openkrx has no index Parquet on disk.** There is no KR or TW index valuation.
-- **singstat's MAS series have been stale since 2026-10-07.** This lowers SGP confidence.
-- **sec-edgar's FRED copy here has been stale since 2026-10-12.** Every regime input is stale,
-  so every stance's confidence carries ×0.9⁵.
+- **singstat's newest observation is 2026-10-07.** The MAS SORA, SGS and FX series lag, which
+  lowers SGP confidence.
 - **There are no USD/IDR forwards.** Hedged IDR edges use policy-rate carry instead.
 - **idx-method's stock history is short and not adjusted.** It holds about 5 years of closes,
   about 4 of which are usable for drawdowns. P21's entry levels for
   momentum names at fresh 3-year highs are wrong (for example BSML: entry 21 against a price
   of 575). Do not use `entry_typical` for those names.
+- **sec-edgar's Alpaca tables are empty here**, so the USA undervalued list has no names.
 - **satudatascape has no store yet.**
+
+FRED (sec-edgar) is fresh again: VIXCLS reads 2026-10-23, so the regime inputs no longer cut
+every stance's confidence.
