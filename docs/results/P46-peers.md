@@ -27,6 +27,13 @@ block is byte-identical (`block_key`, sha1, 8 hex). On 2026-10-26 that gives 33 
 sectors, and each industry sits within one IDX-IC sector. The largest has 93 names (Barang Baku
 is one industry); 4 have fewer than 3 names and get no industry median.
 
+**Names.** The groups match the IDX sub-sectors that Stockbit lists in idx-method's
+`data/universe.json` one for one, sector by sector. `peers.SUBSECTORS` names each group by the
+sub-sector whose anchor symbols it holds (BBCA → Bank, TLKM → Telekomunikasi, …). Barang
+Rekreasi (DOSS), Energi Alternatif (ALII, SEMA) and Logistik & Pengantaran (TMAS, SMDR) are
+named by elimination. A group with no anchor takes its sector name (Barang Baku is one
+sub-sector).
+
 ## Model
 
 | Category | Scored (direction) | Shown only |
@@ -59,9 +66,31 @@ This is context only. No screen, verdict or stance reads it, so it carries no pl
 
 ## Pages
 
-- **`/industries`** has one card per sector. Each row is an industry, labelled by its 3 largest
-  names, with its name count, big / mid / small counts, and PE, PBV, yield, ROE and D/E. Each
-  of those shows the median, with Stockbit's mean under it.
+- **`/industries`** shows only the names that pass the filters below, as one SVG chart per
+  industry. The industry with the best overall score comes first, and its names are in score
+  order.
+  - Each chart has one panel per metric: PE, PBV, dividend yield, ROE and D/E. Each panel starts
+    with two grey bars, the industry median and Stockbit's industry average. Then comes one bar
+    per passing name: blue when it is better than the median, red when it is worse. The median
+    is drawn as a dashed line.
+  - A name must pass every one of these:
+    - Its overall score is above 1×. That is the mean of the four category scores against the
+      industry median, on a log scale.
+    - Its valuation and profitability scores are above 1×.
+    - Its dividend and solvency scores are at least 0.8×.
+    - Its PE and its PBV are each below the industry median.
+
+    A missing score or value fails the name. PE and PBV are checked on their own because the
+    valuation score averages four ratios, so a cheap P/S or EV/EBITDA could hide a dear PE or
+    PBV. CNMA is the example: its PE is 2.2× its median, but it scored blue. The PE and PBV
+    values match idx-method's `factors.json`.
+  - The page took this shape in three steps on 2026-10-27, after the first version (cards per
+    sector, one row per industry):
+    - `cf40630`: one ranked table.
+    - `79b2a15`: the PE and PBV check.
+    - `33cb34c`: the 0.8× floors and the sub-sector names.
+
+    `d3cad8c` then replaced the table with the charts.
 - **`/industries/<id>`** has one SVG chart of four small multiples, one per category:
   - A row per name, grouped big / mid / small and ordered by market cap.
   - The bar is the score against the industry median, the ring the score against the sector
@@ -76,18 +105,20 @@ This is context only. No screen, verdict or stance reads it, so it carries no pl
   and the sector mean. Each name's cell shows its value with its "×ind · ×sec" deviation.
 - **Stars.** Names listed in `out/candidates/IDN.json` are starred, with their style.
 - **Guards.** `<id>` is matched exactly against the ids in the file and never becomes a path.
-  Every value is escaped. The `.json` twins are the index data and the industry with its
-  sector benchmarks.
+  Every value is escaped. The `.json` twin of `/industries` has `as_of` and `rows`, the
+  passing names, and `industries`, each with its label, sector, median, average and passing
+  symbols. The twin of `/industries/<id>` is the industry with its sector benchmarks.
 
 ## Tests
 
 - 22 adapter tests: parsing, newest date, grouping by block, an undecodable body, and a missing
   db, table or pull.
-- 23 peers tests: deviation cases, tiers, medians, signs, sector scoring, stale input, a
-  byte-stable write, and `write_peers` never raising.
-- 15 view tests: nav, index, chart, tables, twins, escaping, 6 404 cases, a missing or invalid
-  file, and no stars without a candidates file.
-- Full suite: 1317 passed, ruff clean.
+- 24 peers tests: deviation cases, tiers, medians, signs, sector scoring, sub-sector names,
+  stale input, a byte-stable write, and `write_peers` never raising.
+- 15 view tests: nav, the per-industry charts and their filters (with medians pinned by
+  identical names), the industry page, tables, twins, escaping, 6 404 cases, a missing or
+  invalid file, and no stars without a candidates file.
+- Full suite, 2026-10-28: 1318 passed, ruff clean.
 
 ## Live run (2026-10-27)
 
@@ -103,14 +134,25 @@ This is context only. No screen, verdict or stance reads it, so it carries no pl
   - BMRI and BBNI are about level to slightly cheaper on valuation (1.04×, 1.11×), pay about 2–3×
     the median yield, and are less solvent (0.58×, 0.72×).
   - BBCA is dearer (0.53×) and 3.16× more profitable.
+- **After the follow-ups.** With the filters, 41 of the 836 names pass on 2026-10-26, in 18
+  industries:
+  - Barang Baku: 8 names.
+  - Makanan & Minuman, and Minyak, Gas & Batu Bara: 6 names each.
+  - Perdagangan Ritel: 3 names.
+  - Bank: BNGA and PNBN.
+
+  BMRI and BBNI are not in the list. Their solvency is 0.58× and 0.72× the median, below the
+  0.8× floor.
+- **Check on 2026-10-28.** `/industries` answered 200 in 17 ms with 131 KB, and its twin lists
+  the 18 industries.
 - The Stockbit session had expired (refresh 401, `./run.sh login` needed in idx-method). That
-  did not matter here because the 2026-10-26 pull is stored, but the 16:30 pull will store
-  nothing until the session is renewed.
+  did not matter here because the 2026-10-26 pull is stored. The 16:30 pull will store
+  nothing until the session is renewed, and none was stored on 2026-10-27 or 2026-10-28.
 
 ## Gaps
 
-- **No industry names.** Naming needs membership per IDX-IC sub-sector: `/screener` with
-  universe scope `sub`, or `/emitten`. That is idx-method V2, which also keeps membership per
-  day.
+- **Names are inferred.** Sub-sector names come from anchor symbols, not from membership data.
+  Real membership per IDX-IC sub-sector, dated per day, is idx-method V2 (`/screener` with
+  universe scope `sub`, or `/emitten`).
 - **Today only.** Every pull is today's cross-section (`/comparison` ignores a date), so there
   is no history yet. One date is stored per weekday pull from now on.
