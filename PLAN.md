@@ -8,7 +8,7 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-10-28 (P46-peers). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against its industry and sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S15 and S22 are open.
+**Last updated:** 2026-10-28 (P46-peers). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against Stockbit's industry average and the sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S15 and S22 are open.
 
 What `assist run` does:
 - It reads layers 0, 1 and 5 for every subject.

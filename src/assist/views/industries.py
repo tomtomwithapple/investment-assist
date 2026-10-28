@@ -1,17 +1,18 @@
-"""The industries pages (/industries and /industries/<id>): each IDN name against its industry and
-sector median in valuation, dividend, profitability and solvency (S30, `candidates.peers`).
+"""The industries pages (/industries and /industries/<id>): each IDN name against Stockbit's
+industry average and the sector median in valuation, dividend, profitability and solvency (S30,
+`candidates.peers`; there is no industry median).
 
 Reads `app.out_dir/industries/IDN.json` as written by `assist run` or `assist industries`; the page
 never opens a store. `/industries` is one chart per industry of the names that pass `rows`' filters
 (overall, valuation and profitability above 1×, dividend and solvency at least 0.8×, PE and PBV
-each below the industry median), sorted by overall score (the mean of the category scores vs the
-industry median), most positive first: per metric (PE, PBV, yield, ROE, D/E) a bar per name beside
-the industry median and Stockbit's industry average. `/industries/<id>` draws one chart of four
-small multiples (a row per name, grouped big / mid / small cap by market cap): the bar is the
-category score against the industry median, the ring against the sector median, both on a log axis
-from 1/4x to 4x, right (blue) better and left (red) worse, so direction carries the sign without
-colour. Below it, a table per category gives every value with its deviation, and the benchmarks
-(medians, then Stockbit's averages) as the first rows. Names on the S20 undervalued list
+each below the industry average), sorted by overall score (the mean of the category scores vs the
+industry average), most positive first: per metric (PE, PBV, yield, ROE, D/E) a bar per name beside
+Stockbit's industry average. `/industries/<id>` draws one chart of four small multiples (a row per
+name, grouped big / mid / small cap by market cap): the bar is the category score against the
+industry average, the ring against the sector median, both on a log axis from 1/4x to 4x, right
+(blue) better and left (red) worse, so direction carries the sign without colour. Below it, a
+table per category gives every value with its deviation, and the benchmarks (industry average,
+sector median, sector average) as the first rows. Names on the S20 undervalued list
 (`out/candidates/IDN.json`) are starred. <id> is matched exactly against the ids in the file and
 never becomes a path. Every value read from a file goes through `esc`.
 """
@@ -68,7 +69,7 @@ STYLE = """<style>
 .peers details summary { cursor:pointer; font-weight:600; }
 .peers svg .bench { fill:var(--mid); }
 .peers svg .lvl { fill:var(--mid); }
-.peers svg .median { stroke:var(--fg); stroke-width:1; stroke-dasharray:3 3; opacity:.6; }
+.peers svg .avgline { stroke:var(--fg); stroke-width:1; stroke-dasharray:3 3; opacity:.6; }
 .peers .key.bench { background:var(--mid); }
 .peers section.industry header { display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
 .peers section.industry h2 { margin:0 0 8px; }
@@ -148,22 +149,23 @@ def _caption(p: Mapping) -> str:
     note = "".join(web.notice(s) for s in stale)
     return (f'<p class="muted">As of {esc(str(p.get("as_of", DASH)))} (built '
             f'{esc(str(p.get("built", DASH)))}), {esc(str(p.get("source", "")))}. Scored against '
-            "the industry and sector medians computed here; Stockbit's averages are means that "
-            "loss-makers can drag below zero, shown as a cross-check.</p>" + note)
+            "Stockbit's industry average and the sector median computed here. The industry "
+            "average is a mean that loss-makers can drag to zero or below; a metric whose "
+            "average is not positive scores nobody in that industry.</p>" + note)
 
 
 # ---------------- /industries ----------------
 
 
 def overall(s: Mapping) -> float | None:
-    """The mean of a name's category scores vs its industry median; None when none is scored."""
+    """The mean of a name's category scores vs its industry average; None when none is scored."""
     xs = [v for v in map(_f, _d(s.get("score_industry")).values()) if v is not None]
     return round(sum(xs) / len(xs), 4) if xs else None
 
 
 LEVEL = 0.005  # a score within this of 0 (about 1.00x) is drawn level, neither blue nor red
 NO_RED = ("valuation", "profitability")  # the ranked list drops a name red or unscored in these
-CHEAPER = (("pe", "PE"), ("pbv", "PBV"))  # ... and one not below its industry median on each
+CHEAPER = (("pe", "PE"), ("pbv", "PBV"))  # ... and one not below its industry average on each
 FLOOR = {"dividend": 0.8, "solvency": 0.8}  # ... and one below these multiples or unscored here
 
 
@@ -173,7 +175,7 @@ def _red(score: Any) -> bool:
 
 
 def _cheaper(dev: Any) -> bool:
-    """A lower-is-better deviation that is below the industry median by more than `LEVEL`."""
+    """A lower-is-better deviation that is below the industry average by more than `LEVEL`."""
     v = _f(dev)
     return v is not None and v <= -LEVEL
 
@@ -190,7 +192,7 @@ def rows(p: Mapping) -> list[dict]:
 
     Kept only when the overall score is above 1x (> 0), valuation and profitability are above 1x
     (`NO_RED`), dividend and solvency are at least 0.8x (`FLOOR`), and PE and PBV are each below
-    the industry median (`CHEAPER`), so a cheap P/S or EV/EBITDA cannot hide a dear PE or PBV in
+    the industry average (`CHEAPER`), so a cheap P/S or EV/EBITDA cannot hide a dear PE or PBV in
     the valuation mean. A score or value that is missing (shown as -) fails its filter.
     """
     out = []
@@ -234,24 +236,24 @@ def _bench_label(key: str, x: Any) -> str:
 
 def industry_chart(ind: Mapping, members: Sequence[Mapping],
                    stars: Mapping[str, list[str]]) -> str:
-    """Small multiples, one panel per `METRIC_PANELS` metric, sharing the rows: the industry
-    median and Stockbit's industry average (grey) on top, then each passing name, blue when
-    better than the median and red when worse. Each panel has its own linear axis from 0 to the
-    largest member or median value; the dashed line is the median. A value at or below 0, or
+    """Small multiples, one panel per `METRIC_PANELS` metric, sharing the rows: Stockbit's
+    industry average (grey) on top, then each passing name, blue when better than the average
+    and red when worse. Each panel has its own linear axis from 0 to the largest member or
+    average value; the dashed line is the average. A value at or below 0, or
     missing, has no bar and is written out; a bar past the axis end is cut and marked »."""
-    med, avg = _d(ind.get("median")), _d(ind.get("average"))
-    bench = (("Industry median", med), ("Industry avg (Stockbit)", avg))
+    avg = _d(ind.get("average"))
+    bench = (("Industry avg (Stockbit)", avg),)
     n_rows = len(bench) + len(members)
     width = M_LABEL_W + len(METRIC_PANELS) * M_PANEL_W + (len(METRIC_PANELS) - 1) * M_GAP
     height = HEAD_H - 14 + n_rows * ROW_H + 8
     label = esc(str(ind.get("label", "")))
     parts = [f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="{label}: PE, PBV, '
-             'yield, ROE and D/E of the passing names against the industry median and average">']
+             'yield, ROE and D/E of the passing names against the industry average">']
     top, bottom = HEAD_H - 14, height - 4
     for c, (key, lb, better) in enumerate(METRIC_PANELS):
         x0 = M_LABEL_W + c * (M_PANEL_W + M_GAP)
         vals = [v for r in members if (v := _f(_d(r.get("values")).get(key))) is not None]
-        m = _f(med.get(key))
+        m = _f(avg.get(key))
         vmax = max([v for v in [*vals, m] if v is not None and v > 0], default=1.0)
         span = M_PANEL_W - M_TEXT_W
 
@@ -264,7 +266,7 @@ def industry_chart(ind: Mapping, members: Sequence[Mapping],
                      f"{hint}</text>"
                      f'<line class="zero" x1="{x0}" x2="{x0}" y1="{top}" y2="{bottom}"/>')
         if m is not None and m > 0:
-            parts.append(f'<line class="median" x1="{x(m):.1f}" x2="{x(m):.1f}" y1="{top}" '
+            parts.append(f'<line class="avgline" x1="{x(m):.1f}" x2="{x(m):.1f}" y1="{top}" '
                          f'y2="{bottom}"/>')
         y = top
         for i, (name, src) in enumerate([*bench, *((None, r) for r in members)]):
@@ -275,7 +277,7 @@ def industry_chart(ind: Mapping, members: Sequence[Mapping],
                 good = d is not None and (d < 0 if better == "lower" else d > 0)
                 cls = "pos" if good else "neg" if d is not None and abs(d) >= LEVEL else "lvl"
                 tip = (f"{r.get('symbol')} {lb}: {_bench_label(key, v)}, {times(d)} the "
-                       f"industry median ({_bench_label(key, m)})")
+                       f"industry average ({_bench_label(key, m)})")
             else:
                 v, cls = _f(_d(src).get(key)), "bench"
                 tip = f"{name} {lb}: {_bench_label(key, v)}"
@@ -312,11 +314,11 @@ def industry_chart(ind: Mapping, members: Sequence[Mapping],
     return "".join(parts)
 
 
-INDEX_LEGEND = ('<p class="legend"><span><span class="key bar bench"></span>industry median and '
-                "Stockbit's industry average</span><span><span class=\"key bar pos\"></span>"
-                "better than the median</span><span><span class=\"key bar neg\"></span>worse"
-                "</span><span>dashed line: the median</span><span>beside each name: its overall "
-                "score (multiple of the median) and cap tier</span><span>★ on the S20 "
+INDEX_LEGEND = ('<p class="legend"><span><span class="key bar bench"></span>Stockbit\'s industry '
+                "average</span><span><span class=\"key bar pos\"></span>"
+                "better than the average</span><span><span class=\"key bar neg\"></span>worse"
+                "</span><span>dashed line: the average</span><span>beside each name: its overall "
+                "score (multiple of the average) and cap tier</span><span>★ on the S20 "
                 "undervalued list</span></p>")
 
 
@@ -340,14 +342,14 @@ def index(app: web.App, _m: re.Match[str]) -> web.View:
     body = (f'{STYLE}<div class="peers"><h1>Industries</h1>{_caption(p)}'
             f'<p class="muted">{len(table)} of {n} names in {len(cards)} of '
             f'{len(p["industries"])} industries pass: overall, valuation and profitability above '
-            "1× the industry median, dividend and solvency at least 0.8×, and a PE and a PBV each "
-            "below the median (a missing score or value fails). One chart per industry, the "
+            "1× the industry average, dividend and solvency at least 0.8×, and a PE and a PBV each "
+            "below the average (a missing score or value fails). One chart per industry, the "
             "industry of the best overall score first and its names in that order. An industry "
             "is a Stockbit peer group, named by the IDX sub-sector it matches; open one for every "
             f"name.</p>{INDEX_LEGEND}{''.join(cards) or web.notice('no name passes')}</div>")
     return web.View(TITLE, body, {"as_of": p.get("as_of"), "rows": table, "industries": [
         {"id": ind.get("id"), "label": ind.get("label"), "sector": ind.get("sector"),
-         "median": ind.get("median"), "average": ind.get("average"),
+         "average": ind.get("average"),
          "symbols": [r["symbol"] for r in members]} for ind, members in groups(table, p)]})
 
 
@@ -368,7 +370,8 @@ def chart(ind: Mapping, cats: Sequence[Mapping], stars: Mapping[str, list[str]])
     width = LABEL_W + len(cats) * PANEL_W + (len(cats) - 1) * GAP
     height = HEAD_H + n_rows * ROW_H + 6
     parts = [f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="'
-             f'{esc(str(ind.get("label", "")))}: category scores vs industry and sector median">']
+             f'{esc(str(ind.get("label", "")))}: category scores vs industry average and sector '
+             'median">']
     bottom = height - 4
     for c, cat in enumerate(cats):
         x0 = LABEL_W + c * (PANEL_W + GAP)
@@ -399,7 +402,7 @@ def chart(ind: Mapping, cats: Sequence[Mapping], stars: Mapping[str, list[str]])
                 si = _f(_d(s.get("score_industry")).get(key))
                 ss = _f(_d(s.get("score_sector")).get(key))
                 used = _d(s.get("scored_metrics")).get(key, 0)
-                tip = (f"{sym} {cat.get('label', '')}: {_better(si)} than the industry median, "
+                tip = (f"{sym} {cat.get('label', '')}: {_better(si)} than the industry average, "
                        f"{_better(ss)} than the sector median ({used} metric"
                        f"{'' if used == 1 else 's'})")
                 parts.append(f'<g><title>{esc(tip)}</title><rect class="hit" x="{x0}" y="{y}" '
@@ -420,7 +423,7 @@ def chart(ind: Mapping, cats: Sequence[Mapping], stars: Mapping[str, list[str]])
 
 
 LEGEND = ('<p class="legend"><span><span class="key bar pos"></span><span class="key bar neg">'
-          "</span>bar: score vs the industry median</span><span><span class=\"key ring\"></span>"
+          "</span>bar: score vs the industry average</span><span><span class=\"key ring\"></span>"
           "ring: vs the sector median</span><span>right of 1× is better (cheaper, higher yield, "
           "more profitable, more solvent), left is worse; log axis, capped at 4×</span>"
           "<span>★ on the S20 undervalued list</span></p>")
@@ -433,8 +436,7 @@ def _table(ind: Mapping, sector: Mapping, cat: Mapping, stars: Mapping[str, list
                    f'{"" if m.get("better") else "<br><span class=muted>not scored</span>"}</th>'
                    for m in metrics)
     bench_rows = []
-    for label, src in (("Industry median (benchmark)", ind.get("median")),
-                       ("Industry average (Stockbit)", ind.get("average")),
+    for label, src in (("Industry average (Stockbit, benchmark)", ind.get("average")),
                        ("Sector median (benchmark)", sector.get("median")),
                        ("Sector average (Stockbit)", sector.get("average"))):
         cells = "".join(f'<td class="num">{esc(value(str(k), _d(src).get(k)))}</td>'

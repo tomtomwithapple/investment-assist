@@ -43,15 +43,21 @@ sub-sector).
 | profitability | ROE, ROA, ROIC TTM, net / operating / gross margin Q (higher) | |
 | solvency | D/E, liabilities/equity (lower); current ratio, interest cover, Altman Z modified (higher) | |
 
-**Benchmarks.** The industry and sector medians are computed here over the names that have a
-value, and need at least 3 values. Stockbit's averages are means. On 2026-10-26 the industry PE
-mean was −77.3 for the POLU/HRTA/ARGO group and −114.7 for DOSS. Those benchmarks are not
-positive, which would leave the industry with no valuation scores, so the means are carried and
-shown but never scored against.
+**Benchmarks.** Since 2026-10-28 the industry benchmark is Stockbit's industry average, and no
+industry median is computed (schema 2). The sector benchmark is still the sector median, computed
+here over at least 3 values, with Stockbit's sector average shown beside it. Stockbit's averages
+are means that loss-makers can drag to zero or below: on 2026-10-26 the industry PE mean was
+−77.3 for the POLU/HRTA/ARGO group and −114.7 for DOSS. Where an industry average is not positive
+or missing, nobody in that industry gets a deviation on that metric, so the `/industries` filters
+fail there. On 2026-10-26 that shuts 9 industries out of the list: PE in Jasa Konsumen, Media &
+Hiburan, Pakaian & Barang Mewah, Barang Rumah Tangga and Barang Rekreasi; PBV and D/E in
+Transportasi; dividend yield in Jasa Konsumen, Media & Hiburan, Pakaian & Barang Mewah, Jasa &
+Peralatan Kesehatan, Perusahaan Holding & Investasi and Perangkat Lunak & Jasa TI. With the
+average, 45 names in 15 industries pass (41 in 18 with the median).
 
-**Deviation.** log(value / median), clamped to ±log 4. It is None in two cases: the benchmark is
+**Deviation.** log(value / benchmark), clamped to ±log 4. It is None in two cases: the benchmark is
 not positive, or the value is not positive on a lower-is-better metric (a loss-maker's PE is not
-cheap). On a higher-is-better metric, a value at or below zero against a positive median reads
+cheap). On a higher-is-better metric, a value at or below zero against a positive benchmark reads
 as the floor −log 4. So a non-payer is 4× worse on yield, and a loss is 4× worse on ROE.
 
 **Score.** The mean of the scored deviations in a category, signed so that positive is better.
@@ -70,15 +76,15 @@ This is context only. No screen, verdict or stance reads it, so it carries no pl
   industry. The industry with the best overall score comes first, and its names are in score
   order.
   - Each chart has one panel per metric: PE, PBV, dividend yield, ROE and D/E. Each panel starts
-    with two grey bars, the industry median and Stockbit's industry average. Then comes one bar
-    per passing name: blue when it is better than the median, red when it is worse. The median
-    is drawn as a dashed line.
+    with one grey bar, Stockbit's industry average. Then comes one bar per passing name: blue
+    when it is better than the average, red when it is worse. The average is drawn as a dashed
+    line.
   - A name must pass every one of these:
     - Its overall score is above 1×. That is the mean of the four category scores against the
-      industry median, on a log scale.
+      industry average, on a log scale.
     - Its valuation and profitability scores are above 1×.
     - Its dividend and solvency scores are at least 0.8×.
-    - Its PE and its PBV are each below the industry median.
+    - Its PE and its PBV are each below the industry average.
 
     A missing score or value fails the name. PE and PBV are checked on their own because the
     valuation score averages four ratios, so a cheap P/S or EV/EBITDA could hide a dear PE or
@@ -93,20 +99,20 @@ This is context only. No screen, verdict or stance reads it, so it carries no pl
     `d3cad8c` then replaced the table with the charts.
 - **`/industries/<id>`** has one SVG chart of four small multiples, one per category:
   - A row per name, grouped big / mid / small and ordered by market cap.
-  - The bar is the score against the industry median, the ring the score against the sector
+  - The bar is the score against the industry average, the ring the score against the sector
     median.
   - The axis is log, ¼× to 4×. Right is better, drawn blue; left is worse, drawn red. Direction
     carries the sign, so colour is never the only cue. The blue/red pair passes the dataviz
     validator in light and dark mode.
   - Each cell has a hover title, for example "BBNI Valuation: 1.11× better than the industry
-    median, … than the sector median (4 metrics)".
+    average, … than the sector median (4 metrics)".
 - **Tables.** Under the chart there is one `<details>` table per category; valuation opens by
-  default. The first four rows are the industry median, the industry mean, the sector median
-  and the sector mean. Each name's cell shows its value with its "×ind · ×sec" deviation.
+  default. The first three rows are the industry average (the benchmark), the sector median
+  and the sector average. Each name's cell shows its value with its "×ind · ×sec" deviation.
 - **Stars.** Names listed in `out/candidates/IDN.json` are starred, with their style.
 - **Guards.** `<id>` is matched exactly against the ids in the file and never becomes a path.
   Every value is escaped. The `.json` twin of `/industries` has `as_of` and `rows`, the
-  passing names, and `industries`, each with its label, sector, median, average and passing
+  passing names, and `industries`, each with its label, sector, average and passing
   symbols. The twin of `/industries/<id>` is the industry with its sector benchmarks.
 
 ## Tests

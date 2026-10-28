@@ -35,7 +35,8 @@ def _payload() -> dict:
     for sym, (ind, sector, vals) in rows.items():
         c.ratios[sym], c.industry[sym], c.sectors[sym] = dict(vals), ind, sector
         c.names[sym] = EVIL if sym == "XEVL" else f"{sym} Tbk"
-        c.industry_avg[sym], c.sector_avg[sym] = {PE: 11.0}, {PE: 12.0}
+        c.industry_avg[sym] = {PE: 10.0, PBV: 2.0, ROE: 10.0}
+        c.sector_avg[sym] = {PE: 12.0}
     return peers.build(c, date(2026, 10, 27))
 
 
@@ -62,9 +63,9 @@ def test_nav_has_industries(out):
 
 
 def _ranked_out(tmp_path) -> Path:
-    """bank2's medians are pinned by eleven identical names (PE 10, PBV 2, yield 5, ROE 10, D/E
-    0.5), so
-    each test name is scored against those: AAAA passes every filter, the others fail one."""
+    """bank2's Stockbit average is PE 10, PBV 2, yield 5, ROE 10, D/E 0.5, and eleven names sit
+    level on it; each test name is scored against it: AAAA passes every filter, the others fail
+    one."""
     c = Comparison(date=date(2026, 10, 26))
     rows = {f"M{i:03d}": {PE: 10.0, PBV: 2.0, YIELD: 5.0, ROE: 10.0, DER: 0.5, MKTCAP: 1e12}
             for i in range(11)}  # level: overall 1.00x
@@ -82,7 +83,8 @@ def _ranked_out(tmp_path) -> Path:
     for sym, vals in rows.items():
         c.ratios[sym], c.industry[sym], c.sectors[sym] = dict(vals), "bank2", "Keuangan"
         c.names[sym] = f"{sym} Tbk"
-        c.industry_avg[sym], c.sector_avg[sym] = {PE: 11.0}, {PE: 12.0}
+        c.industry_avg[sym] = {PE: 10.0, PBV: 2.0, YIELD: 5.0, ROE: 10.0, DER: 0.5}
+        c.sector_avg[sym] = {PE: 12.0}
     o = tmp_path / "ranked"
     peers.write(peers.build(c, date(2026, 10, 27)), o)
     return o
@@ -106,7 +108,7 @@ def test_index_is_one_ranked_table_after_every_filter(tmp_path):
     assert peers_overall(every["HHHH"]) > 0
     iiii = every["IIII"]["score_industry"]
     assert min(iiii["valuation"], iiii["profitability"], iiii["dividend"]) > 0
-    assert every["IIII"]["dev_industry"]["pbv"] > 0  # blue on valuation, but PBV above median
+    assert every["IIII"]["dev_industry"]["pbv"] > 0  # blue on valuation, but PBV above average
     assert all(r["dev_industry"][k] < 0 for r in data["rows"] for k in ("pe", "pbv"))
     for sym, cat in (("JJJJ", "dividend"), ("KKKK", "solvency")):
         sc = every[sym]["score_industry"]
@@ -123,18 +125,18 @@ def test_index_is_one_ranked_table_after_every_filter(tmp_path):
     svg = re.search(r"<svg.*?</svg>", card, re.S).group(0)
     for lb in ("PE", "PBV", "Yield %", "ROE %", "D/E"):
         assert f">{lb}</text>" in svg
-    assert ">Industry median</text>" in svg and ">Industry avg (Stockbit)</text>" in svg
+    assert ">Industry median</text>" not in svg and ">Industry avg (Stockbit)</text>" in svg
     assert ">AAAA</tspan>" in svg and "· big</tspan>" in svg
-    assert svg.count('class="hit"') == 5 * 3  # 5 panels × (median, average, AAAA)
-    assert svg.count('class="median"') == 5  # every metric has a median here
+    assert svg.count('class="hit"') == 5 * 2  # 5 panels × (average, AAAA)
+    assert svg.count('class="avgline"') == 5  # every metric has an average here
     # AAAA: PE 5 vs 10 and D/E 0.45 vs 0.5 better (blue); every bar of it is blue
-    assert "AAAA PE: 5.00, 0.50× the industry median (10.00)" in svg
+    assert "AAAA PE: 5.00, 0.50× the industry average (10.00)" in svg
     assert 'class="neg"' not in svg and svg.count('class="pos"') == 5
-    assert ">» 11.00</text>" in svg  # Stockbit's average PE: past the axis end (10), cut
+    assert "median" not in json.dumps(data["industries"])
 
 
 def test_index_stars_and_twin(out):
-    assert "★ dividend_value" not in _get(out, "/industries").body  # no dividend median there
+    assert "★ dividend_value" not in _get(out, "/industries").body  # no dividend average there
     data = json.loads(_get(out, "/industries.json").body)
     assert data["as_of"] == "2026-10-26" and data["rows"] == []
 
@@ -151,17 +153,18 @@ def test_page_chart(out):
     # sector medians need 3 values: PE, PBV and ROE have them, yield and D/E do not
     assert svg.count('class="ring"') == 6
     assert 'class="pos"' in svg and 'class="neg"' in svg
-    assert "AAAA Valuation: 2.00× better than the industry median" in svg
-    assert "bar: score vs the industry median" in body and "ring: vs the sector median" in body
+    assert "AAAA Valuation: 2.00× better than the industry average" in svg
+    assert "bar: score vs the industry average" in body and "ring: vs the sector median" in body
 
 
 def test_page_tables(out):
     body = _get(out, "/industries/bank1").body
     val = re.search(r'<details class="card table" data-category="valuation" open>(.*?)</details>',
                     body, re.S).group(1)
-    for bench in ("Industry median (benchmark)", "Industry average (Stockbit)",
-                  "Sector median (benchmark)", "Sector average (Stockbit)"):
+    for bench in ("Industry average (Stockbit, benchmark)", "Sector median (benchmark)",
+                  "Sector average (Stockbit)"):
         assert bench in val
+    assert "Industry median" not in val
     assert "★ dividend_value" in val
     aaaa = re.search(r"<strong>AAAA</strong>.*?</tr>", val, re.S).group(0)
     assert ">big<" in aaaa and "2.00×" in aaaa and "0.50× ind" in aaaa

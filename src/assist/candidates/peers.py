@@ -8,10 +8,11 @@ From Stockbit's `/comparison` (idx-method `api_raw`, `assist.sources.idxmethod_c
 - **solvency**: debt/equity and liabilities/equity (lower), current ratio, interest cover and
   Altman Z (modified) (higher)
 
-The benchmarks are the industry median and the sector median, computed here over the names that
-have a value (at least `min_median`). Stockbit's own industry and sector averages are means that
-loss-makers drag below zero (an industry PE of −77 on 2026-10-26), so they are carried beside the
-medians as a cross-check and never scored against (as PLAN S15 decided for its peer baseline).
+The industry benchmark is Stockbit's own industry average (a mean, as `/comparison` reports it;
+no industry median is computed). Loss-makers can drag it to zero or below (an industry PE of −77
+on 2026-10-26), and then that metric has no deviation for the whole industry. The sector benchmark
+is the sector median, computed here over the names that have a value (at least `min_median`);
+Stockbit's sector average is carried beside it as a cross-check, never scored against.
 
 A deviation is log(name / benchmark), never percent. It is None when the benchmark is not
 positive, or when the name's value is not positive on a lower-is-better metric (a loss-maker has
@@ -39,7 +40,7 @@ __all__ = ["CATEGORIES", "CONFIG", "OUT_DIR", "SUBSECTORS", "build", "deviation"
            "subsector", "tier", "write"]
 
 OUT_DIR = "industries"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # 2: the industry benchmark is Stockbit's average; no industry median
 DISCLAIMER = "Heuristic, not investment advice."
 SOURCE = "idx-method api_raw comparison_* (Stockbit /comparison)"
 MKTCAP = 2892
@@ -199,11 +200,11 @@ def build(cmp: Comparison, day: date, config: Mapping[str, Any] = CONFIG) -> dic
         syms = sorted(syms, key=lambda s: (-(caps[s] or 0), s))
         names = [cmp.sectors.get(s) or "" for s in syms]
         sector = max(sorted(set(names)), key=names.count)
-        median = _median([values[s] for s in syms], n_min)
+        average = _pick(cmp.industry_avg[syms[0]])
         stocks = []
         for s in syms:
             sec = cmp.sectors.get(s) or ""
-            dev_i = _devs(values[s], median, clamp)
+            dev_i = _devs(values[s], average, clamp)
             dev_s = _devs(values[s], sectors[sec]["median"], clamp)
             score_i, score_s, used = {}, {}, {}
             for cat, _, _ in CATEGORIES:
@@ -229,8 +230,7 @@ def build(cmp: Comparison, day: date, config: Mapping[str, Any] = CONFIG) -> dic
             "sector": sector,
             "n": len(syms),
             "leaders": syms[:3],
-            "median": median,
-            "average": _pick(cmp.industry_avg[syms[0]]),
+            "average": average,
             "stocks": stocks,
         })
     industries.sort(key=lambda i: (i["sector"], -i["n"], i["id"]))
