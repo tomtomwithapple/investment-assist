@@ -79,17 +79,18 @@ This is context only. No screen, verdict or stance reads it, so it carries no pl
     with one grey bar, Stockbit's industry average. Then comes one bar per passing name: blue
     when it is better than the average, red when it is worse. The average is drawn as a dashed
     line.
-  - A name must pass every one of these:
-    - Its overall score is above 1×. That is the mean of the four category scores against the
-      industry average, on a log scale.
-    - Its valuation and profitability scores are above 1×.
-    - Its dividend and solvency scores are at least 0.8×.
+  - A name must pass every one of these (since 2026-10-28):
     - Its PE and its PBV are each below the industry average.
+    - Its ROE is above the industry average.
+    - Its D/E is at least 0 and below its industry's cap (`DER_CAP` in `views/industries.py`).
+      The common cap is 1. Jasa Pembiayaan allows 5; Telekomunikasi, Utilitas, Infrastruktur
+      Transportasi and Perusahaan Holding Multi Sektor allow 1.5; Perangkat Lunak & Jasa TI,
+      Media & Hiburan and Rokok require below 0.5. Bank and Asuransi have no cap, because
+      their leverage isn't read from D/E and most of them have no D/E on Stockbit.
 
-    A missing score or value fails the name. PE and PBV are checked on their own because the
-    valuation score averages four ratios, so a cheap P/S or EV/EBITDA could hide a dear PE or
-    PBV. CNMA is the example: its PE is 2.2× its median, but it scored blue. The PE and PBV
-    values match idx-method's `factors.json`.
+    Dividend is not filtered, and the overall and category scores only order the names. A
+    missing value or average fails the name, except D/E where there is no cap. On 2026-10-26,
+    73 names in 19 industries pass (45 in 15 under the earlier score filters).
   - The page took this shape in three steps on 2026-10-27, after the first version (cards per
     sector, one row per industry):
     - `cf40630`: one ranked table.

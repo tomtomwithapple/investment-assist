@@ -524,16 +524,14 @@ host, launchd for the server, changes to how stances or candidates are built.
     `assist industries`; `/industries` and `/industries/<id>` (chart of four small multiples,
     bar vs the industry, ring vs the sector, plus a table per category; S20 names starred).
   - **Ranked list (2026-10-27).** `/industries` shows one chart per industry, no table: per
-    metric (PE, PBV, yield, ROE, D/E) the industry median and Stockbit's industry average as
-    grey bars, then a bar per passing name (blue better than the median, red worse), the
-    median dashed; the industry of the best overall score first, its names in that order. A
-    name passes when its overall score (mean of the four category scores vs the industry
-    median, log scale) and its valuation and profitability scores are above 1×, its dividend
-    and solvency scores are at least 0.8×, and its PE and PBV are each below the industry
-    median; a missing score or value fails. PE and PBV are checked on their own because the
-    valuation score averages four ratios, so a cheap P/S or EV/EBITDA could hide a dear PE or
-    PBV (CNMA, PE 2.2× its median, scored blue); the values match idx-method's
-    `factors.json`. 41 of 836 names in 18 industries pass on 2026-10-26. Every name stays on
+    metric (PE, PBV, yield, ROE, D/E) Stockbit's industry average as a grey bar, then a bar
+    per passing name (blue better than the average, red worse), the average dashed and the
+    D/E cap a red line; the industry of the best overall score first, its names in that order.
+    Since 2026-10-28 the benchmark is Stockbit's industry average (no industry median), and a
+    name passes when its PE and PBV are each below the industry average, its ROE above it, and
+    its D/E is from 0 up to its industry's cap (1 by default; per-industry exceptions in
+    `DER_CAP`, none for banks and insurers); dividend is not filtered and a missing value
+    fails. 73 of 836 names in 19 industries pass on 2026-10-26. Every name stays on
     its `/industries/<id>` page.
 
 **F7-ui notes (2026-10-27).** Per-slice details are in `docs/results/P40-ui-shell.md` …
