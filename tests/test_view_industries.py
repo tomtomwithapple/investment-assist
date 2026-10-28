@@ -1,9 +1,10 @@
 """The industries pages (/industries and /industries/<id>): the per-industry charts of the names
 with PE and PBV below the industry average, ROE above it and D/E under the industry's cap, the
 chart (one bar and one ring per name and category, tier groups, the legend), the category tables
-with benchmarks and deviations, stars from out/candidates/IDN.json, the .json twins, a missing or
-invalid file, escaping and the 404 cases. A temp out/ written from a synthetic `Comparison`
-through `peers.build`; no real out/, store or network."""
+with benchmarks and deviations, the financials timelines and tables, stars from
+out/candidates/IDN.json, the .json twins, a missing or invalid file, escaping and the 404 cases.
+A temp out/ written from a synthetic `Comparison` through `peers.build`; no real out/, store or
+network."""
 
 from __future__ import annotations
 
@@ -38,7 +39,12 @@ def _payload() -> dict:
         c.names[sym] = EVIL if sym == "XEVL" else f"{sym} Tbk"
         c.industry_avg[sym] = {PE: 10.0, PBV: 2.0, ROE: 10.0}
         c.sector_avg[sym] = {PE: 12.0}
-    return peers.build(c, date(2026, 10, 27))
+    c.statements = {
+        "AAAA": {"revenue": {"2025Q2": 10e12, "2026Q1": 11e12, "2026Q2": 12e12},
+                 "net_income": {"2026Q1": -1e12, "2026Q2": 2e12}, "equity": {"2026Q2": 50e12}},
+        "BBBB": {"revenue": {"2025Q2": 4e12, "2026Q2": 5e12}},
+    }
+    return peers.build(c, date(2026, 10, 27), {**peers.CONFIG, "quarters": 5})
 
 
 @pytest.fixture
@@ -165,6 +171,52 @@ def test_page_chart(out):
     assert 'class="pos"' in svg and 'class="neg"' in svg
     assert "AAAA Valuation: 2.00× better than the industry average" in svg
     assert "bar: score vs the industry average" in body and "ring: vs the sector median" in body
+
+
+def test_page_financials(out):
+    body = _get(out, "/industries/bank1").body
+    fin = body[body.index("<h2>Financials</h2>"):body.index('data-category="valuation"')]
+    assert "2025Q2 to 2026Q2" in fin and "2 of 3 names have statements" in fin
+    inc = re.search(r'<section class="card chart" data-statement="is">(.*?)</section>', fin,
+                    re.S).group(1)
+    assert ">Revenue</text>" in inc and ">Net income</text>" in inc
+    # one path per name and panel with a value: AAAA on revenue and net income only
+    paths = re.findall(r'class="line" stroke="var\(--s1\)" d="([^"]*)"', inc)
+    assert len(paths) == 2
+    assert paths[0].count("M") == 2  # revenue skips 2025Q3 and 2025Q4: a gap, not a line
+    assert 'stroke="var(--s2)"' in inc  # BBBB's lone dots still get a (moveto-only) path
+    assert "AAAA 2026Q2 Revenue: IDR 12.0T" in inc
+    assert 'class="zero"' in inc  # net income crosses 0
+    assert ">-1T</text>" in inc and ">2026Q2</text>" in inc
+    bs = re.search(r'data-statement="bs">(.*?)</section>', fin, re.S).group(1)
+    assert "no values for these names" in bs  # total debt
+    table = re.search(r'<details class="card table" data-statement="is">(.*?)</details>', fin,
+                      re.S).group(1)
+    aaaa = re.search(r"<strong>AAAA</strong>.*?</tr>", table, re.S).group(0)
+    assert "IDR 12.0T" in aaaa and "+20%" in aaaa  # 12T on 10T a year earlier
+    assert "CCCC" not in table
+
+
+def test_page_without_statements(tmp_path):
+    p = _payload()
+    p["periods"] = []
+    peers.write(p, tmp_path)
+    assert "no quarterly statements for this industry" in _get(tmp_path, "/industries/bank1").body
+
+
+@pytest.mark.parametrize(("lo", "hi", "want"), [
+    (0.0, 9.0, [0, 2.5, 5, 7.5, 10]), (-1e12, 2e12, [-1e12, 0, 1e12, 2e12]), (5.0, 5.0, None)])
+def test_nice_ticks(lo, hi, want):
+    t = industries.nice_ticks(lo, hi)
+    assert t[0] <= min(lo, 0) and t[-1] >= hi and 0 in t
+    if want is not None:
+        assert t == want
+
+
+@pytest.mark.parametrize(("v", "want"), [(3.2e13, "32T"), (4.5e11, "450B"), (-2e10, "-20B"),
+                                         (2.5e12, "2.5T"), (5e12, "5T"), (None, "-")])
+def test_compact(v, want):
+    assert industries.compact(v) == want
 
 
 def test_page_tables(out):

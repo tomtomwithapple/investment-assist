@@ -12,7 +12,11 @@ row per name, grouped big / mid / small cap by market cap): the bar is the categ
 the industry average, the ring against the sector median, both on a log axis from 1/4x to 4x, right
 (blue) better and left (red) worse, so direction carries the sign without colour. Below it, a table
 per category gives every value with its deviation, and the benchmarks (industry average, sector
-median, sector average) as the first rows. Names on the S20 undervalued list
+median, sector average) as the first rows. Between the chart and the tables, the financials: per
+statement (income statement, balance sheet) a timeline of small multiples, one line per competitor
+over the last quarters in the file (each quarter on its own, not year-to-date), for the
+`MAX_LINES` largest names that have statements, each panel on its own linear axis; a table gives
+every name's latest quarter and its change on a year earlier. Names on the S20 undervalued list
 (`out/candidates/IDN.json`) are starred. <id> is matched exactly against the ids in the file and
 never becomes a path. Every value read from a file goes through `esc`.
 """
@@ -74,6 +78,14 @@ STYLE = """<style>
 .peers .key.bench { background:var(--mid); }
 .peers section.industry header { display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
 .peers section.industry h2 { margin:0 0 8px; }
+.peers { --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300;
+  --s7:#6250d6; --s8:#e34948; }
+@media (prefers-color-scheme: dark) { .peers { --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+  --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767; } }
+.peers svg .line { fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
+.peers svg .dot { stroke:var(--card); stroke-width:1.5; }
+.peers svg g.pt:hover .dot { r:4.5; }
+.peers .key.line { width:14px; height:3px; border-radius:2px; }
 </style>"""
 
 
@@ -512,5 +524,176 @@ def page(app: web.App, m: re.Match[str]) -> web.View | None:
             f'<p class="muted">{esc(str(ind.get("sector", "")))} · {esc(str(ind.get("n", DASH)))}'
             f' names · industry id <code>{esc(str(ind.get("id", "")))}</code></p>'
             f'<section class="card chart">{LEGEND}{chart(ind, cats, stars)}</section>'
-            f"{tables}</div>")
+            f"{financials(p, ind)}{tables}</div>")
     return web.View(f"{TITLE} {ind.get('id', '')}", body, {**ind, "sector_benchmarks": sector})
+
+
+# ---------------- /industries/<id>: financials timelines ----------------
+
+MAX_LINES = 8  # categorical slots: the 8 largest names with statements, colour by size rank
+T_PANEL_W, T_PANEL_H, T_GAP, T_AXIS_W, T_HEAD, T_FOOT = 220, 150, 26, 46, 22, 20
+T_SLOTS = 4  # panels per row the SVG is sized for
+
+
+def compact(x: Any) -> str:
+    """IDR as an axis label: 3.2e13 → '32T', 4.5e11 → '450B', -2e10 → '-20B'."""
+    v = _f(x)
+    if v is None:
+        return DASH
+    for div, unit in ((1e12, "T"), (1e9, "B"), (1e6, "M")):
+        if abs(v) >= div:
+            q = v / div
+            return f"{q:,.0f}{unit}" if q == round(q) or abs(q) >= 10 else f"{q:,.1f}{unit}"
+    return f"{v:,.0f}"
+
+
+def nice_ticks(lo: float, hi: float, n: int = 4) -> list[float]:
+    """Round ticks (1, 2, 2.5, 5 × 10^k) covering lo..hi, 0 included."""
+    lo, hi = min(lo, 0.0), max(hi, 0.0)
+    if hi == lo:
+        hi = lo + 1.0
+    raw = (hi - lo) / n
+    mag = 10 ** math.floor(math.log10(raw))
+    step = next(m * mag for m in (1, 2, 2.5, 5, 10) if m * mag >= raw)
+    start = math.floor(lo / step) * step
+    out, t = [], start
+    while t < hi + step * 0.999:
+        out.append(round(t, 6))
+        t += step
+    return out
+
+
+def _with_statements(ind: Mapping) -> list[Mapping]:
+    """The names that carry statements, largest market cap first (the file's order)."""
+    return [_d(s) for s in ind.get("stocks") or [] if _d(_d(s).get("financials"))]
+
+
+def timeline(ind: Mapping, stmt: Mapping, quarters: Sequence[str],
+             names: Sequence[Mapping]) -> str:
+    """One panel per item of `stmt`, sharing the quarters on x: a 2px line per name (a gap where
+    a quarter is missing), a dot per quarter with its value on hover, a zero line when the axis
+    crosses 0."""
+    items = [_d(i) for i in stmt.get("items") or []]
+    n = len(quarters)
+    slots = max(len(items), T_SLOTS)  # same panel size on every statement
+    width = slots * (T_AXIS_W + T_PANEL_W) + (slots - 1) * T_GAP
+    height = T_HEAD + T_PANEL_H + T_FOOT
+    parts = [f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="'
+             f'{esc(str(ind.get("label", "")))}: {esc(str(stmt.get("label", "")))} by quarter, '
+             f'{esc(", ".join(str(r.get("symbol", "")) for r in names))}">']
+    bottom = T_HEAD + T_PANEL_H
+    for c, item in enumerate(items):
+        key, label = str(item.get("key", "")), str(item.get("label", ""))
+        x0 = c * (T_AXIS_W + T_PANEL_W + T_GAP) + T_AXIS_W
+        series = [[_f(v) for v in (_d(r.get("financials")).get(key) or [])][:n] for r in names]
+        vals = [v for ser in series for v in ser if v is not None]
+        if not vals:
+            parts.append(f'<text x="{x0 - T_AXIS_W}" y="12" font-weight="600">{esc(label)}</text>'
+                         f'<text class="muted" x="{x0}" y="{T_HEAD + T_PANEL_H / 2}">'
+                         "no values for these names</text>")
+            continue
+        ticks = nice_ticks(min(vals), max(vals))
+        lo, hi = ticks[0], ticks[-1]
+
+        def y(v: float, lo: float = lo, hi: float = hi) -> float:
+            return bottom - (v - lo) / (hi - lo) * T_PANEL_H
+
+        def x(i: int, x0: float = x0) -> float:
+            return x0 + 6 + i * (T_PANEL_W - 12) / max(n - 1, 1)
+
+        parts.append(f'<text x="{x0 - T_AXIS_W}" y="12" font-weight="600">{esc(label)}</text>'
+                     '<g class="axis">')
+        for t in ticks:
+            cls = "zero" if t == 0 else "grid"
+            parts.append(f'<line class="{cls}" x1="{x0}" x2="{x0 + T_PANEL_W}" y1="{y(t):.1f}" '
+                         f'y2="{y(t):.1f}"/><text x="{x0 - 4}" y="{y(t) + 4:.1f}" '
+                         f'text-anchor="end">{esc(compact(t))}</text>')
+        for i, q in enumerate(quarters):
+            # a label a year (at its Q4) and the latest quarter; a year too close to it is dropped
+            if (q.endswith("Q4") and i < n - 3) or i == n - 1:
+                anchor = "end" if i == n - 1 else "middle"
+                parts.append(f'<text x="{x(i) + (4 if i == n - 1 else 0):.1f}" y="{bottom + 14}" '
+                             f'text-anchor="{anchor}">{esc(q if i == n - 1 else q[:4])}</text>')
+        parts.append("</g>")
+        for k, (r, ser) in enumerate(zip(names, series, strict=True)):
+            color = f"var(--s{k + 1})"
+            d, pen = [], "M"
+            for i, v in enumerate(ser):
+                if v is None:
+                    pen = "M"
+                    continue
+                d.append(f"{pen}{x(i):.1f},{y(v):.1f}")
+                pen = "L"
+            if d:
+                parts.append(f'<path class="line" stroke="{color}" d="{" ".join(d)}"/>')
+            sym = str(r.get("symbol", ""))
+            for i, v in enumerate(ser):
+                if v is None or i >= n:
+                    continue
+                parts.append(f'<g class="pt"><title>{esc(f"{sym} {quarters[i]} {label}: ")}'
+                             f'{esc(value(key, v))}</title><circle class="dot" cx="{x(i):.1f}" '
+                             f'cy="{y(v):.1f}" r="3" fill="{color}"/></g>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _change(now: Any, before: Any) -> str:
+    a, b = _f(now), _f(before)
+    if a is None or b is None or b == 0:
+        return DASH
+    return f"{(a - b) / abs(b) * 100:+.0f}%"
+
+
+def _statement_table(stmt: Mapping, quarters: Sequence[str], names: Sequence[Mapping],
+                     colors: Mapping[str, int]) -> str:
+    """Every name's latest quarter per item, and its change on the same quarter a year earlier."""
+    items = [_d(i) for i in stmt.get("items") or []]
+    last, prev = len(quarters) - 1, len(quarters) - 5
+    q = quarters[last] if quarters else DASH
+    head = "".join(f'<th class="num">{esc(str(i.get("label", "")))}<br>'
+                   f'<span class="muted">{esc(q)} · y/y</span></th>' for i in items)
+    rows = []
+    for r in names:
+        fin, sym = _d(r.get("financials")), str(r.get("symbol", ""))
+        key = (f'<span class="key line" style="background:var(--s{colors[sym] + 1})"></span>'
+               if sym in colors else "")
+        cells = []
+        for i in items:
+            ser = list(fin.get(str(i.get("key"))) or [])
+            now = ser[last] if 0 <= last < len(ser) else None
+            before = ser[prev] if 0 <= prev < len(ser) else None
+            cells.append(f'<td class="num">{esc(value("", now))}'
+                         f'<span class="dev">{esc(_change(now, before))}</span></td>')
+        rows.append(f'<tr><td>{key}<strong>{esc(sym)}</strong><span class="dev">'
+                    f'{esc(str(r.get("tier") or DASH))}</span></td>{"".join(cells)}</tr>')
+    return (f'<details class="card table" data-statement="{esc(str(stmt.get("key", "")))}">'
+            f'<summary>{esc(str(stmt.get("label", "")))}: latest quarter, every name</summary>'
+            f'<table><tr><th>Name</th>{head}</tr>{"".join(rows)}</table></details>')
+
+
+def financials(p: Mapping, ind: Mapping) -> str:
+    """The financials section of an industry page: legend, one timeline per statement, tables."""
+    quarters = [str(q) for q in p.get("periods") or []]
+    stmts = [_d(s) for s in p.get("statements") or []]
+    have = _with_statements(ind)
+    if not quarters or not stmts or not have:
+        return ('<h2>Financials</h2>' + web.notice("no quarterly statements for this industry "
+                                                    "in out/industries/ (idx-method fundamentals)"))
+    lines = have[:MAX_LINES]
+    colors = {str(r.get("symbol", "")): k for k, r in enumerate(lines)}
+    legend = "".join(f'<span><span class="key line" style="background:var(--s{k + 1})"></span>'
+                     f'{esc(str(r.get("symbol", "")))}</span>' for k, r in enumerate(lines))
+    n = len(_d(ind).get("stocks") or [])
+    note = (f"{len(lines)} largest by market cap of the {len(have)} names with statements "
+            f"({n} in the industry)" if len(have) > len(lines)
+            else f"{len(have)} of {n} names have statements")
+    charts = "".join(f'<section class="card chart" data-statement="{esc(str(s.get("key", "")))}">'
+                     f'<h3>{esc(str(s.get("label", "")))}</h3>'
+                     f"{timeline(ind, s, quarters, lines)}</section>" for s in stmts)
+    tables = "".join(_statement_table(s, quarters, have, colors) for s in stmts)
+    return (f'<h2>Financials</h2><p class="muted">Quarterly, {esc(quarters[0])} to '
+            f"{esc(quarters[-1])}, each quarter on its own (not year-to-date), IDR; {note}. "
+            "Each panel has its own axis; hover a dot for its value. Total assets and liabilities "
+            "are not shown: idx-method's items mix totals and non-current parts across names. "
+            "A name that reports in USD can show near zero.</p>"
+            f'<p class="legend">{legend}</p>{charts}{tables}')

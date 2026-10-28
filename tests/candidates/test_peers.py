@@ -1,7 +1,8 @@
 """Peer comparison (S30): log deviations with their None and floor cases and the clamp, category
 scores signed so positive is better, Stockbit's industry average and the sector median as the
 benchmarks (no industry median; a non-positive average scores nobody), market-cap tiers, the stale
-input, the byte-stable write, and `pipeline.write_peers` never raising. Synthetic `Comparison`s;
+input, the quarterly statements aligned to the last quarters, the byte-stable write, and
+`pipeline.write_peers` never raising. Synthetic `Comparison`s;
 no store."""
 
 from __future__ import annotations
@@ -138,6 +139,30 @@ def test_tiers_names_and_payload_shape(payload):
     assert [c["key"] for c in payload["categories"]] == ["valuation", "dividend", "profitability",
                                                         "solvency"]
     assert payload["disclaimer"]
+
+
+@pytest.mark.parametrize(("have", "n", "want"), [
+    ({"2026Q2", "2025Q4"}, 4, ["2025Q3", "2025Q4", "2026Q1", "2026Q2"]),  # gaps kept, year wraps
+    ({"2026Q1"}, 1, ["2026Q1"]),
+    (set(), 4, []),
+])
+def test_periods_are_the_last_quarters_up_to_the_newest(have, n, want):
+    st = {"AAAA": {"revenue": {q: 1.0 for q in have} | {"2027Q1": None, "2026-06-30": 2.0}}}
+    assert peers.periods(st, n) == want  # a None or a non-quarter period is not the newest
+
+
+def test_financials_follow_the_periods():
+    c = _cmp(BANKS)
+    c.statements = {"AAAA": {"revenue": {"2026Q2": 3.0, "2026Q1": 2.0},
+                             "equity": {"2025Q4": 9.0}}}
+    p = peers.build(c, DAY, {**peers.CONFIG, "quarters": 3})
+    assert p["periods"] == ["2025Q4", "2026Q1", "2026Q2"]
+    fin = _stock(p, "AAAA")["financials"]
+    assert fin["revenue"] == [None, 2.0, 3.0] and fin["equity"] == [9.0, None, None]
+    assert fin["net_income"] == [None, None, None]
+    assert _stock(p, "BBBB")["financials"] == {}  # no statements at all
+    assert [s["key"] for s in p["statements"]] == ["is", "bs"]
+    assert "assets" not in {i["key"] for s in p["statements"] for i in s["items"]}
 
 
 def test_a_comparison_older_than_14_days_is_a_stale_input():

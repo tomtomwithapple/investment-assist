@@ -533,6 +533,18 @@ host, launchd for the server, changes to how stances or candidates are built.
     `DER_CAP`, none for banks and insurers); dividend is not filtered and a missing value
     fails. 73 of 836 names in 19 industries pass on 2026-10-26. Every name stays on
     its `/industries/<id>` page.
+  - **Financials timelines (P47-financials, 2026-10-28).** `/industries/<id>` shows, between
+    the score chart and the category tables, a quarterly timeline per statement for the 8
+    largest names with statements (one line each, the dataviz categorical order by market-cap
+    rank): income statement (revenue, gross, operating and net profit) and balance sheet
+    (equity, total debt, cash), the last 12 quarters (2023Q3–2026Q2), each quarter on its own.
+    A table per statement gives every name's latest quarter and y/y change. Read from
+    idx-method's `fundamentals` at build time into `out/industries/IDN.json` (schema 3,
+    `periods` + per-name `financials`; 502 of 834 names, 2.6 MB). **Not shown: total assets
+    and liabilities.** idx-method's `assets`/`liabilities` are totals for some names (BBCA),
+    non-current parts for others (TLKM, ASII), and neither for others (BBRI assets IDR 62T,
+    BMRI liabilities 21T on 2026Q2); 459 of 480 names fail assets = liabilities + equity.
+    USD reporters (ADRO) are stored as IDR and read near zero. Both are idx-method fixes.
 
 **F7-ui notes (2026-10-27).** Per-slice details are in `docs/results/P40-ui-shell.md` …
 `P44-ui-paper.md`.

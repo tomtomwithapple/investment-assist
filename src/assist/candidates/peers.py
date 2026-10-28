@@ -21,6 +21,10 @@ benchmark above it reads as the floor, −log(clamp). Each deviation is clamped 
 category score is the mean of its scored deviations, signed so that positive is better (cheaper,
 higher yield, more profitable, more solvent), reported with how many metrics fed it.
 
+Each name also carries its quarterly statements for the industry timelines (`STATEMENTS`): the
+last `quarters` quarters up to the newest any compared name has, one quarter each (not
+year-to-date), IDR, None where the store has no value. Shown, never scored.
+
 Context only: no screen, verdict or stance reads this, so it carries no placebo control.
 """
 
@@ -36,13 +40,13 @@ from typing import Any
 
 from assist.sources.idxmethod_comparison import Comparison
 
-__all__ = ["CATEGORIES", "CONFIG", "OUT_DIR", "SUBSECTORS", "build", "deviation", "gather_live",
-           "subsector", "tier", "write"]
+__all__ = ["CATEGORIES", "CONFIG", "OUT_DIR", "STATEMENTS", "SUBSECTORS", "build", "deviation",
+           "gather_live", "periods", "subsector", "tier", "write"]
 
 OUT_DIR = "industries"
-SCHEMA_VERSION = 2  # 2: the industry benchmark is Stockbit's average; no industry median
+SCHEMA_VERSION = 3  # 2: the industry benchmark is Stockbit's average; 3: quarterly statements
 DISCLAIMER = "Heuristic, not investment advice."
-SOURCE = "idx-method api_raw comparison_* (Stockbit /comparison)"
+SOURCE = "idx-method api_raw comparison_* (Stockbit /comparison), fundamentals (quarterly)"
 MKTCAP = 2892
 
 CONFIG: dict[str, Any] = {
@@ -50,6 +54,7 @@ CONFIG: dict[str, Any] = {
     "tiers": {"big": 10e12, "mid": 1e12},  # IDR market cap: big >= 10T, mid >= 1T, else small
     "stale_days": 14,
     "min_median": 3,
+    "quarters": 12,  # statement timelines: the last 12 quarters (3 years)
 }
 
 # (category, label, [(key, fid, label, better: "lower" | "higher" | None for not scored)])
@@ -79,6 +84,14 @@ CATEGORIES: tuple[tuple[str, str, tuple[tuple[str, int, str, str | None], ...]],
         ("int_cover", 1484, "Interest cover (TTM)", "higher"),
         ("altman_z", 13402, "Altman Z (modified)", "higher"),
     )),
+)
+# (stmt, label, [(item, label)]) for the industry timelines; items as in `STATEMENT_ITEMS`
+STATEMENTS: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
+    ("is", "Income statement", (("revenue", "Revenue"), ("gross_profit", "Gross profit"),
+                                ("operating_profit", "Operating profit"),
+                                ("net_income", "Net income"))),
+    ("bs", "Balance sheet", (("equity", "Equity"), ("total_debt", "Total debt"),
+                             ("cash", "Cash"))),
 )
 # Stockbit's /comparison carries no industry name. Its industry groups match the IDX sub-sectors
 # Stockbit lists in idx-method's data/universe.json one for one, sector by sector (33 on
@@ -179,6 +192,32 @@ def _median(rows: Sequence[Mapping[str, float | None]], n_min: int) -> dict[str,
     return out
 
 
+def periods(statements: Mapping[str, Mapping[str, Mapping[str, Any]]], n: int) -> list[str]:
+    """The last `n` quarters ("2024Q3" … "2026Q2") up to the newest period with a value, gaps
+    included; empty when there is none."""
+    have = [p for items in statements.values() for vals in items.values()
+            for p, v in vals.items() if v is not None and len(p) == 6 and p[4] == "Q"]
+    if not have or n <= 0:
+        return []
+    last = max(have)
+    y, q = int(last[:4]), int(last[5])
+    out = []
+    for _ in range(n):
+        out.append(f"{y}Q{q}")
+        y, q = (y, q - 1) if q > 1 else (y - 1, 4)
+    return out[::-1]
+
+
+def _financials(stmts: Mapping[str, Mapping[str, Any]], quarters: Sequence[str]) -> dict:
+    """item → one value per quarter (None where missing); {} when the name has no value at all."""
+    out = {}
+    for _, _, items in STATEMENTS:
+        for item, _ in items:
+            vals = stmts.get(item) or {}
+            out[item] = [vals.get(q) for q in quarters]
+    return out if any(v is not None for vs in out.values() for v in vs) else {}
+
+
 def build(cmp: Comparison, day: date, config: Mapping[str, Any] = CONFIG) -> dict:
     """The `out/industries/IDN.json` payload: sectors with their benchmarks, industries by sector
     then size, names by market cap, each with values, deviations and category scores."""
@@ -190,6 +229,7 @@ def build(cmp: Comparison, day: date, config: Mapping[str, Any] = CONFIG) -> dic
     for sym, ind in cmp.industry.items():
         members[ind].append(sym)
         by_sector[cmp.sectors.get(sym) or ""].append(sym)
+    quarters = periods(cmp.statements, int(config.get("quarters", CONFIG["quarters"])))
     sectors = {sec: {"n": len(syms),
                      "median": _median([values[s] for s in syms], n_min),
                      "average": _pick(cmp.sector_avg[min(syms)])}
@@ -223,6 +263,7 @@ def build(cmp: Comparison, day: date, config: Mapping[str, Any] = CONFIG) -> dic
                 "score_industry": score_i,
                 "score_sector": score_s,
                 "scored_metrics": used,
+                "financials": _financials(cmp.statements.get(s) or {}, quarters),
             })
         industries.append({
             "id": ind,
@@ -249,6 +290,10 @@ def build(cmp: Comparison, day: date, config: Mapping[str, Any] = CONFIG) -> dic
                         "metrics": [{"key": k, "fid": f, "label": lb, "better": b}
                                     for k, f, lb, b in ms]}
                        for cat, label, ms in CATEGORIES],
+        "statements": [{"key": k, "label": label,
+                        "items": [{"key": i, "label": lb} for i, lb in items]}
+                       for k, label, items in STATEMENTS],
+        "periods": quarters,
         "sectors": sectors,
         "industries": industries,
         "stale_inputs": stale,

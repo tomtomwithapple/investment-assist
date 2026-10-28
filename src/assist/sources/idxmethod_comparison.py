@@ -12,7 +12,10 @@ The averages are Stockbit's (means, sometimes negative, today only: `/comparison
 date). The responses carry no industry name or id, so an industry here is the set of symbols
 whose `industry` block is identical. Values are display strings ("16.00%", "129,422 B",
 "(47,342 B)", "-", "N/A", "25 Mar 26") and are parsed to floats in IDR and percent points.
-Only the newest date is read. Read with `sqlite_ro`, never written.
+Only the newest date is read. The quarterly statements of the compared names come from the
+same store's `fundamentals` (symbol, stmt, item, period, value: one quarter each, not
+year-to-date, IDR), `STATEMENT_ITEMS` only; a store without the table leaves them empty. Read
+with `sqlite_ro`, never written.
 """
 
 from __future__ import annotations
@@ -33,9 +36,15 @@ from assist.sources.base import SourceUnavailable, sqlite_ro
 from assist.sources.idxmethod_series import DB
 from assist.sources.idxmethod_stocks import SOURCE
 
-__all__ = ["ENDPOINTS", "Comparison", "IdxMethodComparison", "block_key", "parse_value"]
+__all__ = ["ENDPOINTS", "STATEMENT_ITEMS", "Comparison", "IdxMethodComparison", "block_key",
+           "parse_value"]
 
 ENDPOINTS = ("comparison_metrics", "comparison_ratios", "comparison_industries")
+# (stmt, item) read from `fundamentals` for the industry timelines. Not `assets` or
+# `liabilities`: they hold totals for some names and non-current parts (or neither) for others,
+# e.g. BBRI assets IDR 62T on 2026Q2 (P47-financials)
+STATEMENT_ITEMS = (("is", "revenue"), ("is", "gross_profit"), ("is", "operating_profit"),
+                   ("is", "net_income"), ("bs", "equity"), ("bs", "total_debt"), ("bs", "cash"))
 _UNIT = {"K": 1e3, "M": 1e6, "B": 1e9, "T": 1e12}
 _NUM = re.compile(r"^(-)?([\d,]*\.?\d+)\s*([%KMBT])?$")
 
@@ -87,6 +96,8 @@ class Comparison:
     industry: dict[str, str] = field(default_factory=dict)
     sector_key: dict[str, str] = field(default_factory=dict)
     competitors: dict[str, list[str]] = field(default_factory=dict)
+    # sym → item → period ("2026Q2") → IDR, one quarter each
+    statements: dict[str, dict[str, dict[str, float | None]]] = field(default_factory=dict)
 
 
 class IdxMethodComparison:
@@ -142,7 +153,19 @@ class IdxMethodComparison:
                     if sym in cmp.industry:
                         cmp.names.setdefault(sym, name or "")
                         cmp.sectors[sym] = sector or ""
+            if "fundamentals" in have:
+                _statements(con, cmp)
         return cmp
+
+
+def _statements(con, cmp: Comparison) -> None:
+    pairs = " or ".join("(stmt = ? and item = ?)" for _ in STATEMENT_ITEMS)
+    args = [x for pair in STATEMENT_ITEMS for x in pair]
+    for sym, item, period, value in con.execute(
+            f"select symbol, item, period, value from fundamentals where {pairs}", args):
+        if sym in cmp.industry:
+            v = value if isinstance(value, (int, float)) else None
+            cmp.statements.setdefault(sym, {}).setdefault(item, {})[str(period)] = v
 
 
 def _decode(body: object) -> object | None:

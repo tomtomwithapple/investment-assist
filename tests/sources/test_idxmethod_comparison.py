@@ -119,3 +119,29 @@ def test_missing_db_table_or_pull(tmp_path):
     empty = _store(tmp_path / "b", [("2026-10-26", "broker_top", "", _body({}))], universe=False)
     with pytest.raises(SourceUnavailable, match="no comparison_industries"):
         IdxMethodComparison(empty).latest()
+
+
+def _fundamentals(root: Path, rows: list[tuple]) -> None:
+    con = sqlite3.connect(root / "store" / "data" / "stockbiter.db")
+    con.execute("create table fundamentals (symbol text, stmt text, item text, period text, "
+                "value real, currency text)")
+    con.executemany("insert into fundamentals values (?, ?, ?, ?, ?, 'IDR')", rows)
+    con.commit()
+    con.close()
+
+
+def test_statements_of_compared_names_and_listed_items_only(root):
+    _fundamentals(root, [
+        ("BBNI", "is", "revenue", "2026Q2", 2e13), ("BBNI", "is", "revenue", "2026Q1", 1.9e13),
+        ("BBNI", "bs", "equity", "2026Q2", 1.6e14), ("BBNI", "bs", "cash", "2026Q2", None),
+        ("BBNI", "bs", "assets", "2026Q2", 3e13),  # not listed: mixes totals and parts
+        ("BBNI", "is", "eps", "2026Q2", 100.0),
+        ("ZZZZ", "is", "revenue", "2026Q2", 1e12),  # not compared
+    ])
+    c = IdxMethodComparison(root).latest()
+    assert c.statements == {"BBNI": {"revenue": {"2026Q2": 2e13, "2026Q1": 1.9e13},
+                                     "equity": {"2026Q2": 1.6e14}, "cash": {"2026Q2": None}}}
+
+
+def test_no_fundamentals_table_means_no_statements(root):
+    assert IdxMethodComparison(root).latest().statements == {}
