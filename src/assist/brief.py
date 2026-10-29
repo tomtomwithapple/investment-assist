@@ -22,6 +22,10 @@ reprints it too: per market (IDN, then USA from F6) the hurdle and its drivers (
 market's hurdle binds), stance and budget, the tilt's verdict, each style's verdict (a failed one
 with no names) and its rows ranked by margin, then trims. Amounts and prices are in IDR; a US row's
 drivers carry its USD price and its margins over both hurdles.
+
+*Top tier replay* (PLAN S31, P50) is rendered from `out/industries/IDN.replay.json` when it is
+there: the replay's verdict on Tier A against its industry's median, with its control, t, p,
+quarters, flags and fingerprint, and a reminder that the tiers stay context only.
 """
 
 from __future__ import annotations
@@ -35,6 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from assist.candidates import tiers_replay
 from assist.layers.types import DISCLAIMER, stance_validator
 from assist.layers.undervalued import load_out as load_candidates
 
@@ -48,6 +53,7 @@ __all__ = [
     "health_lines",
     "load_out",
     "paper_lines",
+    "tier_replay_lines",
     "undervalued_lines",
     "previous_snapshot",
     "render",
@@ -127,10 +133,11 @@ def build_brief(out_dir: Path, snapshots_dir: Path, *, health: Sequence[str] | N
     prev_dir = previous_snapshot(snapshots_dir, before=as_of) if as_of else None
     previous = load_out(prev_dir).stances if prev_dir else None
     cands = load_candidates(out_dir)
+    replay = tiers_replay.load(out_dir)
     return render(loaded.stances, previous, problems=loaded.problems,
                   previous_as_of=prev_dir.name if prev_dir else None, health=health,
                   paper=paper, undervalued=[x for p in cands for x in undervalued_lines(p)]
-                  or None)
+                  or None, tier_replay=tier_replay_lines(replay) if replay else None)
 
 
 # ---------------- doctor and paper lines ----------------
@@ -279,6 +286,39 @@ def undervalued_lines(p: Mapping) -> list[str]:
     return out
 
 
+def _stat(name: str, x: Any, fmt: str) -> str | None:
+    return None if x is None else f"{name} {format(x, fmt)}"
+
+
+def tier_replay_lines(p: Mapping) -> list[str]:
+    """The S31 replay payload as a few Markdown bullets: verdict, statistics, flags, model."""
+    out = [f"- Tier A minus industry median, 3-month forward return from quarter ends: "
+           f"**{p.get('status')}** ({p.get('verdict')})"]
+    if p.get("quarters"):
+        ex, pl = p.get("mean_excess"), p.get("mean_placebo")
+        stats = ", ".join(x for x in (
+            f"{p['quarters']} quarters {p.get('first_quarter')} to {p.get('last_quarter')}",
+            None if ex is None else f"mean excess {ex * 100:+.2f}pt",
+            None if pl is None else f"shuffled-composite placebo {pl * 100:+.2f}pt",
+            _stat("t", p.get("t"), ".2f"),
+            _stat("p", p.get("p"), ".3f"),
+            _stat("perm p", p.get("perm_p"), ".3f"),
+            _stat("control t", p.get("control_t"), ".2f"),
+        ) if x)
+        out.append(f"- {stats}")
+    if p.get("flags"):
+        out.append("- Flags: " + "; ".join(p["flags"]))
+    if p.get("passed"):
+        out.append("- Passed, but the tiers stay context only until a later decision lets "
+                   "Tier A feed S20.")
+    else:
+        out.append("- Context only: the tiers feed no screen, S20 list, sizing or stance.")
+    fp = p.get("fingerprint")
+    if fp:
+        out.append(f"- Replay model: `{_fingerprint(fp)}`")
+    return out + [""]
+
+
 # ---------------- helpers ----------------
 
 def _key(s: Mapping) -> tuple[str, str]:
@@ -401,7 +441,8 @@ def diff(previous: Sequence[Mapping], current: Sequence[Mapping]) -> list[str]:
 def render(current: Sequence[Mapping], previous: Sequence[Mapping] | None = None, *,
            problems: Sequence[str] = (), previous_as_of: str | None = None,
            health: Sequence[str] | None = None, paper: Sequence[str] | None = None,
-           undervalued: Sequence[str] | None = None) -> str:
+           undervalued: Sequence[str] | None = None,
+           tier_replay: Sequence[str] | None = None) -> str:
     """The brief as Markdown. `previous` None means there is no earlier run to diff against.
     `health` (doctor lines) and `paper` (paper-track lines) add their sections when given."""
     stances = _sorted(current)
@@ -453,6 +494,9 @@ def render(current: Sequence[Mapping], previous: Sequence[Mapping] | None = None
         out += ["## Undervalued candidates", "",
                 "Context only: no stance moves on these, and sizes are paper until the weight "
                 "bands are confirmed.", "", *undervalued]
+
+    if tier_replay is not None:
+        out += ["## Top tier replay", "", *tier_replay]
 
     if paper is not None:
         out += ["## Paper track", ""] + [f"- {x}" for x in paper] + [""]

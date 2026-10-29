@@ -56,8 +56,8 @@ from typing import Any
 
 from assist.candidates.screens import BANK_FLOOR, QUALITY_FLOOR
 
-__all__ = ["CONFIG", "DER_CAP", "DER_CAP_DEFAULT", "attach", "der_cap", "fingerprint",
-           "gather_extras", "metric_values", "percentiles", "tier_size"]
+__all__ = ["CONFIG", "DER_CAP", "DER_CAP_DEFAULT", "assign", "attach", "der_cap", "fingerprint",
+           "gather_extras", "metric_values", "percentiles", "rank_key", "tier_size"]
 
 # D/E cap per industry label (moved here from views/industries.py: it now decides which names get
 # a score). The common cap is 1.0; the industries named here allow more (capital-heavy, or
@@ -385,6 +385,28 @@ def tier_size(n_gated: int, config: Mapping[str, Any] = CONFIG) -> int:
     return min(cap, max(t["min"], math.floor(n_gated * t["share"])))
 
 
+def rank_key(s: Mapping) -> tuple:
+    """Best first: composite, then market cap, then symbol."""
+    return (-s["composite"], -(s.get("mktcap") or 0), s["symbol"])
+
+
+def assign(composites: Sequence[float], k: int,
+           config: Mapping[str, Any] = CONFIG) -> list[str | None]:
+    """The pick ("A", "B" or None) of each composite, given best first (`rank_key` order):
+    Tier A the top `k` scoring >= `a_min`, Tier B the next up to `k` scoring >= `b_min`."""
+    t = config["tiers"]
+    out: list[str | None] = []
+    n_a = n_b = 0
+    for c in composites:
+        p = None
+        if n_a < k and not n_b and c >= t["a_min"]:
+            p, n_a = "A", n_a + 1
+        elif n_b < k and c >= t["b_min"]:
+            p, n_b = "B", n_b + 1
+        out.append(p)
+    return out
+
+
 def _pool_pcts(pool: Sequence[str], metrics: Mapping[str, Mapping[str, Any]],
                config: Mapping[str, Any]) -> dict[str, dict[str, float]]:
     """metric → sym → percentile over `pool`; a metric with fewer than `min_peers` values is
@@ -468,18 +490,14 @@ def attach(payload: dict, extras: Mapping[str, Mapping] | None,
                                                   pcts, config)
             if s["composite"] is not None:
                 scored.append(s)
-        scored.sort(key=lambda s: (-s["composite"], -(s.get("mktcap") or 0), s["symbol"]))
-        k = tier_size(len(gated), config)
-        t = config["tiers"]
+        scored.sort(key=rank_key)
         picks: dict[str, list[str]] = {"A": [], "B": []}
-        for r, s in enumerate(scored, 1):
-            s["rank"] = r
-            if len(picks["A"]) < k and not picks["B"] and s["composite"] >= t["a_min"]:
-                s["pick"] = "A"
-            elif len(picks["B"]) < k and s["composite"] >= t["b_min"]:
-                s["pick"] = "B"
-            if s["pick"]:
-                picks[s["pick"]].append(s["symbol"])
+        k = tier_size(len(gated), config)
+        for r, (s, p) in enumerate(zip(scored, assign([s["composite"] for s in scored], k,
+                                                     config), strict=True), 1):
+            s["rank"], s["pick"] = r, p
+            if p:
+                picks[p].append(s["symbol"])
         fails = Counter(r for s in stocks for r in s["gates"]["fail"])
         ind["peer_group"] = group
         ind["gated"] = len(gated)

@@ -85,6 +85,7 @@ from typing import Any
 
 from assist import brief, journal, notify, stance
 from assist.candidates import peers as peer_cmp
+from assist.candidates import tiers_replay
 from assist.eval.placebo import Verdict
 from assist.fx import FxEdge, fx_edge
 from assist.layers import candidates_foreign as cf
@@ -154,6 +155,7 @@ __all__ = [
     "run",
     "write_out",
     "write_peers",
+    "write_tier_replay",
 ]
 
 HOME = "IDN"
@@ -259,7 +261,9 @@ class Sources:
     `paper.PaperReport`) feed the brief's *Data health* and *Paper track* sections (S14); None
     leaves the section out. `undervalued(day, regime)` gives the inputs of the S20 list (IDN) and
     `undervalued_us(day, regime)` those of the US one (F6); None writes no file for it.
-    `peers(day)` gives the S30 peer comparison (`out/industries/IDN.json`); None skips it."""
+    `peers(day)` gives the S30 peer comparison (`out/industries/IDN.json`); None skips it.
+    `tier_replay(day, out_dir)` gives the S31 replay verdict (`out/industries/IDN.replay.json`,
+    P50); None skips it."""
 
     worldbankscape: Any
     fred: Any
@@ -271,6 +275,7 @@ class Sources:
     undervalued: Callable[[date, Regime], undervalued.UndervaluedInputs] | None = None
     undervalued_us: Callable[[date, Regime], undervalued.UndervaluedInputs] | None = None
     peers: Callable[[date], dict] | None = None
+    tier_replay: Callable[[date, Path], dict] | None = None
 
     @classmethod
     def default(cls) -> Sources:
@@ -282,7 +287,8 @@ class Sources:
                    financer=FinancerSource.from_config(), idn=IdnSources.default(),
                    foreign=ForeignSources.default(), doctor=live_doctor, paper=live_paper,
                    undervalued=undervalued.gather_live,
-                   undervalued_us=undervalued.gather_live_usa, peers=peer_cmp.gather_live)
+                   undervalued_us=undervalued.gather_live_usa, peers=peer_cmp.gather_live,
+                   tier_replay=tiers_replay.run_live)
 
 
 def live_doctor(day: date) -> list[Any]:
@@ -922,6 +928,7 @@ class RunResult:
     foreign: ForeignLayers | None = None
     undervalued: list[dict] = field(default_factory=list)
     peers: Path | None = None
+    tier_replay: Path | None = None
 
 
 def write_peers(day: date, gather: Callable[[date], dict] | None,
@@ -973,6 +980,35 @@ def _journal_peers(j: journal.Journal, path: Path | None, fp: str, run_id: str |
         print(f"industries journal skipped: {type(e).__name__}: {e}", file=sys.stderr)
 
 
+def write_tier_replay(day: date, gather: Callable[[date, Path], dict] | None,
+                      out_dir: Path) -> tuple[Path | None, list[str]]:
+    """The S31 replay verdict (P50) → (`out/industries/IDN.replay.json`, stale inputs). Never
+    raises: a failure names itself as a stale input and leaves the tiers context only."""
+    if gather is None:
+        return None, []
+    try:
+        payload = gather(day, out_dir)
+        return tiers_replay.write(payload, out_dir), list(payload.get("stale_inputs") or [])
+    except Exception as e:  # noqa: BLE001 - context only, never fails the run
+        first = str(e).splitlines()[0][:160] if str(e) else ""
+        return None, [f"tier replay failed: {type(e).__name__}: {first}"]
+
+
+def _journal_tier_replay(j: journal.Journal, path: Path | None, fp: str,
+                         run_id: str | None) -> None:
+    """One `tier_replay` record per run from the file `write_tier_replay` wrote. Never raises."""
+    if path is None:
+        return
+    try:
+        payload = json.loads(Path(path).read_text())
+        inputs, outputs = tiers_replay.journal_record(payload)
+        j.record(kind="tier_replay", fingerprint=fp, subject=payload.get("market"),
+                 asset="stocks", as_of=payload.get("as_of") or payload.get("built"),
+                 run_id=run_id, inputs=inputs, outputs=outputs)
+    except Exception as e:  # noqa: BLE001 - context only, never fails the run
+        print(f"tier replay journal skipped: {type(e).__name__}: {e}", file=sys.stderr)
+
+
 def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None,
         send: bool = True, notify_kw: Mapping[str, Any] | None = None) -> RunResult:
     paths = paths or Paths.default()
@@ -993,10 +1029,12 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
     res.files = write_out(res.stances, paths.out)
     res.undervalued, uv_stale = _undervalued(day, sources, layers, res.stances, fp, paths)
     res.peers, peer_stale = write_peers(day, sources.peers, paths.out)
-    res.stale_inputs = sorted({*res.stale_inputs, *uv_stale, *peer_stale})
+    res.tier_replay, tr_stale = write_tier_replay(day, sources.tier_replay, paths.out)
+    res.stale_inputs = sorted({*res.stale_inputs, *uv_stale, *peer_stale, *tr_stale})
     res.run_id = _journal(j, layers, res.stances, fp)
     _journal_undervalued(j, res.undervalued, fp, res.run_id)
     _journal_peers(j, res.peers, fp, res.run_id)
+    _journal_tier_replay(j, res.tier_replay, fp, res.run_id)
 
     health = _never_fail("doctor", sources.doctor, brief.health_lines, day)
     paper_track = _never_fail("paper tracking", sources.paper, brief.paper_lines, day, j)

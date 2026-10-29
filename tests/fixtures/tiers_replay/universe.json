@@ -1,0 +1,18 @@
+{
+ "_note": "Tiny replay universe for P50: today's S30 industries (membership, back-filled), and the generator's parameters. The test builds quarter-end bars and quarterly fundamentals from it; `g` per name and quarter is the planted quality that drives every value, quality and health metric of the quarter knowable then.",
+ "first_quarter": "2017-03-31",
+ "quarters": 18,
+ "shares": 1e9,
+ "start_price": 1000.0,
+ "planted_beta": 0.12,
+ "noise_sd": 0.01,
+ "industries": [
+  {"id": "101", "label": "Semen", "sector": "Barang Baku",
+   "symbols": ["SMA1", "SMA2", "SMA3", "SMA4", "SMA5", "SMA6", "SMA7", "SMA8", "SMA9", "SMA0"]},
+  {"id": "202", "label": "Ritel", "sector": "Konsumen Non-Primer",
+   "symbols": ["RTA1", "RTA2", "RTA3", "RTA4", "RTA5", "RTA6", "RTA7", "RTA8", "RTA9", "RTA0"]},
+  {"id": "303", "label": "Bank", "sector": "Keuangan",
+   "symbols": ["BKA1", "BKA2", "BKA3", "BKA4", "BKA5", "BKA6", "BKA7", "BKA8", "BKA9", "BKA0"]}
+ ],
+ "illiquid": ["SMA0"]
+}
