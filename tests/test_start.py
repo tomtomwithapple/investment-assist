@@ -143,10 +143,11 @@ def test_fresh_out_without_industries_builds_them_once(repo):
 
 def test_failed_industries_still_serves(repo):
     _out(repo, TODAY)
-    res = _start(repo, env=_env(repo, STUB_INDUSTRIES_EXIT="1"))
+    res = _start(repo, env=_env(repo, STUB_INDUSTRIES_EXIT="3", STUB_DOCTOR_EXIT="4"))
     assert res.returncode == 0, res.stderr
     assert STATUS in _names(_calls(repo))
-    assert "assist industries failed" in res.stderr
+    assert "assist industries failed (exit 3)" in res.stderr
+    assert "doctor exited 4" in res.stdout
 
 
 def test_a_run_or_no_run_skips_industries(repo):

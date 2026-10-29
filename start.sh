@@ -75,11 +75,11 @@ echo "$(stamp) uv sync in $REPO"
 
 if [ "$INSTALL_JOBS" = yes ]; then
     echo "$(stamp) installing the launchd jobs"
-    sh launchd/install.sh || echo "$(stamp) launchd/install.sh failed (exit $?), continuing" >&2
+    sh launchd/install.sh || { code=$?; echo "$(stamp) launchd/install.sh failed (exit $code), continuing" >&2; }
 fi
 
 echo "$(stamp) assist doctor"
-"$UV" run assist doctor || echo "$(stamp) doctor exited $?, continuing"
+"$UV" run assist doctor || { code=$?; echo "$(stamp) doctor exited $code, continuing"; }
 
 # Newest as_of in out/*/*.json, empty when out/ holds none.
 newest_as_of() {
@@ -101,8 +101,8 @@ if [ "$RUN" = auto ]; then
         # A run writes the peer comparison too; without one, build it once if it is missing.
         if [ ! -f out/industries/IDN.json ]; then
             echo "$(stamp) out/industries/IDN.json missing, assist industries"
-            "$UV" run assist industries \
-                || echo "$(stamp) assist industries failed (exit $?); serving without it" >&2
+            "$UV" run assist industries || { code=$?
+                echo "$(stamp) assist industries failed (exit $code); serving without it" >&2; }
         fi
     fi
 fi
