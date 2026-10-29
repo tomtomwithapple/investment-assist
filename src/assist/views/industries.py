@@ -6,8 +6,9 @@ Reads `app.out_dir/industries/IDN.json` as written by `assist run` or `assist in
 never opens a store. `/industries` is one card per industry of the names that pass `rows`' filters
 (PE and PBV each below the industry average, ROE above it, D/E below the industry's cap; dividend
 not filtered), sorted by overall score (the mean of the category scores vs the industry average),
-most positive first: per metric (PE, PBV, yield, ROE, D/E) a bar per name beside Stockbit's industry
-average, and the cap marked on D/E. Below it in the same card, the financials of those names: per
+most positive first, each industry in its own tab (CSS radio tabs, no script, the first open): per
+metric (PE, PBV, yield, ROE, D/E) a bar per name beside Stockbit's industry average, and the cap
+marked on D/E. Below it in the same card, the financials of those names: per
 statement (income statement, balance sheet) a timeline of small multiples, one line per name over
 the last quarters in the file (each quarter on its own, not year-to-date), at most `MAX_LINES`
 names, each panel on its own linear axis, then their profit growth (gross, operating, net) on the
@@ -76,6 +77,16 @@ STYLE = """<style>
 .peers svg .dot { stroke:var(--card); stroke-width:1.5; }
 .peers svg g.pt:hover .dot { r:4.5; }
 .peers .key.line { width:14px; height:3px; border-radius:2px; }
+.peers .tabs { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; }
+.peers .tabs > input { position:absolute; opacity:0; pointer-events:none; }
+.peers .tabs > label { order:0; cursor:pointer; padding:4px 10px; border:1px solid var(--line);
+  border-radius:999px; font-size:13px; color:var(--muted); white-space:nowrap; }
+.peers .tabs > label:hover { color:var(--fg); }
+.peers .tabs > input:checked + label { color:var(--fg); background:var(--card); font-weight:600;
+  border-color:var(--muted); }
+.peers .tabs > input:focus-visible + label { outline:2px solid var(--pos); outline-offset:1px; }
+.peers .tabs > section { order:1; width:100%; display:none; }
+.peers .tabs > input:checked + label + section { display:block; }
 </style>"""
 
 
@@ -357,7 +368,11 @@ def index(app: web.App, _m: re.Match[str]) -> web.View:
     for ind, members in groups(table, p):
         cap = der_cap(ind.get("label"))
         cap_text = "no D/E cap" if cap is None else f"D/E cap {cap:g}"
-        cards.append(f'<section class="card chart industry" data-industry="'
+        tab = f"ind-{len(cards)}"
+        cards.append(f'<input type="radio" name="industry" id="{tab}"'
+                     f'{" checked" if not cards else ""}><label for="{tab}">'
+                     f'{esc(str(ind.get("label", "")))} <span class="muted">{len(members)}'
+                     f'</span></label><section class="card chart industry" data-industry="'
                      f'{esc(str(ind.get("id", "")))}"><header><h2>'
                      f'{esc(str(ind.get("label", "")))}</h2><span class="muted">'
                      f'{esc(str(ind.get("sector", "")))} · {len(members)} of '
@@ -365,12 +380,13 @@ def index(app: web.App, _m: re.Match[str]) -> web.View:
                      f"{industry_chart(ind, members, stars)}"
                      f"{financials(ind, members, quarters, stmts)}</section>")
     n = sum(len(_d(i).get("stocks") or []) for i in p["industries"])
+    tabs = f'<div class="tabs">{"".join(cards)}</div>' if cards else web.notice("no name passes")
     body = (f'{STYLE}<div class="peers"><h1>Industries</h1>{_caption(p)}'
             f'<p class="muted">{len(table)} of {n} names in {len(cards)} of '
             f'{len(p["industries"])} industries pass: a PE and a PBV each below the industry '
             "average, an ROE above it, and a D/E from 0 up to the industry's cap (1 unless the "
             "card says otherwise; banks and insurers have none). Dividend is not filtered. A "
-            "missing value or average fails. One chart per industry, the "
+            "missing value or average fails. One tab per industry, the "
             "industry of the best overall score first and its names in that order. An industry "
             "is a Stockbit peer group, named by the IDX sub-sector it matches. Below each chart, "
             "the same names' quarterly income statement and balance sheet, each quarter on its "
@@ -379,7 +395,7 @@ def index(app: web.App, _m: re.Match[str]) -> web.View:
             f"a loss or zero; the axis stops at ±{GROWTH_CLIP:.0f}% (hover for the real value). "
             "Total assets and liabilities are not shown: idx-method's items mix totals and "
             "non-current parts across names. A name that reports in USD can show near zero."
-            f"</p>{INDEX_LEGEND}{''.join(cards) or web.notice('no name passes')}</div>")
+            f"</p>{INDEX_LEGEND}{tabs}</div>")
     return web.View(TITLE, body, {"as_of": p.get("as_of"), "rows": table, "industries": [
         {"id": ind.get("id"), "label": ind.get("label"), "sector": ind.get("sector"),
          "average": ind.get("average"), "der_cap": der_cap(ind.get("label")),

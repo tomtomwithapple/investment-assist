@@ -243,3 +243,13 @@ def test_missing_and_invalid_file(tmp_path):
 def test_no_candidates_file_means_no_stars(out):
     (out / "candidates" / "IDN.json").unlink()
     assert "AAAA ★" not in _get(out, "/industries").body
+
+
+def test_each_industry_is_a_tab(out):
+    body = _get(out, "/industries").body
+    tabs = re.search(r'<div class="tabs">(.*)</div></div>', body, re.S).group(1)
+    radios = re.findall(r'<input type="radio" name="industry" id="(ind-\d+)"( checked)?>', tabs)
+    assert [r[0] for r in radios] == [f"ind-{k}" for k in range(len(radios))]
+    assert [bool(r[1]) for r in radios] == [True] + [False] * (len(radios) - 1)
+    assert '<label for="ind-0">Keuangan <span class="muted">' in tabs
+    assert tabs.count('<section class="card chart industry"') == len(radios)
