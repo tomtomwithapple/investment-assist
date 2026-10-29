@@ -10,7 +10,11 @@ Schema 4 (S31, `candidates.tiers`): the page opens with a table **Top tier by in
 Tier A then Tier B names of each industry (Tier B muted) with their composite, five small pillar
 bars (value, quality, growth, health, momentum; a missing pillar drawn as an empty dashed box),
 cap tier and the S20 star (`out/candidates/IDN.json`). Industries are ordered by their best
-composite. Below it one tab per industry with picks: its Tier A and B names, the peer group when
+composite. Above the table, the S31 replay (`out/industries/IDN.replay.json`,
+`candidates.tiers_replay`): its status and verdict, Tier A's mean 3-month excess over the industry
+median against the shuffled placebo, t, p, perm p and control t, the quarters, the flags
+(survivorship first) and the per-pillar diagnostics, collapsed; a missing file says the replay has
+not run. Below it one tab per industry with picks: its Tier A and B names, the peer group when
 it fell back to the sector ("ranked within sector"), the gate failures counted by reason, then
 the metric chart (PE, PBV, yield, ROE, D/E against Stockbit's industry average, the D/E cap
 marked) and the financials timelines of the picks. The S30 filter (PE and PBV below the industry
@@ -35,6 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from assist import web
+from assist.candidates import tiers_replay
 from assist.candidates.tiers import DER_CAP, DER_CAP_DEFAULT, der_cap  # noqa: F401 - re-exported
 from assist.web import esc
 
@@ -369,7 +374,7 @@ def index(app: web.App, _m: re.Match[str]) -> web.View:
         return web.View(TITLE, body, {"rows": [], "problem": problem})
     stars = starred(app.out_dir)
     if tiered(p):
-        return tier_index(p, stars)
+        return tier_index(p, stars, tiers_replay.load(app.out_dir))
     return filter_index(p, stars)
 
 
@@ -623,8 +628,54 @@ TIER_LEGEND = ('<p class="legend"><span><span class="key bar pos"></span>pillar 
                "list</span></p>")
 
 
-def tier_index(p: Mapping, stars: Mapping[str, list[str]]) -> web.View:
-    """The schema 4 page: the top tier table, a tab per industry with picks, the rest listed."""
+REPLAY_KEYS = ("status", "verdict", "quarters", "first_quarter", "last_quarter", "mean_excess",
+               "mean_placebo", "t", "p", "perm_p", "control_t", "context_only", "flags",
+               "fingerprint", "as_of", "built")
+
+
+def _pt(x: Any) -> str:
+    """A return as a fraction → signed percentage points ("+1.23 pt")."""
+    v = _f(x)
+    return DASH if v is None else f"{v * 100:+.2f} pt"
+
+
+def replay_card(r: Mapping | None) -> str:
+    """The S31 replay verdict above the top tier table; a notice when it has not run."""
+    if r is None:
+        return web.notice("top tier replay has not run (out/industries/IDN.replay.json missing): "
+                          "the tiers are context only")
+    status = str(r.get("status") or DASH)
+    tone = "good" if status == "passed" else "bad" if status == "failed" else "warn"
+    q = (f"{_num(r.get('quarters'), 0)} quarters, {esc(str(r.get('first_quarter') or DASH))} to "
+         f"{esc(str(r.get('last_quarter') or DASH))}")
+    stats = (f"Tier A minus industry median, 3-month forward: {esc(_pt(r.get('mean_excess')))} "
+             f"vs placebo {esc(_pt(r.get('mean_placebo')))} · t {esc(_num(r.get('t'), 2))} · "
+             f"p {esc(_num(r.get('p'), 3))} · perm p {esc(_num(r.get('perm_p'), 3))} · control t "
+             f"{esc(_num(r.get('control_t'), 2))}")
+    flags = sorted((str(f) for f in r.get("flags") or []),
+                   key=lambda f: not f.startswith("survivorship"))
+    ctx = ("<p><b>Context only:</b> the tiers move no screen, list, size or stance.</p>"
+           if r.get("context_only", True) else "")
+    pil = _d(r.get("pillars"))
+    prow = "".join(f"<tr><td>{esc(lb)}</td><td>{_num(_d(pil.get(k)).get('quarters'), 0)}</td>"
+                   f"<td>{esc(_pt(_d(pil.get(k)).get('mean_excess')))}</td>"
+                   f"<td>{esc(_num(_d(pil.get(k)).get('t'), 2))}</td></tr>"
+                   for k, lb in PILLAR_LABELS if k in pil)
+    pillars = (f"<details><summary>Per pillar (diagnostics, decides nothing)</summary><table>"
+               f"<tr><th>Pillar</th><th>Quarters</th><th>Mean excess</th><th>t</th></tr>{prow}"
+               f"</table></details>" if prow else "")
+    items = "".join(f"<li>{esc(f)}</li>" for f in flags)
+    ul = f'<ul class="muted">{items}</ul>' if items else ""
+    return (f'<section class="card replay"><h2>Top tier replay {web.chip(status, tone)}</h2>'
+            f"<p>{esc(str(r.get('verdict') or DASH))}</p>"
+            f'<p class="muted">{q}. {stats}</p>{ctx}'
+            f"{ul}{pillars}</section>")
+
+
+def tier_index(p: Mapping, stars: Mapping[str, list[str]],
+               replay: Mapping | None = None) -> web.View:
+    """The schema 4 page: the replay verdict, the top tier table, a tab per industry with picks,
+    the rest listed."""
     table = tier_rows(p, stars)
     by_ind: dict[str, list[dict]] = {}
     for r in table:
@@ -656,7 +707,8 @@ def tier_index(p: Mapping, stars: Mapping[str, list[str]]) -> web.View:
             "the top 20% of an industry's gated names (1 to 3, 5 from 40) scoring 60 or more, "
             "Tier B as many again scoring 50 or more. Industries are ordered by their best "
             "composite. Context only: no stance reads the tiers until the S31 replay passes its "
-            f'placebo. Model <code>{esc(fp[:19] or DASH)}</code>.</p>{TIER_LEGEND}{top}'
+            f'placebo. Model <code>{esc(fp[:19] or DASH)}</code>.</p>{replay_card(replay)}'
+            f'{TIER_LEGEND}{top}'
             f'<p class="muted">One tab per industry with a top tier: its picks, the old S30 '
             f"filter as a chip ({FILTER_CHIP}), the gate failures, then the picks' metrics "
             f"against Stockbit's industry average and below the chart {FIN_NOTE}</p>"
@@ -667,6 +719,7 @@ def tier_index(p: Mapping, stars: Mapping[str, list[str]]) -> web.View:
     return web.View(TITLE, body, {
         "as_of": p.get("as_of"), "schema_version": p.get("schema_version"),
         "fingerprint": p.get("fingerprint"),
+        "replay": {k: replay.get(k) for k in REPLAY_KEYS} if replay else None,
         "rows": [{k: r.get(k) for k in twin_keys} for r in table],
         "industries": [{"id": i.get("id"), "label": i.get("label"), "sector": i.get("sector"),
                         "n": i.get("n"), "gated": i.get("gated"),

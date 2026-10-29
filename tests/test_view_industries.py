@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from assist import web
-from assist.candidates import peers, tiers
+from assist.candidates import peers, tiers, tiers_replay
 from assist.sources.idxmethod_comparison import Comparison
 from assist.views import industries
 
@@ -486,3 +486,45 @@ def test_pillar_bars():
 def test_tier_chart_legend(tout):
     body = _get(tout, "/industries").body
     assert "its tier and composite" in body and "multiple of the average" not in body
+
+
+def _replay(out: Path, **kw) -> dict:
+    r = tiers_replay.blocked(date(2026, 10, 29), "no S30 membership")
+    r.update(kw)
+    tiers_replay.write(r, out)
+    return r
+
+
+def test_replay_missing_says_not_run(tout):
+    body = _get(tout, "/industries").body
+    assert "top tier replay has not run" in body
+    assert json.loads(_get(tout, "/industries.json").body)["replay"] is None
+
+
+def test_replay_card_and_twin(tout):
+    _replay(tout, status="failed", verdict="rule t 0.40 <script>x</script>", quarters=17,
+            first_quarter="2022-03-31", last_quarter="2026-06-30", mean_excess=0.0123,
+            mean_placebo=-0.001, t=0.4, p=0.31, perm_p=0.2, control_t=0.15,
+            pillars={"value": {"quarters": 17, "mean_excess": 0.02, "t": 1.1}})
+    body = _get(tout, "/industries").body
+    card = re.search(r'<section class="card replay">.*?</section>', body, re.S).group(0)
+    assert body.index('class="card replay"') < body.index('class="top-tier"')
+    assert '<span class="chip bad">failed</span>' in card
+    assert "<script>x" not in card and "&lt;script&gt;x" in card
+    assert "+1.23 pt" in card and "vs placebo -0.10 pt" in card and "perm p 0.200" in card
+    assert "17 quarters, 2022-03-31 to 2026-06-30" in card and "Context only" in card
+    assert re.search(r"<li>(.*?)</li>", card).group(1).startswith("survivorship")
+    assert "decides nothing" in card and "+2.00 pt" in card
+    twin = json.loads(_get(tout, "/industries.json").body)["replay"]
+    assert twin["status"] == "failed" and twin["quarters"] == 17 and twin["context_only"]
+
+
+def test_replay_passed_and_blocked(tout):
+    _replay(tout)
+    card = re.search(r'<section class="card replay">.*?</section>',
+                     _get(tout, "/industries").body, re.S).group(0)
+    assert '<span class="chip warn">blocked</span>' in card and "no S30 membership" in card
+    _replay(tout, status="passed", passed=True, context_only=False, verdict="beats placebo")
+    card = re.search(r'<section class="card replay">.*?</section>',
+                     _get(tout, "/industries").body, re.S).group(0)
+    assert '<span class="chip good">passed</span>' in card and "Context only" not in card

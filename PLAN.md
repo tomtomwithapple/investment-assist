@@ -386,8 +386,10 @@ real stores → record numbers in the Progress table → commit. One slice per c
     fundamentals count from period end + 120 days; besides `placebo.evaluate` the real mean
     must beat 95% of 200 within-industry shuffles (`perm_p` ≤ 0.05); fewer than 10 quarters
     with a Tier A in 3+ industries is an insufficient sample. **Still open:** the live run and
-    verdict (no `stockbiter.db` here, and only 20 files in `cache/history/`), and the replay
-    verdict on `/industries` (`tiers_replay.load(out_dir)`; today it is shown in the brief).
+    verdict (no `stockbiter.db` here, and only 20 files in `cache/history/`). Since 2026-10-29
+    `/industries` also shows the replay above the top tier table (status chip, verdict, Tier A
+    excess vs placebo, t, p, perm p, control t, flags, per-pillar diagnostics collapsed; "has not
+    run" when the file is missing) and its `.json` twin carries `replay`.
   - *Done when:* `assist industries` writes schema 4 with picks for every industry that has
     names passing the gates; a rerun with the same inputs gives identical bytes; `/industries`
     shows the top-tier table; and the replay verdict with its control is journalled and shown.
