@@ -2,12 +2,15 @@
 # One step from a checkout to the local pages (PLAN S29):
 #
 #   ./start.sh                  uv sync, assist doctor, assist run --no-send if out/ is stale,
-#                               then assist status on http://127.0.0.1:8791/ and open the browser
+#                               then assist status on 0.0.0.0:8791 (this Mac and the LAN, no
+#                               login) and open http://127.0.0.1:8791/ in the browser
 #   ./start.sh --run            run even when out/ is already today's
 #   ./start.sh --no-run         never run; serve whatever out/ holds
 #   ./start.sh --send           let the run send its Telegram summary (assist run)
 #   ./start.sh --no-open        do not open the browser
 #   ./start.sh --port 8799      serve on another port
+#   ./start.sh --host ADDR      listen on ADDR instead of 0.0.0.0
+#   ./start.sh --local          listen on 127.0.0.1 only (same as --host 127.0.0.1)
 #   ./start.sh --install-jobs   also install the launchd jobs (sh launchd/install.sh) after the sync
 #
 # out/ is stale when it holds no stance JSON or the newest out/*/*.json as_of is before today.
@@ -21,13 +24,15 @@ REPO=$(pwd)
 
 stamp() { date '+%Y-%m-%d %H:%M:%S'; }
 usage() {
-    echo "usage: ./start.sh [--run|--no-run] [--send] [--no-open] [--port N] [--install-jobs]" >&2
+    echo "usage: ./start.sh [--run|--no-run] [--send] [--no-open] [--port N]" \
+        "[--host ADDR|--local] [--install-jobs]" >&2
 }
 
 RUN=auto
 SEND=no
 OPEN_BROWSER=yes
 PORT=8791
+HOST=0.0.0.0
 INSTALL_JOBS=no
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -41,6 +46,10 @@ while [ $# -gt 0 ]; do
                 ''|*[!0-9]*) usage; exit 2 ;;
             esac
             PORT=$2; shift ;;
+        --host)
+            [ -n "${2:-}" ] || { usage; exit 2; }
+            HOST=$2; shift ;;
+        --local) HOST=127.0.0.1 ;;
         -h|--help) usage; exit 0 ;;
         *) usage; exit 2 ;;
     esac
@@ -50,6 +59,7 @@ done
 UV=${UV:-uv}
 OPEN=${OPEN:-open}
 CURL=${CURL:-curl}
+IPCONFIG=${IPCONFIG:-ipconfig}
 TODAY=${ASSIST_START_TODAY:-$(date +%Y-%m-%d)}
 TIMEOUT=${ASSIST_START_TIMEOUT:-30}
 URL=http://127.0.0.1:$PORT/
@@ -112,8 +122,8 @@ trap cleanup EXIT
 trap 'echo "$(stamp) stopped"; exit 130' INT
 trap 'echo "$(stamp) stopped"; exit 143' TERM
 
-echo "$(stamp) assist status --port $PORT (server log: $LOG)"
-"$UV" run assist status --port "$PORT" >"$LOG" 2>&1 &
+echo "$(stamp) assist status --port $PORT --host $HOST (server log: $LOG)"
+"$UV" run assist status --port "$PORT" --host "$HOST" >"$LOG" 2>&1 &
 SERVER=$!
 
 waited=0
@@ -133,6 +143,17 @@ until "$CURL" -fsS -o /dev/null --max-time 2 "$URL" 2>/dev/null; do
 done
 
 echo "$(stamp) pages on $URL (Ctrl-C stops them)"
+if [ "$HOST" != 127.0.0.1 ] && [ "$HOST" != localhost ]; then
+    LAN=$HOST
+    if [ "$HOST" = 0.0.0.0 ]; then
+        LAN=$("$IPCONFIG" getifaddr en0 2>/dev/null || "$IPCONFIG" getifaddr en1 2>/dev/null || true)
+    fi
+    if [ -n "$LAN" ]; then
+        echo "$(stamp) also on http://$LAN:$PORT/ (no login: anyone on the network can read them)"
+    else
+        echo "$(stamp) also on this Mac's LAN address, port $PORT (no login)"
+    fi
+fi
 if [ "$OPEN_BROWSER" = yes ]; then
     "$OPEN" "$URL" || echo "$(stamp) could not open a browser; visit $URL" >&2
 fi

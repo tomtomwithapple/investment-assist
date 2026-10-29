@@ -247,8 +247,9 @@ def dispatch(app: App, routes: Sequence[Route], raw_path: str) -> Response:
 
 def serve(app: App, port: int = DEFAULT_PORT,
           ready: Callable[[ThreadingHTTPServer], None] | None = None,
-          routes: Sequence[Route] | None = None) -> None:
-    """Serve `routes` (default ROUTES) on 127.0.0.1 until interrupted. `ready` gets the server."""
+          routes: Sequence[Route] | None = None, host: str = HOST) -> None:
+    """Serve `routes` (default ROUTES) on `host` (default 127.0.0.1) until interrupted. `ready`
+    gets the server."""
     table = list(ROUTES if routes is None else routes)
 
     class Handler(BaseHTTPRequestHandler):
@@ -276,7 +277,7 @@ def serve(app: App, port: int = DEFAULT_PORT,
         def log_message(self, fmt: str, *args) -> None:
             pass
 
-    server = ThreadingHTTPServer((HOST, port), Handler)
+    server = ThreadingHTTPServer((host, port), Handler)
     if ready is not None:
         ready(server)
     try:

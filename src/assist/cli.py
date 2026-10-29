@@ -55,14 +55,17 @@ def _status(args: argparse.Namespace) -> int:
     paths = pipeline.Paths.default()
     app = web.App(out_dir=paths.out, snapshots_dir=paths.snapshots, journal_path=paths.journal,
                   health=build)
-    print(f"assist status on http://{status.HOST}:{args.port}/ ({STATUS_HELP}; "
+    print(f"assist status on http://{args.host}:{args.port}/ ({STATUS_HELP}; "
           "read-only; Ctrl-C stops it)", flush=True)
+    if args.host not in doctor.LOCAL_HOSTS:
+        print(f"listening on {args.host}: anyone on the network can read these pages "
+              "(no login)", file=sys.stderr, flush=True)
     try:
-        web.serve(app, port=args.port, routes=status.ROUTES)
+        web.serve(app, port=args.port, routes=status.ROUTES, host=args.host)
     except KeyboardInterrupt:
         pass
     except OSError as e:
-        print(f"cannot listen on {status.HOST}:{args.port}: {e}", file=sys.stderr)
+        print(f"cannot listen on {args.host}:{args.port}: {e}", file=sys.stderr)
         return 1
     return 0
 
@@ -294,11 +297,14 @@ def main(argv: list[str] | None = None) -> int:
     d.set_defaults(func=_doctor)
 
     st = sub.add_parser("status", help=STATUS_HELP,
-                        description=f"{STATUS_HELP}, on 127.0.0.1, read-only: / overview, "
-                        "/stance/<SUBJECT>/<asset>, /candidates[/<MKT>], /industries[/<id>], "
-                        "/paper, /journal, /status (each with a .json twin)")
+                        description=f"{STATUS_HELP}, on 127.0.0.1 unless --host, "
+                        "read-only: / overview, /stance/<SUBJECT>/<asset>, /candidates[/<MKT>], "
+                        "/industries[/<id>], /paper, /journal, /status (each with a .json twin)")
     st.add_argument("--port", type=int, default=status.DEFAULT_PORT,
-                    help=f"port on {status.HOST} (default {status.DEFAULT_PORT})")
+                    help=f"port to listen on (default {status.DEFAULT_PORT})")
+    st.add_argument("--host", default=status.HOST,
+                    help=f"address to listen on (default {status.HOST}, this Mac only; "
+                    "0.0.0.0 serves the LAN, with no login)")
     st.add_argument("--config", default=str(doctor.DEFAULT_CONFIG))
     st.add_argument("--root", help="siblings root (default ../ or $ASSIST_SIBLINGS_ROOT)")
     st.add_argument("--no-http", action="store_true",

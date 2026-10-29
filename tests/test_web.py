@@ -67,6 +67,27 @@ def test_listens_on_localhost_only(base):
     assert box["host"] == "127.0.0.1" == web.HOST
 
 
+def test_host_binds_every_interface_when_asked(tmp_path):
+    started, box = threading.Event(), {}
+
+    def ready(server):
+        box["server"] = server
+        started.set()
+
+    t = threading.Thread(target=web.serve, args=(_app(tmp_path),),
+                         kwargs={"port": 0, "ready": ready, "routes": ROUTES, "host": "0.0.0.0"},
+                         daemon=True)
+    t.start()
+    assert started.wait(5)
+    server = box["server"]
+    try:
+        assert server.server_address[0] == "0.0.0.0"
+        assert _get(f"http://127.0.0.1:{server.server_address[1]}/").status_code == 200
+    finally:
+        server.shutdown()
+        t.join(5)
+
+
 def test_route_match_renders_in_layout(base):
     url, _ = base
     r = _get(url + "/hello/ann?x=1")

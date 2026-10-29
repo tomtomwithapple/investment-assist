@@ -13,7 +13,7 @@ its sources.
 ## Quick start
 
 ```sh
-./start.sh                  # uv sync, doctor, run if out/ is stale, then the pages on http://127.0.0.1:8791/
+./start.sh                  # uv sync, doctor, run if out/ is stale, then the pages on port 8791 (this Mac and the LAN)
 ```
 
 `start.sh` works from any directory. It stops with a message if `uv` is not installed
@@ -32,6 +32,8 @@ its sources.
 | `--send` | the run sends its Telegram summary (`assist run`, still once a day) |
 | `--no-open` | do not open the browser |
 | `--port N` | serve on another port (default 8791, so it does not clash with a plain `assist status` on 8790) |
+| `--host ADDR` | listen on ADDR instead of the default `0.0.0.0` (this Mac and the LAN, no login: anyone on the network can read the pages; the LAN URL is printed) |
+| `--local` | listen on 127.0.0.1 only |
 | `--install-jobs` | also run `sh launchd/install.sh` after the sync; without it `~/Library/LaunchAgents` is never touched |
 
 ## Use
@@ -39,7 +41,7 @@ its sources.
 ```sh
 uv sync
 uv run assist doctor                  # every source: present / missing / locked / stale
-uv run assist status                  # local pages on http://127.0.0.1:8790/ (read-only, Ctrl-C stops): / stance grid, /stance/<SUBJECT>/<asset>, /candidates[/<MKT>], /paper, /journal, /status source health + launchd jobs; each has a .json twin
+uv run assist status                  # (--host 0.0.0.0 for the LAN) local pages on http://127.0.0.1:8790/ (read-only, Ctrl-C stops): / stance grid, /stance/<SUBJECT>/<asset>, /candidates[/<MKT>], /paper, /journal, /status source health + launchd jobs; each has a .json twin
 uv run assist run                     # stances → out/, journal/, data/briefs/<day>.md, Telegram once a day
 uv run assist run --no-send           # the same, without Telegram
 uv run assist brief                   # print the brief for the current out/ (--send: summary, once a day)

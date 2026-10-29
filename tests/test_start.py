@@ -21,6 +21,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 START = ROOT / "start.sh"
 TODAY = "2026-10-27"
+STATUS = "status --port 8791 --host 0.0.0.0"
 BASE_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 
 STUB_UV = """#!/bin/sh
@@ -125,7 +126,7 @@ def test_fresh_out_skips_the_run_and_serves_then_opens(repo):
     _out(repo, "2026-10-20", name="USA/stocks.json")  # the newest as_of decides
     res = _start(repo)
     assert res.returncode == 0, res.stderr
-    assert _names(_calls(repo)) == ["uv sync", "doctor", "status --port 8791", "curl",
+    assert _names(_calls(repo)) == ["uv sync", "doctor", STATUS, "curl",
                                     "open http://127.0.0.1:8791/"]
     assert "out/ is current" in res.stdout
 
@@ -135,7 +136,7 @@ def test_stale_out_runs_no_send(repo, as_of):
     _out(repo, as_of)
     res = _start(repo)
     assert res.returncode == 0, res.stderr
-    assert _names(_calls(repo)) == ["uv sync", "doctor", "run --no-send", "status --port 8791",
+    assert _names(_calls(repo)) == ["uv sync", "doctor", "run --no-send", STATUS,
                                     "curl", "open http://127.0.0.1:8791/"]
 
 
@@ -181,9 +182,37 @@ def test_no_open_skips_the_browser_and_port_passes_through(repo):
     res = _start(repo, "--no-open", "--port", "8799")
     assert res.returncode == 0, res.stderr
     calls = _calls(repo)
-    assert _names(calls) == ["uv sync", "doctor", "status --port 8799", "curl"]
+    assert _names(calls) == ["uv sync", "doctor", "status --port 8799 --host 0.0.0.0", "curl"]
     assert "http://127.0.0.1:8799/" in calls[-1]
     assert "http://127.0.0.1:8799/" in res.stdout
+
+
+def test_host_passes_through_and_prints_the_lan_url(repo):
+    _out(repo, TODAY)
+    res = _start(repo, "--no-open", "--host", "192.168.1.5")
+    assert res.returncode == 0, res.stderr
+    calls = _calls(repo)
+    assert _names(calls) == ["uv sync", "doctor", "status --port 8791 --host 192.168.1.5", "curl"]
+    assert "http://127.0.0.1:8791/" in calls[-1]
+    assert "also on http://192.168.1.5:8791/" in res.stdout
+
+
+def test_local_listens_on_localhost_only(repo):
+    _out(repo, TODAY)
+    res = _start(repo, "--no-open", "--local")
+    assert res.returncode == 0, res.stderr
+    assert _names(_calls(repo))[2] == "status --port 8791 --host 127.0.0.1"
+    assert "also on" not in res.stdout
+
+
+def test_default_prints_the_lan_url(repo):
+    _out(repo, TODAY)
+    stub = repo.parent / "bin" / "ipconfig"
+    stub.write_text("#!/bin/sh\n[ \"$2\" = en0 ] && echo 10.0.0.7\n")
+    stub.chmod(0o755)
+    res = _start(repo, "--no-open")
+    assert res.returncode == 0, res.stderr
+    assert "also on http://10.0.0.7:8791/" in res.stdout
 
 
 def test_install_jobs_runs_install_sh_after_the_sync(repo):
@@ -212,7 +241,7 @@ def test_uv_missing_exits_1_with_a_message(repo):
     assert _calls(repo) == []
 
 
-@pytest.mark.parametrize("args", [["--bogus"], ["--port"], ["--port", "x"]])
+@pytest.mark.parametrize("args", [["--bogus"], ["--port"], ["--port", "x"], ["--host"]])
 def test_bad_flag_exits_2_with_usage(repo, args):
     res = _start(repo, *args)
     assert res.returncode == 2
@@ -255,7 +284,7 @@ def test_failed_doctor_and_run_still_serve(repo):
     env = _env(repo, STUB_DOCTOR_EXIT="1", STUB_RUN_EXIT="3")
     res = _start(repo, "--no-open", env=env)
     assert res.returncode == 0, res.stderr
-    assert _names(_calls(repo)) == ["uv sync", "doctor", "run --no-send", "status --port 8791",
+    assert _names(_calls(repo)) == ["uv sync", "doctor", "run --no-send", STATUS,
                                     "curl"]
     assert "run failed (exit 3)" in res.stdout + res.stderr
 

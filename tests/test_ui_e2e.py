@@ -66,13 +66,13 @@ def _start(monkeypatch, siblings: Path):
     started = threading.Event()
     real = web.serve
 
-    def spy(app, port=web.DEFAULT_PORT, ready=None, routes=None):
+    def spy(app, port=web.DEFAULT_PORT, ready=None, routes=None, host=web.HOST):
         box["app"], box["routes"] = app, routes
 
         def on_ready(server):
             box["server"] = server
             started.set()
-        return real(app, port, on_ready, routes=routes)
+        return real(app, port, on_ready, routes=routes, host=host)
 
     monkeypatch.setattr(web, "serve", spy)
     t = threading.Thread(target=lambda: box.setdefault("rc", cli.main(
