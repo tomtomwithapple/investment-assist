@@ -775,3 +775,48 @@ slices:
       no fetch. Industry = identical Stockbit industry block (no name in the data). Benchmarks are
       the medians computed here; Stockbit's means are carried as a cross-check. Context only:
       no screen, verdict or stance reads it.
+
+  - id: P48-tier-model
+    title: "PLAN S31: top tier per industry: gates, five pillars (value, quality, growth, health, momentum), composite 0-100, Tier A/B → out/industries/IDN.json schema 4, journal record"
+    depends_on: [P46-peers]
+    owns: ["src/assist/candidates/tiers.py", "src/assist/candidates/peers.py", "src/assist/views/industries.py", "src/assist/pipeline.py", "src/assist/journal.py", "tests/candidates/test_tiers.py", "tests/candidates/test_peers.py", "tests/fixtures/tiers/**", "docs/results/P48-tier-model.md"]
+    accept: uv run pytest -q tests/candidates/test_tiers.py tests/candidates/test_peers.py tests/test_view_industries.py && uv run ruff check .
+    estimate: 2
+    notes: >-
+      Percentile ranks within the S30 industry (sector when < 8 names pass the gates), never vs
+      Stockbit's mean. Gates: days_traded_60 >= 30, med_value_60d >= IDR 1bn, TTM NI and equity
+      > 0, QUALITY_FLOOR / BANK_FLOOR from screens.py, D/E under DER_CAP (moved from
+      views/industries.py into the model). Pillar weights 30/25/15/15/15; banks, insurers and
+      multifinance use their own metric set (PE, PBV; ROE, ROA; CAR, NPL, coverage, LDR). Normalised
+      PE = price / min(TTM NI, mean of the last 3 TTM years). Coverage: metric needs >= 5 peers,
+      pillar >= half its metrics, composite >= 3 pillars incl. value and quality, weights
+      rescaled. Tier A = top 20% of gated names, 1..3 (5 when >= 40 gated), composite >= 60; Tier B
+      the next as many, >= 50; ties by mktcap. One CONFIG, its sha is the fingerprint. Context
+      only: nothing else reads the tiers. Tests: hand-built fixture industry where the expected
+      ranks are worked out by hand, a one-off-gain name that must not rank first, a bank
+      industry, a thin industry falling back to its sector, an industry with no Tier A, and a
+      byte-identical rerun. Live: blocked while idx-method's stockbiter.db is absent on this Mac.
+
+  - id: P49-tier-ui
+    title: "PLAN S31: /industries opens with the top tier table (composite, pillar bars), industry cards list Tier A/B, charts draw the picks"
+    depends_on: [P48-tier-model]
+    owns: ["src/assist/views/industries.py", "tests/test_view_industries.py", "docs/results/P49-tier-ui.md"]
+    accept: uv run pytest -q tests/test_view_industries.py tests/test_web.py && uv run ruff check .
+    estimate: 1
+    notes: >-
+      Stdlib HTML/SVG as the rest of views/. Old PE/PBV/ROE filter kept as a chip. Reads schema 3
+      payloads with a notice (no picks) instead of a 500. Escape every value; .json twin carries the
+      table. Check light and dark by screenshot.
+
+  - id: P50-tier-replay
+    title: "PLAN S31: quarter-end replay of a reduced composite from factor_series, Tier A minus industry median 3m forward return vs within-industry shuffled placebo, verdict journalled and shown"
+    depends_on: [P48-tier-model]
+    owns: ["src/assist/candidates/tiers_replay.py", "tests/candidates/test_tiers_replay.py", "src/assist/brief.py", "docs/results/P50-tier-replay.md"]
+    accept: uv run pytest -q tests/candidates/test_tiers_replay.py && uv run ruff check .
+    estimate: 2
+    notes: >-
+      Reduced pillars from factor_series (PE, PBV, EV/EBIT, P/CFO; ROE, CFO/NI; ni_ttm y/y; net
+      debt/equity) plus momentum from cache/history; fundamentals lagged by screens.LAG_DAYS;
+      today's membership back-filled and flagged (survivorship until idx-method V2). Uses
+      assist.eval.placebo; weights frozen before the run, per-pillar results are diagnostics only.
+      A failing or insufficient verdict leaves the tiers context only.

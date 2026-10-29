@@ -8,7 +8,7 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-10-28 (P46-peers). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against Stockbit's industry average and the sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S15 and S22 are open.
+**Last updated:** 2026-10-28 (P46-peers). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against Stockbit's industry average and the sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S15, S22 and S31 (top tier per industry, planned 2026-10-29) are open.
 
 What `assist run` does:
 - It reads layers 0, 1 and 5 for every subject.
@@ -50,7 +50,7 @@ it), then install the jobs and let the journal build a record.
 | B. Indonesia overrides and rules (2, 3, 4) | S7–S10 | 4 / 4 |
 | C. Foreign markets | S11–S12 | 2 / 2 |
 | D. Track record and ops | S13–S14 | 2 / 2 |
-| E. Layer 4 refinements | S15 | 0 / 1 |
+| E. Layer 4 refinements (S31: top tier per industry) | S15, S31 | 0 / 2 |
 | F. Undervalued stocks, macro-weighted (IDN, then US, JP) | S16–S22 | 7 / 8 |
 | G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S30 | 8 / 8 |
 
@@ -283,6 +283,91 @@ real stores → record numbers in the Progress table → commit. One slice per c
     `op_income_ttm`, `net_debt` from 2016-12, so PE, PBV, P/CFO and EV/EBIT are computed here.
     V1 becomes a cross-check, and EV/EBITDA and PS wait for it (no revenue or D&A in the store).
     V2 (membership) and V3 (period-end vs filing lag) still block the point-in-time replay.
+
+- [ ] **S31 Top tier per industry (IDN, planned 2026-10-29).** A score from 0 to 100 for each
+  name within its industry, and the best few names of each industry marked as the top tier.
+  - **Why.** `/industries` (S30) is a pass/fail filter today: PE and PBV below Stockbit's
+    industry mean, ROE above it, D/E under the cap. The names that pass are sorted by the mean of
+    the four category scores. That has four flaws:
+    - Being 1% cheaper passes as fully as being 50% cheaper.
+    - A cheap name whose earnings are shrinking passes.
+    - Dividend and solvency weigh as much as valuation.
+    - Growth, earnings trend, momentum and liquidity are not read at all.
+    The benchmark is also a mean that loss-makers drag down (industry PE −77). Of 836 names,
+    73 pass (2026-10-26), in no order that compares one strength against another.
+  - **Peer group.** The S30 industry (Stockbit's industry block). If fewer than 8 names in it
+    pass the gates, the percentiles are computed over the sector instead, and the page says so
+    ("ranked within sector"). Names are compared by rank, never against Stockbit's mean, so
+    negative averages and outliers do not matter, and no clamp is needed.
+  - **Gates.** A name that fails a gate gets no score; the page shows the reason. Gates do not
+    add to the score.
+    - Liquidity: `days_traded_60` ≥ 30 and `med_value_60d` ≥ IDR 1bn (`factors.derive`).
+    - Positive TTM net income and positive equity.
+    - Quality floor, the same numbers as the screens: `QUALITY_FLOOR` (Altman Z ≥ 1.8, interest
+      cover ≥ 1.5, Piotroski ≥ 5 where present). Banks use `BANK_FLOOR`.
+    - D/E under the industry cap. `DER_CAP` moves out of `views/industries.py` into the model,
+      because it now decides which names get a score.
+  - **Pillars.** A metric scores the name's percentile among its peers that have a value:
+    (rank − 0.5) / n × 100, with ties sharing the mid-rank, and flipped where lower is better.
+    A pillar is the mean of its metric percentiles.
+
+    | Pillar | Weight | Metrics (non-financials) | Banks, insurers, multifinance |
+    |---|---|---|---|
+    | Value | 30 | PE on normalised earnings, PBV, EV/EBITDA, P/S | PE, PBV |
+    | Quality | 25 | ROE, ROIC, operating margin, stability of the quarterly operating margin over 12 quarters (lower stdev is better), CFO/NI (`factor_series` `cfo_ttm`) | ROE, ROA, stability of quarterly ROE |
+    | Growth | 15 | revenue TTM y/y, net income TTM y/y, revenue 2-year CAGR (S30 `financials`, needs ≥ 8 quarters) | net income TTM y/y, equity 2-year CAGR |
+    | Health | 15 | D/E, interest cover, Altman Z, current ratio | CAR, gross NPL, NPL coverage, LDR (`factors.json`) |
+    | Momentum | 15 | `mom_12_1`, `near_52w_high` | same |
+
+    - **Normalised PE.** Price over the lower of TTM earnings and the mean of the last three
+      TTM years. A one-off gain, such as BMTR's PE of 2 on 2026-10-26, then cannot rank first
+      (the problem S15 names).
+    - **Dividend yield** is shown, not scored. S18 owns dividend picking.
+    - **Coverage rules.** A metric is dropped for a peer group when fewer than 5 peers have a
+      value. A pillar needs at least half of its metrics. The composite needs at least 3
+      pillars, Value and Quality among them. When a pillar is missing, the weights of the
+      pillars present are scaled up to sum to 100, and the page shows the missing pillar.
+  - **Composite and tiers.** The composite is the weighted mean of the pillars.
+    - **Tier A:** the top 20% of the names that passed the gates in an industry, at least 1,
+      at most 3 (at most 5 in an industry with 40 or more such names). Each must also score
+      ≥ 60. An industry where no name scores 60 has no Tier A.
+    - **Tier B:** up to as many names again, each scoring ≥ 50.
+    - Ties break on market cap. Every weight, cutoff and gate lives in one `CONFIG`, and its
+      sha is the model fingerprint.
+  - **Output.** `out/industries/IDN.json` moves to schema 4. Each name gains `gates` (pass, and
+    the reasons for a fail), `pillars` (score and metric count each), `composite`, `rank` and
+    `pick` (`"A"`, `"B"` or null). Each industry gains `peer_group` and `picks`. The payload
+    gains `fingerprint`. `assist run` journals one `industries` record per run: the picks, each
+    name's pillars, and the fingerprint.
+  - **Page.** `/industries` opens with one table, *Top tier by industry*: industry, symbol,
+    composite, five pillar bars, cap tier, and S20's star. Each industry card then lists Tier A,
+    and Tier B muted below it, with the gate failures counted. The metric chart and the
+    financials timelines draw Tier A and B in place of the names that pass today's filter. The
+    old filter is kept as a chip: "beats the industry average on PE, PBV and ROE".
+  - **Replay.** At quarter ends from 2017 on, a reduced composite is rebuilt from
+    `factor_series`. Value is PE, PBV, EV/EBIT and P/CFO. Quality is ROE and CFO/NI. Growth is
+    `ni_ttm` y/y. Health is net debt/equity. Momentum comes from `cache/history/`.
+    Fundamentals are lagged by `screens.LAG_DAYS`. Membership is today's, back-filled and
+    flagged; that is survivorship bias until idx-method V2 lands.
+    - **Test:** the 3-month forward return of Tier A minus its industry's median, each quarter
+      (the quarterly cycle the user chose for phase F).
+    - **Placebo:** the same tiers picked on composites shuffled within each industry.
+    - **Weights are fixed before the replay.** The replay reports a result per pillar for
+      diagnosis only. Changing a weight changes the fingerprint and makes a new model.
+  - **Context only until the replay passes.** The tiers are shown and journalled. They feed no
+    screen, S20 list, sizing or stance. Letting a passing Tier A feed S20 as its own style is a
+    later decision, not part of this slice.
+  - **Slices** (`plan.yaml`): P48-tier-model, then P49-tier-ui and P50-tier-replay, which can
+    run in parallel.
+    - **P48:** gates, pillars, composite and tiers in `candidates/tiers.py`, read by
+      `peers.build`, plus schema 4 and the journal record.
+    - **P49:** the `/industries` table and cards.
+    - **P50:** the replay, its placebo, and the verdict on the page and in the brief.
+  - **Blocked here today:** idx-method's `store/data/stockbiter.db` is not on this Mac
+    (2026-10-29), so the live run waits for it. Tests use fixtures.
+  - *Done when:* `assist industries` writes schema 4 with picks for every industry that has
+    names passing the gates; a rerun with the same inputs gives identical bytes; `/industries`
+    shows the top-tier table; and the replay verdict with its control is journalled and shown.
 
 ### Phase F — undervalued stocks, macro-weighted (planned 2026-10-27)
 
