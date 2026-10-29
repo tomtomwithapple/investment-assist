@@ -1,11 +1,12 @@
 #!/bin/sh
 # One step from a checkout to the local pages (PLAN S29):
 #
-#   ./start.sh                  uv sync, assist doctor, assist run --no-send if out/ is stale,
-#                               then assist status on 0.0.0.0:8791 (this Mac and the LAN, no
+#   ./start.sh                  uv sync, assist doctor, assist run --no-send if out/ is stale
+#                               (else assist industries once if out/industries/IDN.json is
+#                               missing), then assist status on 0.0.0.0:8791 (this Mac and the LAN, no
 #                               login) and open http://127.0.0.1:8791/ in the browser
 #   ./start.sh --run            run even when out/ is already today's
-#   ./start.sh --no-run         never run; serve whatever out/ holds
+#   ./start.sh --no-run         never run (nor assist industries); serve whatever out/ holds
 #   ./start.sh --send           let the run send its Telegram summary (assist run)
 #   ./start.sh --no-open        do not open the browser
 #   ./start.sh --port 8799      serve on another port
@@ -97,6 +98,12 @@ if [ "$RUN" = auto ]; then
         RUN=force
     else
         echo "$(stamp) out/ is current ($NEWEST), not running (--run forces it)"
+        # A run writes the peer comparison too; without one, build it once if it is missing.
+        if [ ! -f out/industries/IDN.json ]; then
+            echo "$(stamp) out/industries/IDN.json missing, assist industries"
+            "$UV" run assist industries \
+                || echo "$(stamp) assist industries failed (exit $?); serving without it" >&2
+        fi
     fi
 fi
 if [ "$RUN" = force ]; then

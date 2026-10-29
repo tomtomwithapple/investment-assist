@@ -13,7 +13,7 @@ its sources.
 ## Quick start
 
 ```sh
-./start.sh                  # uv sync, doctor, run if out/ is stale, then the pages on port 8791 (this Mac and the LAN)
+./start.sh                  # uv sync, doctor, run if out/ is stale (else industries if missing), then the pages on port 8791 (this Mac and the LAN)
 ```
 
 `start.sh` works from any directory. It stops with a message if `uv` is not installed

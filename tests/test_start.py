@@ -31,6 +31,7 @@ case "$*" in
         [ -n "${STUB_SERVE_SECONDS:-}" ] && exec sleep "$STUB_SERVE_SECONDS" ;;
     "run assist run"*) exit "${STUB_RUN_EXIT:-0}" ;;
     "run assist doctor"*) exit "${STUB_DOCTOR_EXIT:-0}" ;;
+    "run assist industries"*) exit "${STUB_INDUSTRIES_EXIT:-0}" ;;
 esac
 exit 0
 """
@@ -124,11 +125,36 @@ def test_start_sh_is_executable_posix_sh():
 def test_fresh_out_skips_the_run_and_serves_then_opens(repo):
     _out(repo, TODAY)
     _out(repo, "2026-10-20", name="USA/stocks.json")  # the newest as_of decides
+    _out(repo, TODAY, name="industries/IDN.json")
     res = _start(repo)
     assert res.returncode == 0, res.stderr
     assert _names(_calls(repo)) == ["uv sync", "doctor", STATUS, "curl",
                                     "open http://127.0.0.1:8791/"]
     assert "out/ is current" in res.stdout
+
+
+def test_fresh_out_without_industries_builds_them_once(repo):
+    _out(repo, TODAY)
+    res = _start(repo)
+    assert res.returncode == 0, res.stderr
+    assert _names(_calls(repo)) == ["uv sync", "doctor", "industries", STATUS, "curl",
+                                    "open http://127.0.0.1:8791/"]
+
+
+def test_failed_industries_still_serves(repo):
+    _out(repo, TODAY)
+    res = _start(repo, env=_env(repo, STUB_INDUSTRIES_EXIT="1"))
+    assert res.returncode == 0, res.stderr
+    assert STATUS in _names(_calls(repo))
+    assert "assist industries failed" in res.stderr
+
+
+def test_a_run_or_no_run_skips_industries(repo):
+    _out(repo, "2026-10-01")
+    for args in ([], ["--no-run"]):
+        res = _start(repo, *args)
+        assert res.returncode == 0, res.stderr
+        assert "industries" not in _names(_calls(repo))
 
 
 @pytest.mark.parametrize("as_of", ["2026-10-26", None])
@@ -179,6 +205,7 @@ def test_run_and_no_run_together_is_a_usage_error(repo):
 
 def test_no_open_skips_the_browser_and_port_passes_through(repo):
     _out(repo, TODAY)
+    _out(repo, TODAY, name="industries/IDN.json")
     res = _start(repo, "--no-open", "--port", "8799")
     assert res.returncode == 0, res.stderr
     calls = _calls(repo)
@@ -189,6 +216,7 @@ def test_no_open_skips_the_browser_and_port_passes_through(repo):
 
 def test_host_passes_through_and_prints_the_lan_url(repo):
     _out(repo, TODAY)
+    _out(repo, TODAY, name="industries/IDN.json")
     res = _start(repo, "--no-open", "--host", "192.168.1.5")
     assert res.returncode == 0, res.stderr
     calls = _calls(repo)
@@ -199,6 +227,7 @@ def test_host_passes_through_and_prints_the_lan_url(repo):
 
 def test_local_listens_on_localhost_only(repo):
     _out(repo, TODAY)
+    _out(repo, TODAY, name="industries/IDN.json")
     res = _start(repo, "--no-open", "--local")
     assert res.returncode == 0, res.stderr
     assert _names(_calls(repo))[2] == "status --port 8791 --host 127.0.0.1"
