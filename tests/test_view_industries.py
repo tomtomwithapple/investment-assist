@@ -1,8 +1,7 @@
-"""The industries pages (/industries and /industries/<id>): the per-industry charts of the names
-with PE and PBV below the industry average, ROE above it and D/E under the industry's cap, the
-chart (one bar and one ring per name and category, tier groups, the legend), the category tables
-with benchmarks and deviations, the financials timelines and tables, stars from
-out/candidates/IDN.json, the .json twins, a missing or invalid file, escaping and the 404 cases.
+"""The industries page (/industries): the per-industry charts of the names with PE and PBV below
+the industry average, ROE above it and D/E under the industry's cap, the financials timelines of
+those names under each chart, stars from out/candidates/IDN.json, the .json twin, a missing or
+invalid file, escaping, and no page per industry (404).
 A temp out/ written from a synthetic `Comparison` through `peers.build`; no real out/, store or
 network."""
 
@@ -30,7 +29,8 @@ def _payload() -> dict:
     rows = {
         "AAAA": ("bank1", "Keuangan", {PE: 5.0, PBV: 1.0, YIELD: 10.0, ROE: 20.0, DER: 0.5,
                                        MKTCAP: 100e12}),
-        "BBBB": ("bank1", "Keuangan", {PE: 10.0, PBV: 2.0, YIELD: 5.0, ROE: 10.0, MKTCAP: 5e12}),
+        "BBBB": ("bank1", "Keuangan", {PE: 8.0, PBV: 1.5, YIELD: 5.0, ROE: 12.0, DER: 0.6,
+                                       MKTCAP: 5e12}),
         "CCCC": ("bank1", "Keuangan", {PE: 20.0, PBV: 4.0, ROE: -3.0, MKTCAP: 0.5e12}),
         "XEVL": ("other", EVIL, {PE: 8.0}),
     }
@@ -117,7 +117,7 @@ def test_index_filters_pe_pbv_roe_and_the_de_cap(tmp_path):
     assert "3 of 22 names in 1 of 1 industries pass" in body
     card = re.search(r'<section class="card chart industry" data-industry="bank2">.*?</section>',
                      body, re.S).group(0)
-    assert '<h2><a href="/industries/bank2">Keuangan</a></h2>' in card
+    assert "<h2>Keuangan</h2>" in card and "href=\"/industries/" not in card
     assert "3 of 22 names pass · D/E cap 1</span>" in card
     svg = re.search(r"<svg.*?</svg>", card, re.S).group(0)
     for lb in ("PE", "PBV", "Yield %", "ROE %", "D/E"):
@@ -151,34 +151,20 @@ def test_de_cap_by_industry():
 
 
 def test_index_stars_and_twin(out):
-    # AAAA passes (bank1's label is "Keuangan": cap 1, D/E 0.5) and is on the S20 list
+    # AAAA and BBBB pass (bank1's label is "Keuangan": cap 1); AAAA is on the S20 list
     assert "AAAA ★" in _get(out, "/industries").body
     data = json.loads(_get(out, "/industries.json").body)
-    assert data["as_of"] == "2026-10-26" and [r["symbol"] for r in data["rows"]] == ["AAAA"]
+    assert data["as_of"] == "2026-10-26"
+    assert [r["symbol"] for r in data["rows"]] == ["AAAA", "BBBB"]
 
 
-def test_page_chart(out):
-    body = _get(out, "/industries/bank1").body
-    svg = re.search(r"<svg.*?</svg>", body, re.S).group(0)
-    for label in ("Valuation", "Dividend", "Profitability", "Solvency"):
-        assert f">{label}</text>" in svg
-    for group in ("Big cap", "Mid cap", "Small cap"):
-        assert group in svg
-    assert ">AAAA ★</text>" in svg and ">BBBB</text>" in svg
-    assert svg.count('class="hit"') == 12  # 3 names × 4 categories
-    # sector medians need 3 values: PE, PBV and ROE have them, yield and D/E do not
-    assert svg.count('class="ring"') == 6
-    assert 'class="pos"' in svg and 'class="neg"' in svg
-    assert "AAAA Valuation: 2.00× better than the industry average" in svg
-    assert "bar: score vs the industry average" in body and "ring: vs the sector median" in body
-
-
-def test_page_financials(out):
-    body = _get(out, "/industries/bank1").body
-    fin = body[body.index("<h2>Financials</h2>"):body.index('data-category="valuation"')]
-    assert "2025Q2 to 2026Q2" in fin and "2 of 3 names have statements" in fin
-    inc = re.search(r'<section class="card chart" data-statement="is">(.*?)</section>', fin,
-                    re.S).group(1)
+def test_index_financials(out):
+    body = _get(out, "/industries").body
+    card = re.search(r'<section class="card chart industry" data-industry="bank1">.*?</section>',
+                     body, re.S).group(0)
+    fin = card[card.index("<h3>Financials"):]
+    assert "<h3>Financials, 2025Q2 to 2026Q2</h3>" in fin
+    inc = re.search(r'<div data-statement="is">(.*?)</div>', fin, re.S).group(1)
     assert ">Revenue</text>" in inc and ">Net income</text>" in inc
     # one path per name and panel with a value: AAAA on revenue and net income only
     paths = re.findall(r'class="line" stroke="var\(--s1\)" d="([^"]*)"', inc)
@@ -188,20 +174,32 @@ def test_page_financials(out):
     assert "AAAA 2026Q2 Revenue: IDR 12.0T" in inc
     assert 'class="zero"' in inc  # net income crosses 0
     assert ">-1T</text>" in inc and ">2026Q2</text>" in inc
-    bs = re.search(r'data-statement="bs">(.*?)</section>', fin, re.S).group(1)
+    bs = re.search(r'<div data-statement="bs">(.*?)</div>', fin, re.S).group(1)
     assert "no values for these names" in bs  # total debt
-    table = re.search(r'<details class="card table" data-statement="is">(.*?)</details>', fin,
-                      re.S).group(1)
-    aaaa = re.search(r"<strong>AAAA</strong>.*?</tr>", table, re.S).group(0)
-    assert "IDR 12.0T" in aaaa and "+20%" in aaaa  # 12T on 10T a year earlier
-    assert "CCCC" not in table
+    assert "CCCC" not in card  # fails the filters: neither in the chart nor the financials
+    growth = re.search(r'<div data-statement="growth">(.*?)</div>', fin, re.S).group(1)
+    assert "<h4>Profit growth (y/y)</h4>" in growth and ">Gross profit</text>" in growth
+    assert "AAAA 2026Q2 Net income: " not in growth  # its base 2025Q2 is missing
+
+
+def test_yoy():
+    assert industries.yoy([10, None, 5, 5, 12, 3, 5, -1, 6]) == [
+        None, None, None, None, 20.0, None, 0.0, -120.0, -50.0]
+    assert industries.yoy([-2, 1, 1, 1, 4]) == [None] * 5  # a loss base has no growth
+
+
+def test_growth_axis_clips_but_hover_tells(out):
+    names = [{"symbol": "S", "financials": {"net_income": [None, 900.0, -50.0]}}]
+    svg = industries.timeline({"label": "x"}, industries.GROWTH, ["a", "b", "c"], names, pct=True)
+    assert "S b Net income: +900% y/y" in svg and ">+200%</text>" in svg
+    assert ">+1,000%</text>" not in svg
 
 
 def test_page_without_statements(tmp_path):
     p = _payload()
     p["periods"] = []
     peers.write(p, tmp_path)
-    assert "no quarterly statements for this industry" in _get(tmp_path, "/industries/bank1").body
+    assert "no quarterly statements for these names" in _get(tmp_path, "/industries").body
 
 
 @pytest.mark.parametrize(("lo", "hi", "want"), [
@@ -219,35 +217,13 @@ def test_compact(v, want):
     assert industries.compact(v) == want
 
 
-def test_page_tables(out):
-    body = _get(out, "/industries/bank1").body
-    val = re.search(r'<details class="card table" data-category="valuation" open>(.*?)</details>',
-                    body, re.S).group(1)
-    for bench in ("Industry average (Stockbit, benchmark)", "Sector median (benchmark)",
-                  "Sector average (Stockbit)"):
-        assert bench in val
-    assert "Industry median" not in val
-    assert "★ dividend_value" in val
-    aaaa = re.search(r"<strong>AAAA</strong>.*?</tr>", val, re.S).group(0)
-    assert ">big<" in aaaa and "2.00×" in aaaa and "0.50× ind" in aaaa
-    assert 'data-category="dividend">' in body  # closed, not open
-
-
-def test_page_twin(out):
-    data = json.loads(_get(out, "/industries/bank1.json").body)
-    assert data["id"] == "bank1" and [s["symbol"] for s in data["stocks"]] == ["AAAA", "BBBB",
-                                                                               "CCCC"]
-    assert data["sector_benchmarks"]["median"]["pe"] == 10.0  # 5, 10, 20 (XEVL is elsewhere)
-
-
 def test_escaping(out):
     assert EVIL not in _get(out, "/industries").body
-    body = _get(out, "/industries/other").body
-    assert EVIL not in body
-    assert "&lt;script&gt;" in body
+    assert EVIL not in _get(out, "/industries.json").body
 
 
-@pytest.mark.parametrize("path", ["/industries/nope", "/industries/..", "/industries/BANK1",
+@pytest.mark.parametrize("path", ["/industries/bank1", "/industries/bank1.json",
+                                  "/industries/nope", "/industries/..", "/industries/BANK1",
                                   "/industries/bank1/x", "/industries/", "/industries/..%2Fbank1"])
 def test_404(out, path):
     assert _get(out, path).status == 404
@@ -257,7 +233,6 @@ def test_missing_and_invalid_file(tmp_path):
     o = tmp_path / "out"
     r = _get(o, "/industries")
     assert r.status == 200 and "assist industries" in r.body
-    assert _get(o, "/industries/bank1").status == 404
     (o / "industries").mkdir(parents=True)
     (o / "industries" / "IDN.json").write_text("{not json")
     assert "is not valid JSON" in _get(o, "/industries").body
@@ -267,4 +242,4 @@ def test_missing_and_invalid_file(tmp_path):
 
 def test_no_candidates_file_means_no_stars(out):
     (out / "candidates" / "IDN.json").unlink()
-    assert "★ dividend_value" not in _get(out, "/industries/bank1").body
+    assert "AAAA ★" not in _get(out, "/industries").body

@@ -521,8 +521,8 @@ host, launchd for the server, changes to how stances or candidates are built.
   - **Deviation.** log(name / median), clamped at 4×; a category score is the signed mean, so
     positive is better. Context only: no screen, verdict or stance reads it.
   - **Output.** `out/industries/IDN.json` from `assist run` (never fails the run) or
-    `assist industries`; `/industries` and `/industries/<id>` (chart of four small multiples,
-    bar vs the industry, ring vs the sector, plus a table per category; S20 names starred).
+    `assist industries`; `/industries` (S20 names starred). The page per industry
+    (`/industries/<id>`: category chart, tables) was removed on 2026-10-29.
   - **Ranked list (2026-10-27).** `/industries` shows one chart per industry, no table: per
     metric (PE, PBV, yield, ROE, D/E) Stockbit's industry average as a grey bar, then a bar
     per passing name (blue better than the average, red worse), the average dashed and the
@@ -531,14 +531,15 @@ host, launchd for the server, changes to how stances or candidates are built.
     name passes when its PE and PBV are each below the industry average, its ROE above it, and
     its D/E is from 0 up to its industry's cap (1 by default; per-industry exceptions in
     `DER_CAP`, none for banks and insurers); dividend is not filtered and a missing value
-    fails. 73 of 836 names in 19 industries pass on 2026-10-26. Every name stays on
-    its `/industries/<id>` page.
-  - **Financials timelines (P47-financials, 2026-10-28).** `/industries/<id>` shows, between
-    the score chart and the category tables, a quarterly timeline per statement for the 8
-    largest names with statements (one line each, the dataviz categorical order by market-cap
-    rank): income statement (revenue, gross, operating and net profit) and balance sheet
+    fails. 73 of 836 names in 19 industries pass on 2026-10-26.
+  - **Financials timelines (P47-financials, 2026-10-28; moved 2026-10-29).** Each industry
+    card on `/industries` shows, under its metric chart, a quarterly timeline per statement for
+    its passing names with statements, at most 8 (one line each, in the chart's order): income
+    statement (revenue, gross, operating and net profit) and balance sheet
     (equity, total debt, cash), the last 12 quarters (2023Q3–2026Q2), each quarter on its own.
-    A table per statement gives every name's latest quarter and y/y change. Read from
+    Then profit growth (gross, operating, net) y/y on the same quarter a year earlier, none
+    on a base at or below 0, the axis clipped to ±200% (hover gives the real value). The
+    latest-quarter tables of the old page were not carried over. Read from
     idx-method's `fundamentals` at build time into `out/industries/IDN.json` (schema 3,
     `periods` + per-name `financials`; 502 of 834 names, 2.6 MB). **Not shown: total assets
     and liabilities.** idx-method's `assets`/`liabilities` are totals for some names (BBCA),

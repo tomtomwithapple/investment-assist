@@ -172,11 +172,6 @@ def _industries(app: App, m: re.Match[str]) -> View:
     return industries.index(app, m)
 
 
-def _industry(app: App, m: re.Match[str]) -> View | None:
-    from assist.views import industries
-    return industries.page(app, m)
-
-
 def _paper(app: App, m: re.Match[str]) -> View:
     from assist.views import paper
     return paper.page(app, m)
@@ -192,7 +187,6 @@ ROUTES: list[Route] = [(re.compile(r"^/$"), _overview),
                        (re.compile(r"^/candidates$"), _candidates),
                        (re.compile(r"^/candidates/([^/]+)$"), _market),
                        (re.compile(r"^/industries$"), _industries),
-                       (re.compile(r"^/industries/([^/]+)$"), _industry),
                        (re.compile(r"^/paper$"), _paper),
                        (re.compile(r"^/journal$"), _journal)]
 

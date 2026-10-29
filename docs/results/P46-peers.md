@@ -163,3 +163,12 @@ This is context only. No screen, verdict or stance reads it, so it carries no pl
   universe scope `sub`, or `/emitten`).
 - **Today only.** Every pull is today's cross-section (`/comparison` ignores a date), so there
   is no history yet. One date is stored per weekday pull from now on.
+
+## Update (2026-10-29): no page per industry
+
+`/industries/<id>` is gone (route, category chart, category tables, statement tables; it now
+answers 404). Its financials timelines (P47-financials) moved into each industry card on
+`/industries`, under the metric chart, for that card's passing names (at most 8, chart order),
+plus a third timeline, profit growth y/y (gross, operating, net; none on a base at or below 0;
+axis clipped to ±200%). On the 2026-10-28 file: 19 cards, 16 with financials, 3 with no
+statements for their passing names.
