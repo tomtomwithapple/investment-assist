@@ -11,10 +11,10 @@ metric (PE, PBV, yield, ROE, D/E) a bar per name beside Stockbit's industry aver
 marked on D/E. Below it in the same card, the financials of those names: per
 statement (income statement, balance sheet) a timeline of small multiples, one line per name over
 the last quarters in the file (each quarter on its own, not year-to-date), at most `MAX_LINES`
-names, each panel on its own linear axis, then their profit growth (gross, operating, net) on the
-same quarter a year earlier, clipped to ±`GROWTH_CLIP`. Names on the S20 undervalued list
-(`out/candidates/IDN.json`) are starred. There is no page per industry. Every value read from a
-file goes through `esc`.
+names, each panel on its own linear axis, then their profitability per quarter over the last
+`YEARS` years (gross, operating and net margin, annualised ROE), clipped to ±`PCT_CLIP`. Names
+on the S20 undervalued list (`out/candidates/IDN.json`) are starred. There is no page per
+industry. Every value read from a file goes through `esc`.
 """
 
 from __future__ import annotations
@@ -391,8 +391,10 @@ def index(app: web.App, _m: re.Match[str]) -> web.View:
             "is a Stockbit peer group, named by the IDX sub-sector it matches. Below each chart, "
             "the same names' quarterly income statement and balance sheet, each quarter on its "
             "own (not year-to-date), IDR, each panel on its own axis; hover a dot for its value. "
-            "Profit growth is y/y on the same quarter a year earlier, left out where that base is "
-            f"a loss or zero; the axis stops at ±{GROWTH_CLIP:.0f}% (hover for the real value). "
+            "Profitability is per quarter over the last 3 years: gross, operating and net margin "
+            "on revenue, and ROE as the quarter's net income × 4 on its equity, left out where "
+            f"revenue or equity is zero or negative; the axis stops at ±{PCT_CLIP:.0f}% (hover "
+            "for the real value). "
             "Total assets and liabilities are not shown: idx-method's items mix totals and "
             "non-current parts across names. A name that reports in USD can show near zero."
             f"</p>{INDEX_LEGEND}{tabs}</div>")
@@ -437,19 +439,32 @@ def nice_ticks(lo: float, hi: float, n: int = 4) -> list[float]:
     return out
 
 
-GROWTH_CLIP = 200.0  # % y/y: the axis stops here, so one small base does not flatten the rest
-GROWTH = {"key": "growth", "label": "Profit growth (y/y)",
-          "items": [{"key": "gross_profit", "label": "Gross profit"},
-                    {"key": "operating_profit", "label": "Operating profit"},
-                    {"key": "net_income", "label": "Net income"}]}
+PCT_CLIP = 100.0  # %: the axis stops here, so one tiny revenue does not flatten the rest
+PROFITABILITY = {"key": "profitability", "label": "Profitability",
+                 "items": [{"key": "gpm", "label": "Gross margin"},
+                           {"key": "opm", "label": "Operating margin"},
+                           {"key": "npm", "label": "Net margin"},
+                           {"key": "roe", "label": "ROE (annualised)"}]}
+YEARS = 3  # the profitability timeline: the last 3 years of quarters in the file
 
 
-def yoy(series: Sequence[Any]) -> list[float | None]:
-    """Per quarter, the % change on the same quarter a year earlier (4 back): None for the first
-    year, a missing quarter, or a base at or below 0 (growth on a loss has no sign that reads)."""
-    xs = [_f(v) for v in series]
-    return [None if i < 4 or (a := xs[i]) is None or (b := xs[i - 4]) is None or b <= 0
-            else round((a - b) / b * 100, 1) for i in range(len(xs))]
+def ratio(num: Sequence[Any], den: Sequence[Any], scale: float = 100.0) -> list[float | None]:
+    """Per quarter, num / den × `scale` in %: None where either is missing or den is at or below
+    0 (a margin on no revenue, or a return on negative equity, has no sign that reads)."""
+    out = []
+    for a, b in zip(num, den, strict=False):
+        a, b = _f(a), _f(b)
+        out.append(None if a is None or b is None or b <= 0 else round(a / b * scale, 1))
+    return out
+
+
+def profitability(fin: Mapping) -> dict[str, list[float | None]]:
+    """A name's quarterly margins on revenue (gross, operating, net) and ROE, the quarter's net
+    income × 4 on the equity at its end."""
+    rev, ni = fin.get("revenue") or [], fin.get("net_income") or []
+    return {"gpm": ratio(fin.get("gross_profit") or [], rev),
+            "opm": ratio(fin.get("operating_profit") or [], rev),
+            "npm": ratio(ni, rev), "roe": ratio(ni, fin.get("equity") or [], 400.0)}
 
 
 def _with_statements(ind: Mapping) -> list[Mapping]:
@@ -461,8 +476,8 @@ def timeline(ind: Mapping, stmt: Mapping, quarters: Sequence[str],
              names: Sequence[Mapping], pct: bool = False) -> str:
     """One panel per item of `stmt`, sharing the quarters on x: a 2px line per name (a gap where
     a quarter is missing), a dot per quarter with its value on hover, a zero line when the axis
-    crosses 0. `pct`: the values are percentages, the axis clipped to ±`GROWTH_CLIP` (a point
-    past it is drawn on the edge, its hover gives the real value)."""
+    crosses 0. `pct`: the values are percentages, the axis clipped to ±`PCT_CLIP` (a point past
+    it is drawn on the edge, its hover gives the real value)."""
     items = [_d(i) for i in stmt.get("items") or []]
     n = len(quarters)
     slots = max(len(items), T_SLOTS)  # same panel size on every statement
@@ -477,7 +492,7 @@ def timeline(ind: Mapping, stmt: Mapping, quarters: Sequence[str],
         x0 = c * (T_AXIS_W + T_PANEL_W + T_GAP) + T_AXIS_W
         series = [[_f(v) for v in (_d(r.get("financials")).get(key) or [])][:n] for r in names]
         if pct:
-            series = [[None if v is None else max(-GROWTH_CLIP, min(GROWTH_CLIP, v)) for v in ser]
+            series = [[None if v is None else max(-PCT_CLIP, min(PCT_CLIP, v)) for v in ser]
                       for ser in series]
             real = [[_f(v) for v in (_d(r.get("financials")).get(key) or [])][:n] for r in names]
         vals = [v for ser in series for v in ser if v is not None]
@@ -526,7 +541,7 @@ def timeline(ind: Mapping, stmt: Mapping, quarters: Sequence[str],
                 if v is None or i >= n:
                     continue
                 parts.append(f'<g class="pt"><title>{esc(f"{sym} {quarters[i]} {label}: ")}'
-                             f'{esc(f"{real[k][i]:+,.0f}% y/y" if pct else value(key, v))}'
+                             f'{esc(f"{real[k][i]:,.1f}%" if pct else value(key, v))}'
                              f'</title><circle class="dot" cx="{x(i):.1f}" '
                              f'cy="{y(v):.1f}" r="3" fill="{color}"/></g>')
     parts.append("</svg>")
@@ -546,10 +561,12 @@ def financials(ind: Mapping, members: Sequence[Mapping], quarters: Sequence[str]
     charts = "".join(f'<div data-statement="{esc(str(s.get("key", "")))}">'
                      f'<h4>{esc(str(s.get("label", "")))}</h4>'
                      f"{timeline(ind, s, quarters, lines)}</div>" for s in stmts)
-    growth = [{"symbol": r.get("symbol"), "financials": {
-        str(i["key"]): yoy(_d(r.get("financials")).get(i["key"]) or []) for i in GROWTH["items"]}}
-        for r in lines]
-    charts += (f'<div data-statement="growth"><h4>{GROWTH["label"]}</h4>'
-               f'{timeline(ind, GROWTH, quarters, growth, pct=True)}</div>')
+    recent = list(quarters[-YEARS * 4:])
+    off = len(quarters) - len(recent)
+    prof = [{"symbol": r.get("symbol"), "financials": {
+        k: v[off:] for k, v in profitability(_d(r.get("financials"))).items()}} for r in lines]
+    charts += (f'<div data-statement="profitability"><h4>{PROFITABILITY["label"]}, '
+               f"{esc(recent[0])} to {esc(recent[-1])}</h4>"
+               f"{timeline(ind, PROFITABILITY, recent, prof, pct=True)}</div>")
     return (f'<h3>Financials, {esc(quarters[0])} to {esc(quarters[-1])}</h3>'
             f'<p class="legend">{legend}</p>{charts}')

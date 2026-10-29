@@ -537,8 +537,10 @@ host, launchd for the server, changes to how stances or candidates are built.
     its passing names with statements, at most 8 (one line each, in the chart's order): income
     statement (revenue, gross, operating and net profit) and balance sheet
     (equity, total debt, cash), the last 12 quarters (2023Q3–2026Q2), each quarter on its own.
-    Then profit growth (gross, operating, net) y/y on the same quarter a year earlier, none
-    on a base at or below 0, the axis clipped to ±200% (hover gives the real value). The
+    Then profitability per quarter over the last 3 years (since 2026-10-29, in place of y/y
+    profit growth): gross, operating and net margin on revenue and ROE (net income × 4 on the
+    quarter's equity), none on a revenue or equity at or below 0, the axis clipped to ±100%
+    (hover gives the real value). The
     latest-quarter tables of the old page were not carried over. Read from
     idx-method's `fundamentals` at build time into `out/industries/IDN.json` (schema 3,
     `periods` + per-name `financials`; 502 of 834 names, 2.6 MB). **Not shown: total assets

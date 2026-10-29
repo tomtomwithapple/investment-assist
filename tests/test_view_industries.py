@@ -177,22 +177,37 @@ def test_index_financials(out):
     bs = re.search(r'<div data-statement="bs">(.*?)</div>', fin, re.S).group(1)
     assert "no values for these names" in bs  # total debt
     assert "CCCC" not in card  # fails the filters: neither in the chart nor the financials
-    growth = re.search(r'<div data-statement="growth">(.*?)</div>', fin, re.S).group(1)
-    assert "<h4>Profit growth (y/y)</h4>" in growth and ">Gross profit</text>" in growth
-    assert "AAAA 2026Q2 Net income: " not in growth  # its base 2025Q2 is missing
+    prof = re.search(r'<div data-statement="profitability">(.*?)</div>', fin, re.S).group(1)
+    assert "<h4>Profitability, 2025Q2 to 2026Q2</h4>" in prof
+    assert ">Gross margin</text>" in prof and ">ROE (annualised)</text>" in prof
+    assert "AAAA 2026Q2 Net margin: 16.7%" in prof  # 2T on 12T
+    assert "AAAA 2026Q2 ROE (annualised): 16.0%" in prof  # 2T × 4 on 50T
+    assert "AAAA 2026Q1 ROE (annualised)" not in prof  # no equity that quarter
 
 
-def test_yoy():
-    assert industries.yoy([10, None, 5, 5, 12, 3, 5, -1, 6]) == [
-        None, None, None, None, 20.0, None, 0.0, -120.0, -50.0]
-    assert industries.yoy([-2, 1, 1, 1, 4]) == [None] * 5  # a loss base has no growth
+def test_ratio():
+    assert industries.ratio([1, None, 3, 2, -1], [4, 2, None, 0, 4]) == [
+        25.0, None, None, None, -25.0]  # no ratio on a missing or non-positive base
+    assert industries.ratio([1], [-5]) == [None]
 
 
-def test_growth_axis_clips_but_hover_tells(out):
-    names = [{"symbol": "S", "financials": {"net_income": [None, 900.0, -50.0]}}]
-    svg = industries.timeline({"label": "x"}, industries.GROWTH, ["a", "b", "c"], names, pct=True)
-    assert "S b Net income: +900% y/y" in svg and ">+200%</text>" in svg
-    assert ">+1,000%</text>" not in svg
+def test_profitability_keeps_the_last_three_years():
+    quarters = [f"{y}Q{q}" for y in range(2022, 2027) for q in range(1, 5)][:18]
+    fin = {"revenue": [10.0] * 18, "net_income": [1.0] * 18}
+    ind = {"label": "x", "stocks": [{"symbol": "S", "financials": fin}]}
+    html = industries.financials(ind, [{"symbol": "S"}], quarters, [
+        {"key": "is", "label": "Income statement", "items": [{"key": "revenue", "label": "R"}]}])
+    assert f"Profitability, {quarters[-12]} to {quarters[-1]}</h4>" in html
+    prof = html[html.index('data-statement="profitability"'):]
+    assert f"S {quarters[-12]} Net margin" in prof and f"S {quarters[-13]} " not in prof
+
+
+def test_profitability_axis_clips_but_hover_tells(out):
+    names = [{"symbol": "S", "financials": {"npm": [None, 900.0, -50.0]}}]
+    svg = industries.timeline({"label": "x"}, industries.PROFITABILITY, ["a", "b", "c"], names,
+                              pct=True)
+    assert "S b Net margin: 900.0%" in svg and ">+100%</text>" in svg
+    assert ">+200%</text>" not in svg
 
 
 def test_page_without_statements(tmp_path):
