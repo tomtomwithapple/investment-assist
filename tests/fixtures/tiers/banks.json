@@ -1,0 +1,203 @@
+{
+ "as_of": "2026-10-26",
+ "names": {
+  "BBCA": {
+   "extra": {
+    "car": 29,
+    "days_traded_60": 60,
+    "ldr": 73,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.05,
+    "near_52w_high": 0.55,
+    "npl_cov": 280,
+    "npl_gross": 1.3,
+    "piotroski": 0
+   },
+   "industry": "bank",
+   "sector": "Keuangan",
+   "values": {
+    "mktcap": 29000000000000.0,
+    "pbv": 0.8,
+    "pe": 6,
+    "roa": 3.3,
+    "roe": 23
+   }
+  },
+  "BBRI": {
+   "extra": {
+    "car": 28,
+    "days_traded_60": 60,
+    "ldr": 76,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.1,
+    "near_52w_high": 0.6,
+    "npl_cov": 260,
+    "npl_gross": 1.6,
+    "piotroski": 0
+   },
+   "industry": "bank",
+   "sector": "Keuangan",
+   "values": {
+    "mktcap": 28000000000000.0,
+    "pbv": 1.0,
+    "pe": 7,
+    "roa": 3.1,
+    "roe": 22
+   }
+  },
+  "BCAR": {
+   "extra": {
+    "car": 10.0,
+    "days_traded_60": 60,
+    "ldr": 94,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.4,
+    "near_52w_high": 0.9,
+    "npl_cov": 140,
+    "npl_gross": 3.4,
+    "piotroski": 0
+   },
+   "industry": "bank",
+   "sector": "Keuangan",
+   "values": {
+    "mktcap": 21000000000000.0,
+    "pbv": 2.2,
+    "pe": 13,
+    "roa": 1.9,
+    "roe": 16
+   }
+  },
+  "BMRI": {
+   "extra": {
+    "car": 27,
+    "days_traded_60": 60,
+    "ldr": 79,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.15,
+    "near_52w_high": 0.65,
+    "npl_cov": 240,
+    "npl_gross": 1.9,
+    "piotroski": 0
+   },
+   "industry": "bank",
+   "sector": "Keuangan",
+   "values": {
+    "mktcap": 27000000000000.0,
+    "pbv": 1.2,
+    "pe": 8,
+    "roa": 2.9,
+    "roe": 21
+   }
+  },
+  "BNK4": {
+   "extra": {
+    "car": 26,
+    "days_traded_60": 60,
+    "ldr": 82,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.2,
+    "near_52w_high": 0.7,
+    "npl_cov": 220,
+    "npl_gross": 2.2,
+    "piotroski": 0
+   },
+   "industry": "bank",
+   "sector": "Keuangan",
+   "values": {
+    "mktcap": 26000000000000.0,
+    "pbv": 1.4,
+    "pe": 9,
+    "roa": 2.7,
+    "roe": 20
+   }
+  },
+  "BNK5": {
+   "extra": {
+    "car": 25,
+    "days_traded_60": 60,
+    "ldr": 85,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.25,
+    "near_52w_high": 0.75,
+    "npl_cov": 200,
+    "npl_gross": 2.5,
+    "piotroski": 0
+   },
+   "industry": "bank",
+   "sector": "Keuangan",
+   "values": {
+    "mktcap": 25000000000000.0,
+    "pbv": 1.6,
+    "pe": 10,
+    "roa": 2.5,
+    "roe": 19
+   }
+  },
+  "BNK6": {
+   "extra": {
+    "car": 24,
+    "days_traded_60": 60,
+    "ldr": 88,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.3,
+    "near_52w_high": 0.8,
+    "npl_cov": 180,
+    "npl_gross": 2.8,
+    "piotroski": 0
+   },
+   "industry": "bank",
+   "sector": "Keuangan",
+   "values": {
+    "mktcap": 24000000000000.0,
+    "pbv": 1.8,
+    "pe": 11,
+    "roa": 2.3,
+    "roe": 18
+   }
+  },
+  "BNK7": {
+   "extra": {
+    "car": 23,
+    "days_traded_60": 60,
+    "ldr": 91,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.35,
+    "near_52w_high": 0.85,
+    "npl_cov": 160,
+    "npl_gross": 3.1,
+    "piotroski": 0
+   },
+   "industry": "bank",
+   "sector": "Keuangan",
+   "values": {
+    "mktcap": 23000000000000.0,
+    "pbv": 2.0,
+    "pe": 12,
+    "roa": 2.1,
+    "roe": 17
+   }
+  },
+  "BNK8": {
+   "extra": {
+    "car": 22,
+    "days_traded_60": 60,
+    "ldr": 94,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.4,
+    "near_52w_high": 0.9,
+    "npl_cov": 140,
+    "npl_gross": 3.4,
+    "piotroski": 0
+   },
+   "industry": "bank",
+   "sector": "Keuangan",
+   "values": {
+    "mktcap": 22000000000000.0,
+    "pbv": 2.2,
+    "pe": 13,
+    "roa": 1.9,
+    "roe": 16
+   }
+  }
+ }
+}

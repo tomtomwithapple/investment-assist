@@ -365,6 +365,16 @@ real stores → record numbers in the Progress table → commit. One slice per c
     - **P50:** the replay, its placebo, and the verdict on the page and in the brief.
   - **Blocked here today:** idx-method's `store/data/stockbiter.db` is not on this Mac
     (2026-10-29), so the live run waits for it. Tests use fixtures.
+  - **Shipped in P48 (2026-10-29).** `candidates/tiers.py` (gates, pillars, composite, Tier
+    A/B, `CONFIG` sha as `fingerprint`), attached by `peers.build`; `out/industries/IDN.json` is
+    schema 4; `assist run` journals one `industries` record. `DER_CAP` now lives in the model
+    and the view imports it. Gaps filled: a floor or D/E value that is absent is listed as
+    `missing` and does not fail the name (liquidity data is required); insurers and
+    multifinance have no prudential fields in any store, so their Health pillar is missing
+    and only Piotroski floors them; the 2-year CAGRs need 12 quarters, not 8; a non-positive
+    normalised earnings base ranks last on PE; Tier B can exist without a Tier A; `cfo_ttm` and
+    the TTM NI years come from `factor_series`, else `factors.json` and the S30 statements.
+    Details in `docs/results/P48-tier-model.md`. Live run still blocked (no `stockbiter.db`).
   - *Done when:* `assist industries` writes schema 4 with picks for every industry that has
     names passing the gates; a rerun with the same inputs gives identical bytes; `/industries`
     shows the top-tier table; and the replay verdict with its control is journalled and shown.
@@ -690,6 +700,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S23–S28 local UI view (F7-ui, with P40–P44) | done | 2026-10-27 | F7 this commit (`02ca075`, `9d7253a`, `b6726bd`, `bde605d`, `c43dac8`) | 24 web, 18 status, 9 overview, 23 stance, 23 candidates, 22 paper, 2 F7 e2e (1236 total) | live `assist status --port 8799` on the real out/ and journal: `/` 200 15,190 B 21 ms, `/stance/IDN/bonds` 200 5,284 B 41 ms, `/candidates` 200 10,536 B 3 ms, `/candidates/IDN` 200 7,916 B, `/candidates/USA` 200 4,982 B, `/paper` 200 6,107 B 122 ms, `/journal` 200 3,667 B 116 ms, `/status` 200 14,796 B 3.4 s; every `.json` twin 200 (`/json` alias too), `/nope` and `/stance/IDN/..%2Fx` 404, HEAD `/paper` 200; nav and one disclaimer on every page, no notices; 49 stances, journal 865 records chain ok over 8 models; **paper 0 weeks scored** (JCI ends 2026-09-30, IGSYC 10Y starts in October: gap 2b blocks it); out/ (51 files) and `journal/decisions.jsonl` sha-identical before and after |
 | S29 one-step start (P45-start) | done | 2026-10-27 | this commit | 21 start (1257 total) | live `./start.sh --no-open --port 8799` on the real repo: sync, doctor (11 of 14 fresh, 2 stale: jquantster, idx-method; satudatascape missing), **no run** (out/ all as_of 2026-10-27), pages up in 6.1 s; `/` 200 15,190 B, `/candidates` 200 10,536 B; SIGTERM (and Ctrl-C under a pty) stops it, port 8799 free, no server process left; out/ sha-identical. README data gaps brought up to date: PHEI fresh 2026-10-26 (both IDN rules now propose but are not applied, insufficient sample), FRED fresh 2026-10-23, paper 0 weeks for the benchmark and 8 segments |
 | S30 peer comparison per industry (P46-peers) | done | 2026-10-27 | `8847486`, `d3cad8c` | 22 adapter, 24 peers, 15 view (1317 at S30) | `assist industries`: 33 industries, 836 names, as of 2026-10-26 (1.9 MB); `/industries` 200, `/industries/8f8ca75c` (banks, 47 names) 200, twins 200, unknown id and `..` 404; checked by screenshot in light and dark. Stockbit industry PE means of −77 (POLU group) and −115 (DOSS) confirm the switch to medians. Follow-ups `cf40630`, `79b2a15`, `33cb34c`, `d3cad8c` (1318 total): industries named by IDX sub-sector, and `/industries` is one chart per industry of the names that pass (41 of 836, 18 industries; BMRI and BBNI fail the 0.8× solvency floor). Stockbit session expired (refresh 401): nothing pulled 2026-10-27 or 10-28, page as of 2026-10-26 until `./run.sh login` in idx-method |
+| S31 top tier model (P48-tier-model) | done (S31 open: P49, P50) | 2026-10-29 | this commit | 26 tiers (1373 total) | blocked: idx-method `store/data/stockbiter.db` absent on this Mac, so `assist industries` exits 1 (`SourceUnavailable`); the tier inputs alone load (976 rows from `factors.json`, liquidity derived for 17 of the 20 names in `cache/history/`), fixtures only |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

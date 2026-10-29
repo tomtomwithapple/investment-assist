@@ -72,8 +72,10 @@ fingerprint. Nothing here moves a stance.
 from __future__ import annotations
 
 import dataclasses
+import json
 import os
 import re
+import sys
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -145,6 +147,7 @@ __all__ = [
     "live_doctor",
     "live_paper",
     "message",
+    "peers_record",
     "regime_check",
     "regime_message",
     "rule_view",
@@ -935,6 +938,41 @@ def write_peers(day: date, gather: Callable[[date], dict] | None,
     return peer_cmp.write(payload, out_dir), list(payload.get("stale_inputs") or [])
 
 
+def peers_record(payload: Mapping) -> tuple[dict, dict]:
+    """(inputs, outputs) of the `industries` journal record (S31): the tier fingerprint and
+    config; per industry its peer group and picks; per gated name its pillars and composite."""
+    picks, names = {}, {}
+    for ind in payload.get("industries") or []:
+        picks[ind["id"]] = {"label": ind.get("label"), "peer_group": ind.get("peer_group"),
+                            "gated": ind.get("gated"), **(ind.get("picks") or {"A": [], "B": []})}
+        for s in ind.get("stocks") or []:
+            if (s.get("gates") or {}).get("pass"):
+                names[s["symbol"]] = {
+                    "industry": ind["id"], "composite": s.get("composite"),
+                    "rank": s.get("rank"), "pick": s.get("pick"),
+                    "pillars": {k: v.get("score") for k, v in (s.get("pillars") or {}).items()}}
+    inputs = {"as_of": payload.get("as_of"), "tier_fingerprint": payload.get("fingerprint"),
+              "tier_config": payload.get("tier_config")}
+    outputs = {"tier_fingerprint": payload.get("fingerprint"), "picks": picks, "names": names,
+               "stale_inputs": payload.get("stale_inputs") or [], "moves_stance": False}
+    return inputs, outputs
+
+
+def _journal_peers(j: journal.Journal, path: Path | None, fp: str, run_id: str | None) -> None:
+    """One `industries` record per run from the file `write_peers` wrote. Never raises: the tiers
+    are context only."""
+    if path is None:
+        return
+    try:
+        payload = json.loads(Path(path).read_text())
+        inputs, outputs = peers_record(payload)
+        j.record(kind="industries", fingerprint=fp, subject=payload.get("market"),
+                 asset="stocks", as_of=payload.get("as_of"), run_id=run_id, inputs=inputs,
+                 outputs=outputs)
+    except Exception as e:  # noqa: BLE001 - context only, never fails the run
+        print(f"industries journal skipped: {type(e).__name__}: {e}", file=sys.stderr)
+
+
 def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None,
         send: bool = True, notify_kw: Mapping[str, Any] | None = None) -> RunResult:
     paths = paths or Paths.default()
@@ -958,6 +996,7 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
     res.stale_inputs = sorted({*res.stale_inputs, *uv_stale, *peer_stale})
     res.run_id = _journal(j, layers, res.stances, fp)
     _journal_undervalued(j, res.undervalued, fp, res.run_id)
+    _journal_peers(j, res.peers, fp, res.run_id)
 
     health = _never_fail("doctor", sources.doctor, brief.health_lines, day)
     paper_track = _never_fail("paper tracking", sources.paper, brief.paper_lines, day, j)

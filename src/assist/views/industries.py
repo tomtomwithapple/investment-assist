@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from assist import web
+from assist.candidates.tiers import DER_CAP, DER_CAP_DEFAULT, der_cap  # noqa: F401 - re-exported
 from assist.web import esc
 
 TITLE = "Assist Industries"
@@ -172,28 +173,8 @@ def overall(s: Mapping) -> float | None:
 LEVEL = 0.005  # a deviation within this of 0 (about 1.00x) is level: drawn grey, passes nothing
 BELOW = ("pe", "pbv")  # the ranked list keeps a name below its industry average on each of these
 ABOVE = ("roe",)  # ... and above it on each of these
-# ... and with a D/E from 0 up to (not including) its industry's cap. The common cap is 1.0; the
-# industries named here allow more (capital-heavy, or leverage is the business) or require less
-# (asset-light). None: no D/E filter, because the industry's leverage is not read from D/E
-# (deposits and policy reserves; most banks and insurers have no D/E on Stockbit).
-DER_CAP_DEFAULT = 1.0
-DER_CAP: dict[str, float | None] = {
-    "Bank": None,
-    "Asuransi": None,
-    "Jasa Pembiayaan": 5.0,  # multifinance gearing (OJK allows up to 10x)
-    "Telekomunikasi": 1.5,
-    "Utilitas": 1.5,
-    "Infrastruktur Transportasi": 1.5,
-    "Perusahaan Holding Multi Sektor": 1.5,  # consolidates finance arms (ASII)
-    "Perangkat Lunak & Jasa TI": 0.5,
-    "Media & Hiburan": 0.5,
-    "Rokok": 0.5,
-}
-
-
-def der_cap(label: Any) -> float | None:
-    """The D/E cap of an industry by its label: `DER_CAP`, else `DER_CAP_DEFAULT`."""
-    return DER_CAP.get(str(label), DER_CAP_DEFAULT)
+# ... and with a D/E from 0 up to (not including) its industry's cap: `der_cap`, which lives in
+# the tier model (`candidates.tiers`, S31) since it decides which names get a score there.
 
 
 def _beats(dev: Any, better: str) -> bool:

@@ -25,6 +25,10 @@ Each name also carries its quarterly statements for the industry timelines (`STA
 last `quarters` quarters up to the newest any compared name has, one quarter each (not
 year-to-date), IDR, None where the store has no value. Shown, never scored.
 
+Schema 4 (S31, P48) adds the top tier per industry from `candidates.tiers`: gates, five pillars
+of within-peer percentiles, a 0-100 composite, Tier A/B picks per industry and the tier model's
+`fingerprint`. The deviations and category scores above are kept as they were.
+
 Context only: no screen, verdict or stance reads this, so it carries no placebo control.
 """
 
@@ -38,13 +42,15 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from assist.candidates import tiers
 from assist.sources.idxmethod_comparison import Comparison
 
 __all__ = ["CATEGORIES", "CONFIG", "OUT_DIR", "STATEMENTS", "SUBSECTORS", "build", "deviation",
            "gather_live", "periods", "subsector", "tier", "write"]
 
 OUT_DIR = "industries"
-SCHEMA_VERSION = 3  # 2: the industry benchmark is Stockbit's average; 3: quarterly statements
+# 2: the industry benchmark is Stockbit's average; 3: quarterly statements; 4: S31 tiers
+SCHEMA_VERSION = 4
 DISCLAIMER = "Heuristic, not investment advice."
 SOURCE = "idx-method api_raw comparison_* (Stockbit /comparison), fundamentals (quarterly)"
 MKTCAP = 2892
@@ -218,9 +224,12 @@ def _financials(stmts: Mapping[str, Mapping[str, Any]], quarters: Sequence[str])
     return out if any(v is not None for vs in out.values() for v in vs) else {}
 
 
-def build(cmp: Comparison, day: date, config: Mapping[str, Any] = CONFIG) -> dict:
+def build(cmp: Comparison, day: date, config: Mapping[str, Any] = CONFIG,
+          extras: Mapping[str, Mapping] | None = None) -> dict:
     """The `out/industries/IDN.json` payload: sectors with their benchmarks, industries by sector
-    then size, names by market cap, each with values, deviations and category scores."""
+    then size, names by market cap, each with values, deviations and category scores, and the
+    S31 tier fields (`tiers.attach`) from `extras` (sym → liquidity, momentum, floor and bank
+    inputs; None leaves every name failing the liquidity gate)."""
     clamp, n_min = float(config["clamp"]), int(config["min_median"])
     values = {s: _pick(cmp.ratios.get(s) or {}) for s in cmp.industry}
     caps = {s: (cmp.ratios.get(s) or {}).get(MKTCAP) for s in cmp.industry}
@@ -279,7 +288,7 @@ def build(cmp: Comparison, day: date, config: Mapping[str, Any] = CONFIG) -> dic
     age = (day - cmp.date).days
     stale = ([f"peer comparison as of {cmp.date.isoformat()} ({age} days old)"]
              if age > int(config["stale_days"]) else [])
-    return {
+    payload = {
         "schema_version": SCHEMA_VERSION,
         "market": "IDN",
         "as_of": cmp.date.isoformat(),
@@ -299,13 +308,19 @@ def build(cmp: Comparison, day: date, config: Mapping[str, Any] = CONFIG) -> dic
         "stale_inputs": stale,
         "disclaimer": DISCLAIMER,
     }
+    return tiers.attach(payload, extras)
 
 
 def gather_live(day: date) -> dict:
-    """The payload from the real idx-method store (read-only)."""
+    """The payload from the real idx-method store (read-only), with the tier inputs gathered at
+    the comparison's date; a tier input that is missing is a stale input, not a failure."""
     from assist.sources.idxmethod_comparison import IdxMethodComparison
 
-    return build(IdxMethodComparison.from_config().latest(), day)
+    cmp = IdxMethodComparison.from_config().latest()
+    extras, stale = tiers.gather_extras(cmp.date)
+    payload = build(cmp, day, extras=extras)
+    payload["stale_inputs"] = sorted({*payload["stale_inputs"], *stale})
+    return payload
 
 
 def write(payload: Mapping, out_dir: Path) -> Path:

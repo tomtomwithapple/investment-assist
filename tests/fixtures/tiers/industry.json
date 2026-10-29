@@ -1,0 +1,342 @@
+{
+ "as_of": "2026-10-26",
+ "names": {
+  "MNF1": {
+   "extra": {
+    "days_traded_60": 60,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.05,
+    "near_52w_high": 0.55
+   },
+   "industry": "manuf",
+   "sector": "Perindustrian",
+   "values": {
+    "altman_z": 11,
+    "current": 3.8,
+    "der": 0.1,
+    "ev_ebitda": 4,
+    "int_cover": 19,
+    "mktcap": 19000000000000.0,
+    "opm": 28,
+    "pbv": 0.6,
+    "pe": 5,
+    "ps": 0.2,
+    "roe": 28,
+    "roic": 23
+   }
+  },
+  "MNF2": {
+   "extra": {
+    "days_traded_60": 60,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.1,
+    "near_52w_high": 0.6
+   },
+   "industry": "manuf",
+   "sector": "Perindustrian",
+   "values": {
+    "altman_z": 10,
+    "current": 3.6,
+    "der": 0.2,
+    "ev_ebitda": 5,
+    "int_cover": 18,
+    "mktcap": 18000000000000.0,
+    "opm": 26,
+    "pbv": 0.7,
+    "pe": 6,
+    "ps": 0.4,
+    "roe": 26,
+    "roic": 21
+   }
+  },
+  "MNF3": {
+   "extra": {
+    "days_traded_60": 60,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.15,
+    "near_52w_high": 0.65
+   },
+   "industry": "manuf",
+   "sector": "Perindustrian",
+   "values": {
+    "altman_z": 9,
+    "current": 3.4,
+    "der": 0.3,
+    "ev_ebitda": 6,
+    "int_cover": 17,
+    "mktcap": 17000000000000.0,
+    "opm": 24,
+    "pbv": 0.8,
+    "pe": 7,
+    "ps": 0.6,
+    "roe": 24,
+    "roic": 19
+   }
+  },
+  "MNF4": {
+   "extra": {
+    "days_traded_60": 60,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.2,
+    "near_52w_high": 0.7
+   },
+   "industry": "manuf",
+   "sector": "Perindustrian",
+   "values": {
+    "altman_z": 8,
+    "current": 3.2,
+    "der": 0.4,
+    "ev_ebitda": 7,
+    "int_cover": 16,
+    "mktcap": 16000000000000.0,
+    "opm": 22,
+    "pbv": 0.9,
+    "pe": 8,
+    "ps": 0.8,
+    "roe": 22,
+    "roic": 17
+   }
+  },
+  "MNF5": {
+   "extra": {
+    "days_traded_60": 60,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.25,
+    "near_52w_high": 0.75
+   },
+   "industry": "manuf",
+   "sector": "Perindustrian",
+   "values": {
+    "altman_z": 7,
+    "current": 3.0,
+    "der": 0.5,
+    "ev_ebitda": 8,
+    "int_cover": 15,
+    "mktcap": 15000000000000.0,
+    "opm": 20,
+    "pbv": 1.0,
+    "pe": 9,
+    "ps": 1.0,
+    "roe": 20,
+    "roic": 15
+   }
+  },
+  "MNF6": {
+   "extra": {
+    "days_traded_60": 60,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.3,
+    "near_52w_high": 0.8
+   },
+   "industry": "manuf",
+   "sector": "Perindustrian",
+   "values": {
+    "altman_z": 6,
+    "current": 2.8,
+    "der": 0.6,
+    "ev_ebitda": 9,
+    "int_cover": 14,
+    "mktcap": 14000000000000.0,
+    "opm": 18,
+    "pbv": 1.1,
+    "pe": 10,
+    "ps": 1.2,
+    "roe": 18,
+    "roic": 13
+   }
+  },
+  "MNF7": {
+   "extra": {
+    "days_traded_60": 60,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.35,
+    "near_52w_high": 0.85
+   },
+   "industry": "manuf",
+   "sector": "Perindustrian",
+   "values": {
+    "altman_z": 5,
+    "current": 2.6,
+    "der": 0.7,
+    "ev_ebitda": 10,
+    "int_cover": 13,
+    "mktcap": 13000000000000.0,
+    "opm": 16,
+    "pbv": 1.2,
+    "pe": 11,
+    "ps": 1.4,
+    "roe": 16,
+    "roic": 11
+   }
+  },
+  "MNF8": {
+   "extra": {
+    "days_traded_60": 60,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.4,
+    "near_52w_high": 0.9
+   },
+   "industry": "manuf",
+   "sector": "Perindustrian",
+   "values": {
+    "altman_z": 4,
+    "current": 2.4,
+    "der": 0.8,
+    "ev_ebitda": 11,
+    "int_cover": 12,
+    "mktcap": 12000000000000.0,
+    "opm": 14,
+    "pbv": 1.3,
+    "pe": 12,
+    "ps": 1.6,
+    "roe": 14,
+    "roic": 9
+   }
+  },
+  "THN1": {
+   "extra": {
+    "days_traded_60": 60,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.2,
+    "near_52w_high": 0.7
+   },
+   "industry": "thin",
+   "sector": "Perindustrian",
+   "values": {
+    "altman_z": 8,
+    "current": 3.2,
+    "der": 0.4,
+    "ev_ebitda": 7,
+    "int_cover": 16,
+    "mktcap": 4000000000000.0,
+    "opm": 22,
+    "pbv": 0.9,
+    "pe": 4.5,
+    "ps": 0.8,
+    "roe": 22,
+    "roic": 17
+   }
+  },
+  "THN2": {
+   "extra": {
+    "days_traded_60": 60,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.2,
+    "near_52w_high": 0.7
+   },
+   "industry": "thin",
+   "sector": "Perindustrian",
+   "values": {
+    "altman_z": 8,
+    "current": 3.2,
+    "der": 0.4,
+    "ev_ebitda": 7,
+    "int_cover": 16,
+    "mktcap": 3000000000000.0,
+    "opm": 22,
+    "pbv": 0.9,
+    "pe": 9.5,
+    "ps": 0.8,
+    "roe": 22,
+    "roic": 17
+   }
+  },
+  "THN3": {
+   "extra": {
+    "days_traded_60": 60,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.2,
+    "near_52w_high": 0.7
+   },
+   "industry": "thin",
+   "sector": "Perindustrian",
+   "values": {
+    "altman_z": 8,
+    "current": 3.2,
+    "der": 0.4,
+    "ev_ebitda": 7,
+    "int_cover": 16,
+    "mktcap": 2000000000000.0,
+    "opm": 22,
+    "pbv": 0.9,
+    "pe": 30.0,
+    "ps": 0.8,
+    "roe": 22,
+    "roic": 17
+   }
+  },
+  "XDER": {
+   "extra": {
+    "days_traded_60": 60,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.2,
+    "near_52w_high": 0.7,
+    "piotroski": 3
+   },
+   "industry": "manuf",
+   "sector": "Perindustrian",
+   "values": {
+    "altman_z": 8,
+    "current": 3.2,
+    "der": 1.2,
+    "ev_ebitda": 7,
+    "int_cover": 16,
+    "mktcap": 16000000000000.0,
+    "opm": 22,
+    "pbv": 0.9,
+    "pe": 8,
+    "ps": 0.8,
+    "roe": 22,
+    "roic": 17
+   }
+  },
+  "XILQ": {
+   "extra": {
+    "days_traded_60": 20,
+    "med_value_60d": 500000000.0,
+    "mom_12_1": 0.15,
+    "near_52w_high": 0.65
+   },
+   "industry": "manuf",
+   "sector": "Perindustrian",
+   "values": {
+    "altman_z": 9,
+    "current": 3.4,
+    "der": 0.3,
+    "ev_ebitda": 6,
+    "int_cover": 17,
+    "mktcap": 17000000000000.0,
+    "opm": 24,
+    "pbv": 0.8,
+    "pe": 7,
+    "ps": 0.6,
+    "roe": 24,
+    "roic": 19
+   }
+  },
+  "XLOS": {
+   "extra": {
+    "days_traded_60": 60,
+    "med_value_60d": 5000000000.0,
+    "mom_12_1": 0.1,
+    "near_52w_high": 0.6
+   },
+   "industry": "manuf",
+   "sector": "Perindustrian",
+   "values": {
+    "altman_z": 10,
+    "current": 3.6,
+    "der": 0.2,
+    "ev_ebitda": 5,
+    "int_cover": 18,
+    "mktcap": 18000000000000.0,
+    "opm": 26,
+    "pbv": 0.7,
+    "pe": -5.0,
+    "ps": 0.4,
+    "roe": 26,
+    "roic": 21
+   }
+  }
+ }
+}
