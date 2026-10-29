@@ -1,9 +1,13 @@
-"""The industries page (/industries): the per-industry charts of the names with PE and PBV below
-the industry average, ROE above it and D/E under the industry's cap, the financials timelines of
-those names under each chart, stars from out/candidates/IDN.json, the .json twin, a missing or
-invalid file, escaping, and no page per industry (404).
-A temp out/ written from a synthetic `Comparison` through `peers.build`; no real out/, store or
-network."""
+"""The industries page (/industries).
+
+Schema 4 (S31, P49): the top tier table (rows, ordering by best composite, pillar bars, Tier B
+muted), the industry cards (Tier A then B, sector fallback label, gate failure counts, the old
+filter as a chip, charts and financials of the picks), industries without picks, escaping and the
+.json twin; built from the S31 tier fixtures (tests/fixtures/tiers/) through `peers.build`.
+Schema 3 (S30): the per-industry charts of the names with PE and PBV below the industry average,
+ROE above it and D/E under the industry's cap, their financials, stars, the twin, behind a notice.
+Also a missing or invalid file and no page per industry (404). A temp out/ only; no real out/,
+store or network."""
 
 from __future__ import annotations
 
@@ -16,12 +20,29 @@ from pathlib import Path
 import pytest
 
 from assist import web
-from assist.candidates import peers
+from assist.candidates import peers, tiers
 from assist.sources.idxmethod_comparison import Comparison
 from assist.views import industries
 
 EVIL = "<script>alert(1)</script>"
 PE, PBV, YIELD, ROE, DER, MKTCAP = 2891, 2896, 2915, 1461, 1508, 2892
+TIER_FIX = Path(__file__).resolve().parent / "fixtures" / "tiers"
+TIER_FIELDS = ("gates", "metrics", "pillars", "composite", "rank", "pick")
+
+
+def _schema3(p: dict) -> dict:
+    """A schema 4 payload as S30 wrote it: no tier fields."""
+    p = json.loads(json.dumps(p))
+    p["schema_version"] = 3
+    for k in ("fingerprint", "tier_config"):
+        p.pop(k, None)
+    for ind in p["industries"]:
+        for k in ("peer_group", "picks", "gated", "gate_failures"):
+            ind.pop(k, None)
+        for s in ind["stocks"]:
+            for k in TIER_FIELDS:
+                s.pop(k, None)
+    return p
 
 
 def _payload() -> dict:
@@ -50,7 +71,7 @@ def _payload() -> dict:
 @pytest.fixture
 def out(tmp_path) -> Path:
     o = tmp_path / "out"
-    peers.write(_payload(), o)
+    peers.write(_schema3(_payload()), o)
     (o / "candidates").mkdir()
     (o / "candidates" / "IDN.json").write_text(json.dumps(
         {"styles": [{"style": "dividend_value", "rows": [{"symbol": "AAAA"}]}]}))
@@ -95,7 +116,7 @@ def _ranked_out(tmp_path) -> Path:
         c.industry_avg[sym] = {PE: 10.0, PBV: 2.0, YIELD: 5.0, ROE: 10.0, DER: 0.5}
         c.sector_avg[sym] = {PE: 12.0}
     o = tmp_path / "ranked"
-    peers.write(peers.build(c, date(2026, 10, 27)), o)
+    peers.write(_schema3(peers.build(c, date(2026, 10, 27))), o)
     return o
 
 
@@ -211,7 +232,7 @@ def test_profitability_axis_clips_but_hover_tells(out):
 
 
 def test_page_without_statements(tmp_path):
-    p = _payload()
+    p = _schema3(_payload())
     p["periods"] = []
     peers.write(p, tmp_path)
     assert "no quarterly statements for these names" in _get(tmp_path, "/industries").body
@@ -234,7 +255,7 @@ def test_compact(v, want):
 
 def test_escaping(out):
     assert EVIL not in _get(out, "/industries").body
-    assert EVIL not in _get(out, "/industries.json").body
+    json.loads(_get(out, "/industries.json").body)  # the twin is data (application/json)
 
 
 @pytest.mark.parametrize("path", ["/industries/bank1", "/industries/bank1.json",
@@ -268,3 +289,200 @@ def test_each_industry_is_a_tab(out):
     assert [bool(r[1]) for r in radios] == [True] + [False] * (len(radios) - 1)
     assert '<label for="ind-0">Keuangan <span class="muted">' in tabs
     assert tabs.count('<section class="card chart industry"') == len(radios)
+
+
+# ---------------- schema 4: the top tier (S31) ----------------
+
+
+def _tier_cmp() -> tuple[Comparison, dict]:
+    """manuf (Tier A MNF1, Tier B MNF2, five gate failures), thin (3 gated names, ranked within
+    the sector, Tier B THN1), mixed (no Tier A, Tier B MIX1) from the S31 fixtures, and nopick
+    (one name, no extras: fails liquidity). Stockbit's industry average is PE 10, PBV 1, ROE 27
+    everywhere, so of the picks only MNF1 beats it on PE, PBV and ROE."""
+    fid = {key: f for _, key, f, _ in peers.METRICS} | {"mktcap": peers.MKTCAP}
+    c = Comparison(date=date(2026, 10, 26))
+    names: dict = {}
+    for f in ("industry.json", "no_tier_a.json"):
+        names |= json.loads((TIER_FIX / f).read_text())["names"]
+    names["NOPK"] = {"industry": "nopick", "sector": "Lainnya",
+                     "values": {"pe": 5, "pbv": 0.5, "roe": 30, "der": 0.1, "mktcap": 1e12}}
+    extras = {}
+    for sym, n in sorted(names.items()):
+        c.ratios[sym] = {fid[k]: v for k, v in n["values"].items()}
+        c.industry[sym] = n["industry"]
+        c.sector_key[sym] = c.sectors[sym] = n["sector"]
+        c.names[sym] = f"{sym} Tbk"
+        c.industry_avg[sym] = {fid["pe"]: 10.0, fid["pbv"]: 1.0, fid["roe"]: 27.0}
+        c.sector_avg[sym] = {fid["pe"]: 10.0}
+        c.competitors[sym] = []
+        extras[sym] = n.get("extra") or {}
+    c.statements = {"MNF1": {"revenue": {"2026Q1": 10e12, "2026Q2": 11e12}},
+                    "MNF3": {"revenue": {"2026Q1": 3e12, "2026Q2": 4e12}}}
+    return c, extras
+
+
+def _tier_payload() -> dict:
+    c, extras = _tier_cmp()
+    return peers.build(c, date(2026, 10, 27), extras=extras)
+
+
+@pytest.fixture
+def tout(tmp_path) -> Path:
+    o = tmp_path / "tiers"
+    peers.write(_tier_payload(), o)
+    (o / "candidates").mkdir()
+    (o / "candidates" / "IDN.json").write_text(json.dumps(
+        {"styles": [{"style": "dividend_value", "rows": [{"symbol": "MNF1"}]}]}))
+    return o
+
+
+def _table(body: str) -> str:
+    return re.search(r'<table class="top-tier">.*?</table>', body, re.S).group(0)
+
+
+def _card(body: str, iid: str) -> str:
+    return re.search(rf'<section class="card chart industry" data-industry="{iid}">.*?</section>',
+                     body, re.S).group(0)
+
+
+def test_tier_table_rows_and_order(tout):
+    body = _get(tout, "/industries").body
+    assert "Top tier by industry" in body and "predates the top tier" not in body
+    table = _table(body)
+    syms = re.findall(r'<td class="sym"><b>(\w+)', table)
+    assert syms == ["MNF1", "MNF2", "THN1", "MIX1"]  # by best composite: 78.31, 56.55, 52.57
+    row = re.search(r'<tr class="tier-a\b[^>]*>.*?</tr>', table, re.S).group(0)
+    assert "MNF1 Tbk" in row and ">78.3<" in row and "MNF1 ★" in row and ">big<" in row
+    assert row.count('class="fill"') == 4 and row.count('class="miss"') == 1  # growth missing
+    assert "<title>Growth: missing</title>" in row and "<title>Value 93.8</title>" in row
+    data = json.loads(_get(tout, "/industries.json").body)
+    assert [r["symbol"] for r in data["rows"]] == syms
+    first = data["rows"][0]
+    assert first["pick"] == "A" and first["composite"] == 78.31 and first["starred"]
+    assert first["pillars"] == {"value": 93.75, "quality": 93.75, "growth": None,
+                                "health": 93.75, "momentum": 6.25}
+    assert first["industry"] == "manuf" and first["beats_average"] is True
+    assert data["schema_version"] == 4 and data["fingerprint"] == tiers.fingerprint()
+    assert [i["id"] for i in data["industries"]] == ["manuf", "thin", "mixed", "nopick"]
+    assert data["industries"][0]["gate_failures"]["liquidity"] == 1
+
+
+def test_tier_b_is_muted(tout):
+    table = _table(_get(tout, "/industries").body)
+    assert len(re.findall(r'<tr class="tier-a\b', table)) == 1
+    assert len(re.findall(r'<tr class="tier-b\b', table)) == 3
+    assert re.search(r'<tr class="tier-b\b[^>]*>.*?MNF2', table, re.S)
+    card = _card(_get(tout, "/industries").body, "manuf")
+    picks = re.search(r'<table class="picks">.*?</table>', card, re.S).group(0)
+    assert picks.index("MNF1") < picks.index("MNF2")  # Tier A first
+    assert re.search(r'<tr class="tier-b\b[^>]*>.*?MNF2', picks, re.S)
+    assert ".peers tr.tier-b" in _get(tout, "/industries").body  # the muting rule ships
+
+
+def test_tier_card_peer_group_and_gate_counts(tout):
+    body = _get(tout, "/industries").body
+    thin = _card(body, "thin")
+    assert "ranked within sector Perindustrian (11 names past the gates)" in thin
+    manuf = _card(body, "manuf")
+    assert "ranked within sector" not in manuf
+    assert "ranked within the industry (8 names past the gates)" in manuf
+    gates = re.search(r'<p class="gates[^"]*">(.*?)</p>', manuf, re.S).group(1)
+    for reason in ("D/E above cap", "F-score", "TTM loss", "liquidity", "trades too rarely"):
+        assert f"{reason} 1" in gates
+    assert "No name failed a gate" in thin
+
+
+def test_tier_card_chip_and_charts(tout):
+    body = _get(tout, "/industries").body
+    manuf = _card(body, "manuf")
+    chip = "beats the industry average on PE, PBV and ROE"
+    picks = re.search(r'<table class="picks">.*?</table>', manuf, re.S).group(0)
+    mnf1 = re.search(r"<tr[^>]*>(?:(?!</tr>).)*MNF1(?:(?!</tr>).)*</tr>", picks, re.S).group(0)
+    mnf2 = re.search(r"<tr[^>]*>(?:(?!</tr>).)*MNF2(?:(?!</tr>).)*</tr>", picks, re.S).group(0)
+    assert chip in mnf1 and chip not in mnf2
+    svg = re.search(r"<svg viewBox[^>]*aria-label=\"[^\"]*PE, PBV.*?</svg>", manuf, re.S).group(0)
+    assert ">MNF1 ★</tspan>" in svg and "MNF2" in svg and "MNF3" not in svg
+    assert svg.count('class="hit"') == 5 * 3  # 5 panels × (average, MNF1, MNF2)
+    fin = manuf[manuf.index("<h3>Financials"):]
+    assert "MNF1 2026Q2 Revenue" in fin and "MNF3" not in fin  # MNF3 has statements, no pick
+
+
+def test_industry_without_picks_is_listed_briefly(tout):
+    body = _get(tout, "/industries").body
+    assert 'data-industry="nopick"' not in body  # no card, no tab
+    rest = re.search(r'<details class="card no-picks">.*?</details>', body, re.S).group(0)
+    assert "1 industry without a top tier" in rest
+    assert "no name passes the gates (no liquidity data 1)" in rest
+    tabs = re.findall(r'<input type="radio" name="industry" id="ind-\d+"', body)
+    assert len(tabs) == 3
+
+
+def test_no_picks_at_all(tmp_path):
+    c, _ = _tier_cmp()
+    peers.write(peers.build(c, date(2026, 10, 27)), tmp_path)  # no extras: nobody gated
+    r = _get(tmp_path, "/industries")
+    assert r.status == 200 and "No industry has a top tier" in r.body
+    assert '<table class="top-tier">' not in r.body
+    assert json.loads(_get(tmp_path, "/industries.json").body)["rows"] == []
+
+
+def test_schema3_shows_notice_and_the_old_view(out):
+    r = _get(out, "/industries")
+    assert r.status == 200
+    assert "predates the top tier (schema 3)" in r.body
+    assert "Top tier by industry" not in r.body and "AAAA ★" in r.body
+    data = json.loads(_get(out, "/industries.json").body)
+    assert data["schema_version"] == 3 and "predates the top tier" in data["notice"]
+    assert [r["symbol"] for r in data["rows"]] == ["AAAA", "BBBB"]
+
+
+def test_schema3_without_a_version_never_500s(tmp_path):
+    p = _schema3(_payload())
+    del p["schema_version"]
+    p["industries"][0]["stocks"][0]["pillars"] = "junk"  # stray field, ignored
+    peers.write(p, tmp_path)
+    r = _get(tmp_path, "/industries")
+    assert r.status == 200 and "predates the top tier" in r.body
+
+
+def test_tier_view_survives_junk_fields(tmp_path):
+    p = _tier_payload()
+    ind = p["industries"][0]
+    ind["picks"] = {"A": ["MNF1", "GONE"], "B": "junk"}
+    ind["gate_failures"] = ["junk"]
+    ind["peer_group"] = None
+    ind["stocks"][0]["pillars"] = {"value": "x", "quality": None}
+    ind["stocks"][0]["composite"] = "high"
+    peers.write(p, tmp_path)
+    r = _get(tmp_path, "/industries")
+    assert r.status == 200 and "Top tier by industry" in r.body
+
+
+def test_tier_escaping(tmp_path):
+    p = _tier_payload()
+    manuf = next(i for i in p["industries"] if i["id"] == "manuf")
+    nopick = next(i for i in p["industries"] if i["id"] == "nopick")
+    manuf["stocks"][0]["name"] = EVIL  # MNF1, Tier A
+    manuf["stocks"][0]["tier"] = EVIL
+    manuf["gate_failures"][EVIL] = 2
+    nopick["label"] = EVIL
+    next(i for i in p["industries"] if i["id"] == "thin")["peer_group"]["label"] = EVIL
+    peers.write(p, tmp_path)
+    body = _get(tmp_path, "/industries").body
+    assert EVIL not in body
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in _table(body)
+    data = json.loads(_get(tmp_path, "/industries.json").body)
+    assert data["rows"][0]["name"] == EVIL  # the twin carries the value as data
+
+
+def test_pillar_bars():
+    svg = industries.pillar_bars({"value": {"score": 50.0}, "growth": {"score": None},
+                                  "momentum": {"score": 100.0}})
+    assert svg.count('class="fill"') == 2 and svg.count('class="miss"') == 3
+    assert "<title>Momentum 100.0</title>" in svg and "<title>Quality: missing</title>" in svg
+    assert industries.pillar_bars("junk").count('class="miss"') == 5
+
+
+def test_tier_chart_legend(tout):
+    body = _get(tout, "/industries").body
+    assert "its tier and composite" in body and "multiple of the average" not in body
