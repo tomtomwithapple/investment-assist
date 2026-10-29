@@ -8,7 +8,7 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-10-28 (P46-peers). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against Stockbit's industry average and the sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S15, S22 and S31 (top tier per industry, planned 2026-10-29) are open.
+**Last updated:** 2026-10-29 (P48–P50 tiers). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against Stockbit's industry average and the sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S31 (top tier per industry) is built, P48–P50, but waits for a live run and replay verdict on a Mac with idx-method's `stockbiter.db`. S15 and S22 are open.
 
 What `assist run` does:
 - It reads layers 0, 1 and 5 for every subject.
@@ -375,6 +375,19 @@ real stores → record numbers in the Progress table → commit. One slice per c
     normalised earnings base ranks last on PE; Tier B can exist without a Tier A; `cfo_ttm` and
     the TTM NI years come from `factor_series`, else `factors.json` and the S30 statements.
     Details in `docs/results/P48-tier-model.md`. Live run still blocked (no `stockbiter.db`).
+  - **Shipped in P49 and P50 (2026-10-29).** P49: `/industries` opens with *Top tier by
+    industry* (Tier A, Tier B muted, five pillar bars, cap tier, S20 star), each industry tab
+    lists its tiers, peer group and gate failures, the charts draw the picks, and the old filter
+    is a chip; industries without picks sit in one collapsed card with the reason; a schema 3
+    file shows a notice and the S30 view. P50: `candidates/tiers_replay.py` writes
+    `out/industries/IDN.replay.json`, journals a `tier_replay` record (`moves_stance: false`)
+    and adds a *Top tier replay* section to the brief. It picks through the same
+    `tiers.assign` as the live model; quality floors have no history and are skipped (flagged);
+    fundamentals count from period end + 120 days; besides `placebo.evaluate` the real mean
+    must beat 95% of 200 within-industry shuffles (`perm_p` ≤ 0.05); fewer than 10 quarters
+    with a Tier A in 3+ industries is an insufficient sample. **Still open:** the live run and
+    verdict (no `stockbiter.db` here, and only 20 files in `cache/history/`), and the replay
+    verdict on `/industries` (`tiers_replay.load(out_dir)`; today it is shown in the brief).
   - *Done when:* `assist industries` writes schema 4 with picks for every industry that has
     names passing the gates; a rerun with the same inputs gives identical bytes; `/industries`
     shows the top-tier table; and the replay verdict with its control is journalled and shown.
@@ -700,7 +713,9 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S23–S28 local UI view (F7-ui, with P40–P44) | done | 2026-10-27 | F7 this commit (`02ca075`, `9d7253a`, `b6726bd`, `bde605d`, `c43dac8`) | 24 web, 18 status, 9 overview, 23 stance, 23 candidates, 22 paper, 2 F7 e2e (1236 total) | live `assist status --port 8799` on the real out/ and journal: `/` 200 15,190 B 21 ms, `/stance/IDN/bonds` 200 5,284 B 41 ms, `/candidates` 200 10,536 B 3 ms, `/candidates/IDN` 200 7,916 B, `/candidates/USA` 200 4,982 B, `/paper` 200 6,107 B 122 ms, `/journal` 200 3,667 B 116 ms, `/status` 200 14,796 B 3.4 s; every `.json` twin 200 (`/json` alias too), `/nope` and `/stance/IDN/..%2Fx` 404, HEAD `/paper` 200; nav and one disclaimer on every page, no notices; 49 stances, journal 865 records chain ok over 8 models; **paper 0 weeks scored** (JCI ends 2026-09-30, IGSYC 10Y starts in October: gap 2b blocks it); out/ (51 files) and `journal/decisions.jsonl` sha-identical before and after |
 | S29 one-step start (P45-start) | done | 2026-10-27 | this commit | 21 start (1257 total) | live `./start.sh --no-open --port 8799` on the real repo: sync, doctor (11 of 14 fresh, 2 stale: jquantster, idx-method; satudatascape missing), **no run** (out/ all as_of 2026-10-27), pages up in 6.1 s; `/` 200 15,190 B, `/candidates` 200 10,536 B; SIGTERM (and Ctrl-C under a pty) stops it, port 8799 free, no server process left; out/ sha-identical. README data gaps brought up to date: PHEI fresh 2026-10-26 (both IDN rules now propose but are not applied, insufficient sample), FRED fresh 2026-10-23, paper 0 weeks for the benchmark and 8 segments |
 | S30 peer comparison per industry (P46-peers) | done | 2026-10-27 | `8847486`, `d3cad8c` | 22 adapter, 24 peers, 15 view (1317 at S30) | `assist industries`: 33 industries, 836 names, as of 2026-10-26 (1.9 MB); `/industries` 200, `/industries/8f8ca75c` (banks, 47 names) 200, twins 200, unknown id and `..` 404; checked by screenshot in light and dark. Stockbit industry PE means of −77 (POLU group) and −115 (DOSS) confirm the switch to medians. Follow-ups `cf40630`, `79b2a15`, `33cb34c`, `d3cad8c` (1318 total): industries named by IDX sub-sector, and `/industries` is one chart per industry of the names that pass (41 of 836, 18 industries; BMRI and BBNI fail the 0.8× solvency floor). Stockbit session expired (refresh 401): nothing pulled 2026-10-27 or 10-28, page as of 2026-10-26 until `./run.sh login` in idx-method |
-| S31 top tier model (P48-tier-model) | done (S31 open: P49, P50) | 2026-10-29 | this commit | 26 tiers (1373 total) | blocked: idx-method `store/data/stockbiter.db` absent on this Mac, so `assist industries` exits 1 (`SourceUnavailable`); the tier inputs alone load (976 rows from `factors.json`, liquidity derived for 17 of the 20 names in `cache/history/`), fixtures only |
+| S31 top tier model (P48-tier-model) | done (S31 open: P49, P50) | 2026-10-29 | `a6e38ef` | 26 tiers (1373 total) | blocked: idx-method `store/data/stockbiter.db` absent on this Mac, so `assist industries` exits 1 (`SourceUnavailable`); the tier inputs alone load (976 rows from `factors.json`, liquidity derived for 17 of the 20 names in `cache/history/`), fixtures only |
+| S31 top tier page (P49-tier-ui) | done (S31 open: live run) | 2026-10-29 | `5760090` | 67 view + web (1385 total) | fixtures only (no schema 4 file here); checked by headless Chrome screenshot in light, dark and the schema 3 fallback |
+| S31 top tier replay (P50-tier-replay) | done (S31 open: live verdict) | 2026-10-29 | `3d940e6` | 16 replay (1401 total) | fixtures: planted signal passes (t 19.78, p 0.001, perm_p 0.005, control t 0.15, 17 quarters), noise fails (t −0.25); live `run_live` returns `blocked` (no S30 membership: `stockbiter.db` absent) |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`
