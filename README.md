@@ -123,6 +123,16 @@ the main checkout) and the absolute `uv` path, because launchd's PATH has no Hom
 from the main checkout after pulling. The jobs need Telegram credentials in the login Keychain,
 or the environment, to send.
 
+On Windows, `schedule.ps1` registers the same two jobs in Task Scheduler
+(`investment-assist-weekly` Monday 07:00, `investment-assist-regime` daily 07:05, so the check
+runs after the weekly run instead of under a shared lock), with no console window, logging to
+`%LOCALAPPDATA%\investment-assist\logs\`. Telegram there needs the two `ASSIST_TELEGRAM_*`
+variables, since there is no Keychain.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File schedule.ps1 install   # or -DryRun, status, run [-Regime], uninstall
+```
+
 ## Data gaps the brief will flag
 
 These are fetcher-side gaps. They are fixed in the sibling repo, never here (details in
