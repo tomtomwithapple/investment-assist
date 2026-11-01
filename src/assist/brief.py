@@ -84,7 +84,7 @@ def load_out(out_dir: Path) -> Loaded:
     for f in _stance_files(out_dir):
         rel = f.relative_to(out_dir).as_posix()
         try:
-            payload = json.loads(f.read_text())
+            payload = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError) as e:
             problems.append(f"{rel}: not readable JSON ({e})")
             continue

@@ -198,6 +198,7 @@ def test_satudata_missing_file(tmp_path):
     assert not (tmp_path / "satudata.db").exists()  # read-only: never created
 
 
-def test_satudata_from_config():
-    src = SatudatascapeSource.from_config(env={"ASSIST_SATUDATASCAPE_DB": "/nowhere/satudata.db"})
-    assert src.path == Path("/nowhere/satudata.db")
+def test_satudata_from_config(tmp_path):
+    db = tmp_path / "nowhere" / "satudata.db"
+    src = SatudatascapeSource.from_config(env={"ASSIST_SATUDATASCAPE_DB": str(db)})
+    assert src.path == db

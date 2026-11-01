@@ -121,7 +121,7 @@ class UndervaluedInputs:
 
 @cache
 def _schema() -> dict:
-    return json.loads(SCHEMA.read_text())
+    return json.loads(SCHEMA.read_text(encoding="utf-8"))
 
 
 def validator() -> jsonschema.Draft202012Validator:
@@ -429,11 +429,11 @@ def write(payload: Mapping, out_dir: Path) -> Path:
     """`out/candidates/{MARKET}.json`, rewritten only when its bytes change."""
     path = Path(out_dir) / OUT_DIR / f"{payload['market']}.json"
     text = _dumps(payload)
-    if path.is_file() and path.read_text() == text:
+    if path.is_file() and path.read_text(encoding="utf-8") == text:
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(text)
+    tmp.write_text(text, encoding="utf-8", newline="\n")
     tmp.replace(path)
     return path
 
@@ -447,7 +447,7 @@ def load_out(out_dir: Path) -> list[dict]:
     out = []
     for f in sorted(d.glob("*.json")):
         try:
-            p = json.loads(f.read_text())
+            p = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
         if not list(v.iter_errors(p)):
@@ -479,7 +479,7 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
     as_of = max(bar_dates) if bar_dates else day
     flagged: set[str] = set()
     try:
-        with (stocks.root / "data" / "special_boards.json").open() as f:
+        with (stocks.root / "data" / "special_boards.json").open(encoding="utf-8") as f:
             boards = json.load(f)
         flagged = {s for b in GATES["exclude_boards"] for s in boards.get(b, [])}
     except (OSError, ValueError):

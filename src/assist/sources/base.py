@@ -32,6 +32,7 @@ from assist.doctor import (
     Missing,
     SourceStatus,
     check_local_url,
+    duckdb_locked,
     open_postgres,
     open_sqlite,
     redact_dsn,
@@ -109,7 +110,7 @@ def _first_line(e: Exception) -> str:
 
 
 def _from_duckdb(e: duckdb.Error, source: str) -> SourceUnavailable:
-    reason = "locked" if "lock" in str(e).lower() else "error"
+    reason = "locked" if duckdb_locked(str(e)) else "error"
     return SourceUnavailable(source, reason, _first_line(e))
 
 

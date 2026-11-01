@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -115,6 +116,7 @@ def test_counts_cover_every_stance():
     assert data["counts"] == {"overweight": 1, "neutral": 1, "underweight": 2, "avoid": 0}
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="'<' is not allowed in Windows file names")
 def test_problems_are_a_notice_and_values_are_escaped(copy):
     (copy / "IDN" / "<script>x.json").write_text("{not json")
     usa = json.loads((copy / "USA" / "bonds.json").read_text())

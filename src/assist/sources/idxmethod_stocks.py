@@ -90,7 +90,7 @@ class IdxMethodStocks:
 
     def _load(self, path: Path):
         try:
-            with path.open() as f:
+            with path.open(encoding="utf-8") as f:
                 return json.load(f)
         except (OSError, ValueError) as e:
             raise SourceUnavailable(self.name, "error", f"{path}: {e}") from e

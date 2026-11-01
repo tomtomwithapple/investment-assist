@@ -101,7 +101,7 @@ def load(out_dir: Path, cache: dict | None = None) -> tuple[dict | None, str | N
     if cache is not None and (hit := cache.get(key)) and hit[0] == stamp:
         return hit[1], None
     try:
-        p = json.loads(path.read_text())
+        p = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         return None, f"{FILE} is not valid JSON ({e})"
     if not isinstance(p, dict) or not isinstance(p.get("industries"), list):
@@ -114,7 +114,7 @@ def load(out_dir: Path, cache: dict | None = None) -> tuple[dict | None, str | N
 def starred(out_dir: Path) -> dict[str, list[str]]:
     """symbol → the S20 styles that list it; empty when there is no readable candidates file."""
     try:
-        p = json.loads((Path(out_dir) / CANDIDATES).read_text())
+        p = json.loads((Path(out_dir) / CANDIDATES).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     out: dict[str, list[str]] = {}

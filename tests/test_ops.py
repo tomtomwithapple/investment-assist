@@ -11,6 +11,7 @@ from __future__ import annotations
 import plistlib
 import shutil
 import subprocess
+import sys
 from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -395,6 +396,8 @@ exec "$@"
 """
 FILES = ["install.sh", "job.sh", f"{WEEKLY}.plist", f"{REGIME}.plist"]
 BASE_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+# launchd/*.sh and the plists are macOS-only (sh, lockf, launchctl, plutil)
+macos_sh = pytest.mark.skipif(sys.platform == "win32", reason="launchd jobs are macOS sh scripts")
 
 
 @pytest.fixture
@@ -436,6 +439,7 @@ def _plist(label: str) -> dict:
     return plistlib.loads((LAUNCHD / f"{label}.plist").read_bytes())
 
 
+@macos_sh
 def test_plists_lint_and_are_templates():
     for label in (WEEKLY, REGIME):
         path = LAUNCHD / f"{label}.plist"
@@ -462,6 +466,7 @@ def test_install_defaults_to_the_main_checkout():
     assert f"ASSIST_REPO:-{MAIN_CHECKOUT}" in text
 
 
+@macos_sh
 def test_dry_run_renders_both_and_writes_nothing(repo):
     res = _sh(repo, "install.sh", "--dry-run", env=_env(repo))
     assert res.returncode == 0, res.stderr
@@ -471,6 +476,7 @@ def test_dry_run_renders_both_and_writes_nothing(repo):
     assert not (repo.parent / "agents").exists() and "launchctl" not in _record(repo)
 
 
+@macos_sh
 def test_install_and_uninstall_with_stub_launchctl(repo):
     env = _env(repo)
     res = _sh(repo, "install.sh", env=env)
@@ -488,10 +494,12 @@ def test_install_and_uninstall_with_stub_launchctl(repo):
     assert _record(repo).count("launchctl bootout") >= 4
 
 
+@macos_sh
 def test_install_rejects_unknown_args(repo):
     assert _sh(repo, "install.sh", "--bogus", env=_env(repo)).returncode == 2
 
 
+@macos_sh
 @pytest.mark.parametrize("job,args", [("weekly", "uv run assist run"),
                                       ("regime", "uv run assist regime --check")])
 def test_job_runs_assist_under_the_lock_and_logs(repo, job, args):
@@ -504,6 +512,7 @@ def test_job_runs_assist_under_the_lock_and_logs(repo, job, args):
     assert f"{job} start" in log and f"{job} end, exit 0" in log
 
 
+@macos_sh
 def test_job_passes_the_exit_code_and_rejects_unknown_jobs(repo):
     env = _env(repo, ASSIST_UV=str(repo.parent / "bin" / "uv"), STUB_EXIT="1")
     assert _sh(repo, "job.sh", "weekly", env=env).returncode == 1

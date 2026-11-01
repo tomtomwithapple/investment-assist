@@ -120,7 +120,7 @@ def load_sources(
 ) -> list[Source]:
     env = dict(os.environ) if env is None else env
     root = Path(root) if root is not None else siblings_root(env)
-    raw = yaml.safe_load(Path(config).read_text())["sources"]
+    raw = yaml.safe_load(Path(config).read_text(encoding="utf-8"))["sources"]
     sources = []
     for name, spec in raw.items():
         access = spec["access"]
@@ -192,9 +192,16 @@ def judge(probe: Probe, newest: date | None, today: date, had_future: bool = Fal
 # ---------------- store access ----------------
 
 
+def duckdb_locked(msg: str) -> bool:
+    """A DuckDB error from another process holding the file: "Conflicting lock" on macOS and
+    Linux, "being used by another process" on Windows, which has no "lock" in it."""
+    m = msg.lower()
+    return "lock" in m or "being used by another process" in m
+
+
 def _duckdb_error(e: Exception) -> Exception:
     msg = str(e)
-    if "lock" in msg.lower():
+    if duckdb_locked(msg):
         return Locked(msg.splitlines()[0])
     return e
 
@@ -293,13 +300,14 @@ def file_newest(root: Path, probe: Probe, today: date):
         path = root / probe.csv
         if not path.is_file():
             raise Absent(f"no file {path}")
-        with path.open(newline="") as f:
+        with path.open(newline="", encoding="utf-8") as f:
             return newest_until((row.get(probe.column) for row in csv.DictReader(f)), today)
     if probe.json:
         path = root / probe.json
         if not path.is_file():
             raise Absent(f"no file {path}")
-        return newest_until(_json_field(json.loads(path.read_text()), probe.field), today)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return newest_until(_json_field(payload, probe.field), today)
     if probe.parquet:
         pattern = str(root / probe.parquet)
         if not glob.glob(pattern, recursive=True):

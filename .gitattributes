@@ -1,0 +1,2 @@
+# LF in every checkout: fixtures are hashed byte for byte and the .sh scripts run under sh.
+* text=auto eol=lf

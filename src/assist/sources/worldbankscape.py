@@ -101,7 +101,7 @@ class WorldbankscapeSource:
             if not p.is_file():
                 raise SourceUnavailable(self.name, "missing", f"no schema at {p}")
             out[kind] = jsonschema.Draft202012Validator(
-                json.loads(p.read_text()),
+                json.loads(p.read_text(encoding="utf-8")),
                 format_checker=jsonschema.Draft202012Validator.FORMAT_CHECKER,
             )
         return out
@@ -110,7 +110,7 @@ class WorldbankscapeSource:
         p = self.out_dir / "index.json"
         if not p.is_file():
             raise SourceUnavailable(self.name, "missing", f"no index at {p}")
-        return p.read_text()
+        return p.read_text(encoding="utf-8")
 
     def _index(self, validator: jsonschema.Draft202012Validator) -> dict:
         try:

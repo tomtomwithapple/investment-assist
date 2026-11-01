@@ -47,7 +47,7 @@ def load(out_dir: Path) -> list[Market]:
     out = []
     for f in files:
         try:
-            p = json.loads(f.read_text())
+            p = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError) as e:
             out.append(Market(f.stem, f.name, None, f"invalid JSON ({e})"))
             continue

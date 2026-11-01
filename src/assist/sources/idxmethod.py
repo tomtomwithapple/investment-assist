@@ -94,7 +94,7 @@ class IdxMethodIndexSource:
         path = self.root / file
         if not path.is_file():
             raise SourceUnavailable(self.name, "missing", f"no file at {path}")
-        with path.open(newline="") as f:
+        with path.open(newline="", encoding="utf-8") as f:
             return list(csv.DictReader(f))
 
 

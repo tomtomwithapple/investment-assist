@@ -96,9 +96,9 @@ def test_config_access_kinds_follow_the_siblings():
         for s in doctor.load_sources(REPO / "config" / "sources.yaml", root=Path("/r"), env={})
     }
     assert by_name["satudatascape"].access == "sqlite"
-    assert by_name["satudatascape"].location == "/r/satudatascape/data/satudata.db"
+    assert by_name["satudatascape"].location == str(Path("/r/satudatascape/data/satudata.db"))
     assert by_name["openkrx"].access == "files"
-    assert by_name["openkrx"].location == "/r/openkrx/data/parquet"
+    assert by_name["openkrx"].location == str(Path("/r/openkrx/data/parquet"))
     assert by_name["bps-looker"].access == "postgres"
     assert by_name["sec-edgar"].access == "http"
     assert by_name["financer"].location == str(Path("~/.financer/financer.db").expanduser())
@@ -119,9 +119,10 @@ def test_env_overrides_path_and_url(tmp_path):
         },
     )
     (src,) = doctor.load_sources(
-        cfg, root=tmp_path, env={"X_DB": "/elsewhere/x.duckdb", "X_URL": "http://127.0.0.1:2"}
+        cfg, root=tmp_path, env={"X_DB": str(tmp_path / "elsewhere" / "x.duckdb"),
+                                 "X_URL": "http://127.0.0.1:2"}
     )
-    assert src.location == "/elsewhere/x.duckdb"
+    assert src.location == str(tmp_path / "elsewhere" / "x.duckdb")
     assert src.url == "http://127.0.0.1:2"
 
 
@@ -138,7 +139,7 @@ def test_siblings_root_env(tmp_path):
         },
     )
     (src,) = doctor.load_sources(cfg, env={"ASSIST_SIBLINGS_ROOT": "/sib"})
-    assert src.location == "/sib/x/x.duckdb"
+    assert src.location == str(Path("/sib/x/x.duckdb"))
 
 
 # ---------------- duckdb ----------------

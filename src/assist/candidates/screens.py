@@ -401,7 +401,7 @@ def _optional(what: str, fn, stale: list[str]):
 def _data_json(stocks: IdxMethodStocks, name: str, stale: list[str]):
     path = stocks.root / "data" / name
     try:
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
         stale.append(f"{SOURCE} {name} (missing)")

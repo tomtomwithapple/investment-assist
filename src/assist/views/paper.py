@@ -226,7 +226,7 @@ def _models(segs: Mapping[str, list[dict]]) -> list[dict]:
 
 def _lines(j: Journal) -> int:
     try:
-        return sum(1 for line in j.path.read_text().splitlines() if line.strip())
+        return sum(1 for line in j.path.read_text(encoding="utf-8").splitlines() if line.strip())
     except OSError:
         return 0
 

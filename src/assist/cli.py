@@ -271,7 +271,7 @@ def _industries(args: argparse.Namespace) -> int:
     if path is None:
         print(stale[0] if stale else "peer comparison: nothing written", file=sys.stderr)
         return 1
-    payload = json.loads(path.read_text())
+    payload = json.loads(path.read_text(encoding="utf-8"))
     names = sum(i["n"] for i in payload["industries"])
     print(f"{path}: {len(payload['industries'])} industries, {names} names, "
           f"as of {payload['as_of']}")
@@ -280,7 +280,17 @@ def _industries(args: argparse.Namespace) -> int:
     return 0
 
 
+def _utf8_stdio() -> None:
+    """Write UTF-8 even where the stream defaults to a legacy code page (Windows pipes, files and
+    scheduled-job logs are cp1252, and the first → would be a UnicodeEncodeError)."""
+    for stream in (sys.stdout, sys.stderr):
+        encoding = (getattr(stream, "encoding", None) or "").lower()
+        if hasattr(stream, "reconfigure") and encoding not in ("utf-8", "utf8"):
+            stream.reconfigure(encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _utf8_stdio()
     parser = argparse.ArgumentParser(prog="assist", description=__doc__)
     parser.add_argument("--siblings-root",
                         help="siblings root for every source (sets ASSIST_SIBLINGS_ROOT)")

@@ -104,8 +104,8 @@ def _repo_of(plist: dict, repos: dict[str, Path]) -> str | None:
     paths = [plist.get("WorkingDirectory"), plist.get("Program"),
              *(plist.get("ProgramArguments") or [])]
     for name, root in repos.items():
-        # the repo path, ending there or at / or a quote or space (also inside `bash -c` strings)
-        inside = re.compile(re.escape(str(root)) + r"(?=$|[/'\"\s])")
+        # the repo path, ending there or at a separator, a quote or space (also inside `bash -c`)
+        inside = re.compile(re.escape(str(root)) + r"(?=$|[/\\'\"\s])")
         if any(isinstance(p, str) and inside.search(p) for p in paths):
             return name
     return None

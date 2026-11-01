@@ -84,7 +84,7 @@ def _run(paths, wbs, financer, telegram=None, fred=None, send=True):
 
 
 def _out_bytes(out: Path) -> dict[str, bytes]:
-    return {str(p.relative_to(out)): p.read_bytes() for p in sorted(out.rglob("*.json"))}
+    return {p.relative_to(out).as_posix(): p.read_bytes() for p in sorted(out.rglob("*.json"))}
 
 
 # ---------------- scope ----------------

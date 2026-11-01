@@ -237,4 +237,4 @@ def test_golden_brief_matches_fixture():
     if not EXPECTED.exists():  # pragma: no cover - regenerate by deleting the file
         EXPECTED.write_text(md)
         pytest.fail("wrote expected.md; review it and rerun")
-    assert md == EXPECTED.read_text()
+    assert md == EXPECTED.read_text(encoding="utf-8")

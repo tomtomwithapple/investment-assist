@@ -18,7 +18,6 @@ diffed later.
 from __future__ import annotations
 
 import dataclasses
-import fcntl
 import hashlib
 import json
 import os
@@ -29,6 +28,32 @@ from pathlib import Path
 from typing import Any
 
 from assist import stance
+
+if os.name == "nt":
+    import msvcrt
+
+    def _lock(fh) -> None:
+        """Exclusive lock on the file's first byte (msvcrt locks ranges, not whole files)."""
+        fh.seek(0)
+        while True:
+            try:
+                msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)  # retries for ~10 s, then raises
+                return
+            except OSError:
+                continue
+
+    def _unlock(fh) -> None:
+        fh.seek(0)
+        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+
+else:
+    import fcntl
+
+    def _lock(fh) -> None:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+
+    def _unlock(fh) -> None:
+        fcntl.flock(fh, fcntl.LOCK_UN)
 
 __all__ = [
     "DECISIONS",
@@ -178,7 +203,7 @@ class Journal:
         fp = fingerprint(body)
         path = self.root / MODELS / f"{fp.split(':', 1)[1]}.json"
         if path.exists():
-            if canonical(json.loads(path.read_text())) != canonical(body):
+            if canonical(json.loads(path.read_text(encoding="utf-8"))) != canonical(body):
                 raise ValueError(f"{path} differs from the model it is named after")
             return fp
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -189,7 +214,8 @@ class Journal:
 
     def model(self, fp: str) -> dict:
         _check_fp(fp)
-        return json.loads((self.root / MODELS / f"{fp.split(':', 1)[1]}.json").read_text())
+        path = self.root / MODELS / f"{fp.split(':', 1)[1]}.json"
+        return json.loads(path.read_text(encoding="utf-8"))
 
     # -- decisions --
 
@@ -229,7 +255,7 @@ class Journal:
 
         self.root.mkdir(parents=True, exist_ok=True)
         with open(self.path, "a+", encoding="utf-8") as fh:
-            fcntl.flock(fh, fcntl.LOCK_EX)
+            _lock(fh)
             try:
                 fh.seek(0)
                 last = None
@@ -246,7 +272,7 @@ class Journal:
                 fh.flush()
                 os.fsync(fh.fileno())
             finally:
-                fcntl.flock(fh, fcntl.LOCK_UN)
+                _unlock(fh)
         return rec
 
     def read(self, fingerprint: str | None = None) -> Iterator[dict]:

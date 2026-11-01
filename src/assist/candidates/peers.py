@@ -314,10 +314,10 @@ def write(payload: Mapping, out_dir: Path) -> Path:
 
     path = Path(out_dir) / OUT_DIR / f"{payload['market']}.json"
     text = json.dumps(payload, indent=1, sort_keys=True, ensure_ascii=False) + "\n"
-    if path.is_file() and path.read_text() == text:
+    if path.is_file() and path.read_text(encoding="utf-8") == text:
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(text)
+    tmp.write_text(text, encoding="utf-8", newline="\n")
     tmp.replace(path)
     return path

@@ -223,7 +223,7 @@ class FactorSnapshots:
 
     def _load(self, path: Path) -> dict:
         try:
-            with gzip.open(path, "rt") as f:
+            with gzip.open(path, "rt", encoding="utf-8") as f:
                 return json.load(f)
         except (OSError, ValueError, EOFError) as e:
             raise SourceUnavailable(self.name, "error", f"{path}: {e}") from e

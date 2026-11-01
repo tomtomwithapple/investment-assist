@@ -536,7 +536,7 @@ def run_live(as_of: date | None = None, regime=None, **kw) -> dict:
     as_of = max(bar_dates) if bar_dates else (as_of or date.today())
     flagged: set[str] = set()
     try:
-        with (stocks.root / "data" / "special_boards.json").open() as f:
+        with (stocks.root / "data" / "special_boards.json").open(encoding="utf-8") as f:
             boards = json.load(f)
         flagged = {s for b in GATES["exclude_boards"] for s in boards.get(b, [])}
     except (OSError, ValueError):

@@ -13,10 +13,13 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="start.sh is a POSIX sh script")
 
 ROOT = Path(__file__).resolve().parents[1]
 START = ROOT / "start.sh"
