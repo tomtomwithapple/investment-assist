@@ -54,7 +54,7 @@ a record.
 | E. Layer 4 refinements (S31: top tier per industry) | S15, S31 | 0 / 2 |
 | F. Undervalued stocks, macro-weighted (IDN, then US, JP) | S16–S22 | 7 / 8 |
 | G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S30 | 8 / 8 |
-| H. Layer pages (regime, signals, portfolio) | S33–S37 | 0 / 5 |
+| H. Layer pages (regime, signals, portfolio) | S33–S37 | 1 / 5 |
 
 ### Open data gaps (fetcher side)
 
@@ -816,7 +816,7 @@ gives each a page.
 already computes. Foreign subjects get the layer-2/3 tables only (no charts) until their
 signals have series worth drawing.
 
-- [ ] **S33 Layer files in `out/layers/`** (P54-layer-out). `pipeline` keeps the `Regime`
+- [x] **S33 Layer files in `out/layers/`** (P54-layer-out). `pipeline` keeps the `Regime`
   inputs, `IdnOverrides`/foreign overrides components, `IdnSignals` and the `Portfolio` it
   already builds, and `write_layers` serialises them, with chart series cut to fixed windows
   (1y weekly for layer 0, 60 days daily for flows and JISDOR, 1y daily for JCI, two IGSYC
@@ -870,6 +870,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | Gap 2b JCI from idxscape (P51-jci-idxscape) | done | 2026-11-06 | this commit | 8 index + stitch (1412 total) | `jci()` 7,314 closes 1996-10-02 → 2026-11-05 (1,224 from idxscape); paper: 0 → 1 week scored (2026-10-16, benchmark −9.4%, JCI −14.9%); IGSYC.10 ends 2026-10-21 here, so 3 weeks stale; JCI −11.6% on 2026-10-16 in IDX's own data |
 | Paper capture gaps (P52-paper-daily-gap) | done | 2026-11-06 | this commit | 2 paper (1414 total) | live: with PHEI resumed (IGSYC to 11-05) the old carry scored 3 weeks (10-23 and 10-30 on the 10-21 yield); now 1 scored (10-16, −9.4%), 3 stale, each naming the yield gap |
 | S32 layer 5 reads trade documents (P53-portfolio-trades) | done | 2026-11-06 | this commit | 9 adapter, 42 portfolio, 1 brief, 1 view (1432 total) | as of 2026-11-02: IDN stocks Rp53.70 M 96.90%, bonds Rp0.99 M 1.79%, cash Rp0.73 M 1.31%, total Rp55.42 M (statements only: Rp18.98 M); by owner tommy Rp18.88 M, priskila Rp36.54 M; her Stockbit 63 lines Rp36,535,800 at last trade prices (8 TCs, gross flow 37.15 M); Ajaib's ARNA (200 sh) gone after the 11-02 daily, its check still matches; 10 statement-only accounts identical to before; 0 unmapped, 0 stale; mtime unchanged |
+| S33 layer files in `out/layers/` (P54-layer-out) | done | 2026-11-06 | this commit | 17 layers out (1449 total) | 8 files, all schema-valid: regime neutral, dollar flat (off 1: real yield 2.64%), 9 inputs × 52 weekly points; IDN 5 components (stocks −5, bonds −4, currency +2), 5 signals, flows 60 IDX days 08-12 → 11-05 (USD null before JISDOR's first fixing 10-22), JISDOR 11 fixings, JCI 239 closes, SBN 239 days, IGSYC 11-05 vs 10-08; USA, JPN, EMU, AUS, SGP files; portfolio Rp55.42 M as of 11-02, 12 accounts, 49 stance targets |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

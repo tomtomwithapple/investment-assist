@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tomtomtomdev/investment-assist/schema/layers/subject.schema.json",
+  "title": "investment-assist layers 2-3 file (out/layers/{SUBJECT}.json)",
+  "description": "PLAN S33: one subject's layer-2 overrides (components, per-asset shift and cap, uncapped raw sum), its layer-3 signals (IDN only) and, for IDN, the chart windows. Written for every subject the run builds overrides for (IDN and P28's USA, JPN, EMU, AUS, SGP). A builder that failed writes the common fields, subject and `error` only. Heuristic context, not investment advice.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "as_of", "model_fingerprint", "subject", "stale_inputs", "sources", "disclaimer"],
+  "anyOf": [
+    {"required": ["error"]},
+    {"required": ["members", "layer2", "layer3", "charts"]}
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "kind": {"const": "subject"},
+    "as_of": {"$ref": "#/$defs/date", "description": "Run date."},
+    "model_fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "subject": {"type": "string", "pattern": "^[A-Z0-9_]+$"},
+    "error": {"type": "string"},
+    "members": {"type": "array", "items": {"type": "string"}, "description": "worldbankscape subjects the shift lands on (EMU only)."},
+    "layer2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["components", "assets", "idr_terms", "gaps"],
+      "properties": {
+        "components": {"type": "array", "items": {"$ref": "#/$defs/component"}},
+        "assets": {"type": "array", "items": {"$ref": "#/$defs/asset"}},
+        "idr_terms": {
+          "anyOf": [{"type": "null"}, {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["currency", "level", "on", "change_3m", "change_12m", "carry", "detail"],
+            "properties": {
+              "currency": {"type": "string"},
+              "level": {"$ref": "#/$defs/number"},
+              "on": {"$ref": "#/$defs/date"},
+              "change_3m": {"$ref": "#/$defs/number"},
+              "change_12m": {"$ref": "#/$defs/number"},
+              "carry": {"$ref": "#/$defs/number"},
+              "detail": {"type": "string"}
+            }
+          }]
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["input", "why"],
+            "properties": {"input": {"type": "string"}, "why": {"type": "string"}}
+          }
+        }
+      }
+    },
+    "layer3": {
+      "anyOf": [{"type": "null"}, {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["signals", "tally"],
+        "properties": {
+          "signals": {"type": "array", "items": {"$ref": "#/$defs/signal"}},
+          "tally": {"type": "object", "additionalProperties": {"type": "integer"}}
+        }
+      }]
+    },
+    "charts": {
+      "anyOf": [{"type": "null"}, {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["net_foreign", "jisdor", "jci", "igsyc", "sbn_non_resident"],
+        "properties": {
+          "net_foreign": {"anyOf": [{"type": "null"}, {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["days", "unit_idr", "unit_usd", "points"],
+            "properties": {
+              "days": {"type": "integer"},
+              "unit_idr": {"const": "IDR"},
+              "unit_usd": {"const": "USD"},
+              "points": {"type": "array", "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["date", "idr", "usd"],
+                "properties": {
+                  "date": {"$ref": "#/$defs/date"},
+                  "idr": {"$ref": "#/$defs/number"},
+                  "usd": {"$ref": "#/$defs/number", "description": "null on a day without JISDOR: a gap, never filled."}
+                }
+              }}
+            }
+          }]},
+          "jisdor": {"anyOf": [{"type": "null"}, {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["days", "unit", "points", "gaps"],
+            "properties": {
+              "days": {"type": "integer"},
+              "unit": {"type": "string"},
+              "points": {"type": "array", "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["date", "value", "carried_forward"],
+                "properties": {
+                  "date": {"$ref": "#/$defs/date"},
+                  "value": {"$ref": "#/$defs/number"},
+                  "carried_forward": {"type": "boolean", "description": "BI says the day used D-1 data."}
+                }
+              }},
+              "gaps": {"type": "array", "items": {"$ref": "#/$defs/date"}, "description": "IDX trading days in the window with no JISDOR rate."}
+            }
+          }]},
+          "jci": {"anyOf": [{"type": "null"}, {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["unit", "source", "points"],
+            "properties": {
+              "unit": {"type": "string"},
+              "source": {"type": "string"},
+              "points": {"$ref": "#/$defs/points"}
+            }
+          }]},
+          "igsyc": {"anyOf": [{"type": "null"}, {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["latest", "earlier", "unit"],
+            "properties": {
+              "unit": {"type": "string"},
+              "latest": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["as_of", "points"],
+                "properties": {"as_of": {"$ref": "#/$defs/date"}, "points": {"$ref": "#/$defs/curve"}}
+              },
+              "earlier": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["target", "as_of", "points"],
+                "properties": {
+                  "target": {"$ref": "#/$defs/date"},
+                  "as_of": {"anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}]},
+                  "points": {"$ref": "#/$defs/curve"}
+                }
+              }
+            }
+          }]},
+          "sbn_non_resident": {"anyOf": [{"type": "null"}, {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["unit", "series_id", "points"],
+            "properties": {
+              "unit": {"type": "string"},
+              "series_id": {"type": "string"},
+              "points": {"$ref": "#/$defs/points"}
+            }
+          }]}
+        }
+      }]
+    },
+    "stale_inputs": {"$ref": "#/$defs/texts"},
+    "sources": {"$ref": "#/$defs/texts"},
+    "disclaimer": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "date": {"type": "string", "format": "date", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "texts": {"type": "array", "items": {"type": "string"}},
+    "number": {"type": ["number", "null"]},
+    "direction": {"enum": [-1, 0, 1]},
+    "points": {"type": "array", "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["date", "value"],
+      "properties": {"date": {"$ref": "#/$defs/date"}, "value": {"$ref": "#/$defs/number"}}
+    }},
+    "curve": {"type": "array", "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenor_y", "yield_pct", "from_yesterday_column"],
+      "properties": {
+        "tenor_y": {"type": "number"},
+        "yield_pct": {"type": "number"},
+        "from_yesterday_column": {"type": "boolean"}
+      }
+    }},
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "source", "series_id", "value", "direction", "last", "detail", "weights"],
+      "properties": {
+        "name": {"type": "string"},
+        "source": {"type": "string"},
+        "series_id": {"type": "string"},
+        "value": {"$ref": "#/$defs/number", "description": "Change over the component's window."},
+        "direction": {"$ref": "#/$defs/direction"},
+        "last": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["date", "value"],
+          "properties": {"date": {"$ref": "#/$defs/date"}, "value": {"$ref": "#/$defs/number"}}
+        },
+        "detail": {"type": "string"},
+        "weights": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "Points of score per unit of direction, per asset."}
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset", "shift", "raw", "cap", "capped", "reason"],
+      "properties": {
+        "asset": {"enum": ["stocks", "bonds", "currency"]},
+        "shift": {"type": "number", "description": "The capped shift applied to the layer-1 score."},
+        "raw": {"type": "number", "description": "Uncapped sum of direction x weight."},
+        "cap": {"type": "number"},
+        "capped": {"type": "boolean"},
+        "reason": {"type": "string"}
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset", "name", "value", "direction", "source", "detail"],
+      "properties": {
+        "asset": {"type": "string"},
+        "name": {"type": "string"},
+        "value": {"$ref": "#/$defs/number"},
+        "direction": {"$ref": "#/$defs/direction"},
+        "source": {"type": "string"},
+        "detail": {"type": "string"}
+      }
+    }
+  }
+}

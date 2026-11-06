@@ -83,7 +83,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from assist import brief, journal, notify, stance
+from assist import brief, journal, layers_out, notify, stance
 from assist.candidates import peers as peer_cmp
 from assist.candidates import tiers_replay
 from assist.eval.placebo import Verdict
@@ -263,7 +263,8 @@ class Sources:
     `undervalued_us(day, regime)` those of the US one (F6); None writes no file for it.
     `peers(day)` gives the S30 peer comparison (`out/industries/IDN.json`); None skips it.
     `tier_replay(day, out_dir)` gives the S31 replay verdict (`out/industries/IDN.replay.json`,
-    P50); None skips it."""
+    P50); None skips it. `layers_out` writes each layer's result to `out/layers/` (S33, from
+    `fred` and `idn` for the chart windows); False skips it."""
 
     worldbankscape: Any
     fred: Any
@@ -276,6 +277,7 @@ class Sources:
     undervalued_us: Callable[[date, Regime], undervalued.UndervaluedInputs] | None = None
     peers: Callable[[date], dict] | None = None
     tier_replay: Callable[[date, Path], dict] | None = None
+    layers_out: bool = False
 
     @classmethod
     def default(cls) -> Sources:
@@ -288,7 +290,7 @@ class Sources:
                    foreign=ForeignSources.default(), doctor=live_doctor, paper=live_paper,
                    undervalued=undervalued.gather_live,
                    undervalued_us=undervalued.gather_live_usa, peers=peer_cmp.gather_live,
-                   tier_replay=tiers_replay.run_live)
+                   tier_replay=tiers_replay.run_live, layers_out=True)
 
 
 def live_doctor(day: date) -> list[Any]:
@@ -373,7 +375,9 @@ class ForeignLayers:
 
 @dataclass
 class Layers:
-    """What one run read. `layer1` is None when worldbankscape is unavailable."""
+    """What one run read. `layer1` is None when worldbankscape is unavailable. `regime_inputs`,
+    `portfolio` (None when financer is unavailable), `statements` and `portfolio_stale` are what
+    `regime` and `weights` were built from, kept for `out/layers/` (S33)."""
 
     day: date
     layer1: Layer1 | None
@@ -383,6 +387,10 @@ class Layers:
     stale_inputs: list[str] = field(default_factory=list)
     idn: IdnLayers | None = None
     foreign: ForeignLayers | None = None
+    regime_inputs: regime.Inputs | None = None
+    portfolio: portfolio.Portfolio | None = None
+    statements: tuple[Any, ...] = ()
+    portfolio_stale: tuple[str, ...] = ()
 
     @property
     def scores(self) -> list[AssetScore]:
@@ -404,9 +412,11 @@ def gather(day: date, sources: Sources, history: Sequence[Mapping] = ()) -> Laye
     except SourceUnavailable as e:
         layer1 = None
         stale.append(e.stale_input)
-    reg = regime.regime(day, source=sources.fred)
+    inputs = regime.read_inputs(day, sources.fred)  # regime.regime, keeping its inputs
+    reg = regime.classify(inputs)
     stale += reg.stale_inputs
-    weights, w_stale = portfolio.current_weights(sources.financer)
+    pf, statements, w_stale = _portfolio(sources.financer)  # as portfolio.current_weights
+    weights = pf.weights() if pf is not None else None
     stale += w_stale
     idn, overrides = None, ()
     if sources.idn is not None and layer1 is not None:
@@ -421,7 +431,21 @@ def gather(day: date, sources: Sources, history: Sequence[Mapping] = ()) -> Laye
         overrides = (*overrides, *foreign_override_rows(foreign))
         stale += foreign.stale_inputs
     return Layers(day, layer1, reg, weights, overrides=tuple(overrides),
-                  stale_inputs=sorted(set(stale)), idn=idn, foreign=foreign)
+                  stale_inputs=sorted(set(stale)), idn=idn, foreign=foreign,
+                  regime_inputs=inputs, portfolio=pf, statements=statements,
+                  portfolio_stale=tuple(w_stale))
+
+
+def _portfolio(source: Any) -> tuple[portfolio.Portfolio | None, tuple[Any, ...], list[str]]:
+    """Layer 5 as `portfolio.current_weights` builds it, keeping the portfolio and the
+    statements: (portfolio, statements, stale inputs); a missing or locked store gives
+    (None, (), ["financer (missing)"])."""
+    try:
+        statements = tuple(source.statements())
+        pf = portfolio.build_portfolio(statements)
+    except SourceUnavailable as e:
+        return None, (), [e.stale_input]
+    return pf, statements, list(pf.stale_inputs)
 
 
 def gather_idn(day: date, reg: Regime, src: IdnSources, *, score: AssetScore | None = None,
@@ -929,6 +953,7 @@ class RunResult:
     undervalued: list[dict] = field(default_factory=list)
     peers: Path | None = None
     tier_replay: Path | None = None
+    layer_files: list[Path] = field(default_factory=list)
 
 
 def write_peers(day: date, gather: Callable[[date], dict] | None,
@@ -1027,6 +1052,9 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
     res.fingerprint = fp
     res.stances = build(layers, fp)
     res.files = write_out(res.stances, paths.out)
+    if sources.layers_out:  # S33: never raises, never changes a stance
+        res.layer_files = layers_out.write_layers(layers, res.stances, fp, paths.out,
+                                                  fred=sources.fred, idn=sources.idn)
     res.undervalued, uv_stale = _undervalued(day, sources, layers, res.stances, fp, paths)
     res.peers, peer_stale = write_peers(day, sources.peers, paths.out)
     res.tier_replay, tr_stale = write_tier_replay(day, sources.tier_replay, paths.out)

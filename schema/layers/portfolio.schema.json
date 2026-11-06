@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tomtomtomdev/investment-assist/schema/layers/portfolio.schema.json",
+  "title": "investment-assist layer 5 file (out/layers/portfolio.json)",
+  "description": "PLAN S33: layer 5 as `assist run` built it from financer (latest statement per account rolled through its trade documents, PLAN S32): buckets in IDR, owners, accounts (numbers masked to their last 4 characters), unmapped lines, statement checks and notes, plus each stance's current, target and delta. All amounts in IDR. A builder that failed writes the common fields and `error` only. Heuristic context, not investment advice.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "as_of", "model_fingerprint", "stale_inputs", "sources", "disclaimer"],
+  "anyOf": [
+    {"required": ["error"]},
+    {"required": ["statement_as_of", "currency", "total_idr", "unmapped_idr", "broker_cash_idr", "buckets", "by_owner", "accounts", "unmapped", "checks", "notes", "stances"]}
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "kind": {"const": "portfolio"},
+    "as_of": {"$ref": "#/$defs/date", "description": "Run date."},
+    "model_fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "error": {"type": "string"},
+    "statement_as_of": {"anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}], "description": "Newest statement or trade document read."},
+    "currency": {"const": "IDR"},
+    "total_idr": {"$ref": "#/$defs/number"},
+    "unmapped_idr": {"$ref": "#/$defs/number"},
+    "broker_cash_idr": {"$ref": "#/$defs/number"},
+    "buckets": {"type": "array", "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject", "asset", "idr", "pct"],
+      "properties": {
+        "subject": {"type": "string"},
+        "asset": {"type": "string"},
+        "idr": {"$ref": "#/$defs/number"},
+        "pct": {"$ref": "#/$defs/number"}
+      }
+    }},
+    "by_owner": {"type": "array", "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "total_idr", "buckets"],
+      "properties": {
+        "owner": {"type": "string"},
+        "total_idr": {"$ref": "#/$defs/number"},
+        "buckets": {"type": "array", "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["subject", "asset", "idr"],
+          "properties": {"subject": {"type": "string"}, "asset": {"type": "string"}, "idr": {"$ref": "#/$defs/number"}}
+        }}
+      }
+    }},
+    "accounts": {"type": "array", "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issuer", "account", "owner", "doc_type", "as_of", "rolled_from", "trade_docs", "cash_idr", "holdings_idr", "stated_value_idr", "broker_cash_idr", "priced_at_trade", "holdings", "unheld"],
+      "properties": {
+        "issuer": {"type": "string"},
+        "account": {"type": "string", "maxLength": 5, "description": "Last 4 characters only."},
+        "owner": {"type": "string"},
+        "doc_type": {"type": "string"},
+        "as_of": {"$ref": "#/$defs/date"},
+        "rolled_from": {"anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}]},
+        "trade_docs": {"type": "integer", "minimum": 0},
+        "cash_idr": {"$ref": "#/$defs/number"},
+        "holdings_idr": {"$ref": "#/$defs/number"},
+        "stated_value_idr": {"$ref": "#/$defs/number"},
+        "broker_cash_idr": {"$ref": "#/$defs/number"},
+        "priced_at_trade": {"$ref": "#/$defs/texts"},
+        "holdings": {"type": "array", "items": {"$ref": "#/$defs/holding"}},
+        "unheld": {"type": "array", "items": {"$ref": "#/$defs/holding"}}
+      }
+    }},
+    "unmapped": {"type": "array", "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "idr"],
+      "properties": {"label": {"type": "string"}, "idr": {"$ref": "#/$defs/number"}}
+    }},
+    "checks": {"type": "array", "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issuer", "account", "as_of", "holdings_idr", "stated_idr", "cash_idr", "matches"],
+      "properties": {
+        "issuer": {"type": "string"},
+        "account": {"type": "string", "maxLength": 5},
+        "as_of": {"$ref": "#/$defs/date"},
+        "holdings_idr": {"$ref": "#/$defs/number"},
+        "stated_idr": {"$ref": "#/$defs/number"},
+        "cash_idr": {"$ref": "#/$defs/number"},
+        "matches": {"type": ["boolean", "null"]}
+      }
+    }},
+    "notes": {"$ref": "#/$defs/texts"},
+    "stances": {"type": "array", "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject", "asset", "stance", "score", "current_pct", "target_pct", "delta", "entry"],
+      "properties": {
+        "subject": {"type": "string"},
+        "asset": {"type": "string"},
+        "stance": {"enum": ["overweight", "neutral", "underweight", "avoid"]},
+        "score": {"type": "number"},
+        "current_pct": {"$ref": "#/$defs/number"},
+        "target_pct": {"$ref": "#/$defs/number"},
+        "delta": {"type": ["string", "null"]},
+        "entry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["style", "tranches", "spacing_days"],
+          "properties": {
+            "style": {"enum": ["lump", "ladder", "none"]},
+            "tranches": {"type": "integer"},
+            "spacing_days": {"type": "integer"}
+          }
+        }
+      }
+    }},
+    "stale_inputs": {"$ref": "#/$defs/texts"},
+    "sources": {"$ref": "#/$defs/texts"},
+    "disclaimer": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "date": {"type": "string", "format": "date", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "texts": {"type": "array", "items": {"type": "string"}},
+    "number": {"type": ["number", "null"]},
+    "holding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbol", "name", "quantity", "value", "currency", "bucket"],
+      "properties": {
+        "symbol": {"type": "string"},
+        "name": {"type": "string"},
+        "quantity": {"type": "string"},
+        "value": {"$ref": "#/$defs/number"},
+        "currency": {"type": "string"},
+        "bucket": {"type": ["string", "null"], "description": "SUBJECT/asset, or null when no rule maps the line."}
+      }
+    }
+  }
+}

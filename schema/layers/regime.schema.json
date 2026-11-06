@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tomtomtomdev/investment-assist/schema/layers/regime.schema.json",
+  "title": "investment-assist layer 0 file (out/layers/regime.json)",
+  "description": "PLAN S33: the layer-0 regime and dollar call as `assist run` computed it, every input of assist.layers.regime (counted rules and not-adopted candidates) with value, newest date, vote and a 1-year weekly line. A builder that failed writes the common fields and `error` only. Extends the stance contract's model_fingerprint, stale_inputs, sources and disclaimer semantics. Heuristic context, not investment advice.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "as_of", "model_fingerprint", "stale_inputs", "sources", "disclaimer"],
+  "anyOf": [
+    {"required": ["error"]},
+    {"required": ["state", "dollar", "drivers", "points", "rule", "history_weeks", "inputs"]}
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "kind": {"const": "regime"},
+    "as_of": {"$ref": "#/$defs/date", "description": "Run date."},
+    "model_fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "error": {"type": "string", "description": "Why the file holds no layer data."},
+    "state": {"enum": ["risk_on", "neutral", "risk_off"]},
+    "dollar": {"enum": ["up", "flat", "down"]},
+    "drivers": {"$ref": "#/$defs/texts"},
+    "points": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["off", "on", "net"],
+      "properties": {
+        "off": {"type": "integer", "minimum": 0},
+        "on": {"type": "integer", "minimum": 0},
+        "net": {"type": "integer", "description": "off - on over counted inputs; risk_off at >= state_at, risk_on at <= -state_at."}
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state_at", "dollar_band_pct", "dollar_input", "window_weeks", "adopted"],
+      "properties": {
+        "state_at": {"type": "integer"},
+        "dollar_band_pct": {"type": "number"},
+        "dollar_input": {"type": "string"},
+        "window_weeks": {"type": "integer"},
+        "adopted": {"$ref": "#/$defs/texts"}
+      }
+    },
+    "history_weeks": {"type": "integer", "minimum": 1},
+    "inputs": {"type": "array", "items": {"$ref": "#/$defs/input"}},
+    "stale_inputs": {"$ref": "#/$defs/texts"},
+    "sources": {"$ref": "#/$defs/texts"},
+    "disclaimer": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "date": {"type": "string", "format": "date", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "texts": {"type": "array", "items": {"type": "string"}},
+    "number": {"type": ["number", "null"]},
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["feature", "series_id", "kind", "counted", "label", "value", "last", "vote", "direction", "history"],
+      "properties": {
+        "feature": {"type": "string"},
+        "series_id": {"type": "string"},
+        "kind": {"enum": ["level", "diff", "pct"], "description": "level: last value; diff: change over 13 weeks; pct: % change over 13 weeks."},
+        "counted": {"type": "boolean", "description": "True for the rule's inputs and adopted candidates; a candidate is shown, never counted."},
+        "label": {"type": ["string", "null"]},
+        "value": {"$ref": "#/$defs/number"},
+        "last": {"anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}], "description": "Newest point behind the value."},
+        "vote": {"type": ["integer", "null"], "description": "Risk-off points (1 or 2), -1 for a risk-on point, 0 inside both bands; null without a value."},
+        "direction": {"enum": ["risk_off", "risk_on", "neutral", "missing"]},
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["date", "series_value", "value"],
+            "properties": {
+              "date": {"$ref": "#/$defs/date"},
+              "series_value": {"$ref": "#/$defs/number", "description": "The series' last point on or before the date (none older than 14 days)."},
+              "value": {"$ref": "#/$defs/number", "description": "The input as regime.inputs computes it on the date."}
+            }
+          }
+        }
+      }
+    }
+  }
+}
