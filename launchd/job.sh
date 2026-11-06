@@ -23,6 +23,14 @@ LOG=$REPO/launchd/$JOB.log
 exec >>"$LOG" 2>&1
 cd "$REPO"
 
+# Telegram credentials (ASSIST_TELEGRAM_TOKEN, ASSIST_TELEGRAM_CHAT) may live in the gitignored
+# .env (chmod 600), as an alternative to the Keychain item; values are never echoed.
+if [ -f "$REPO/.env" ]; then
+    set -a
+    . "$REPO/.env"
+    set +a
+fi
+
 UV=${ASSIST_UV:-$(command -v uv || true)}
 if [ -z "$UV" ] || [ ! -x "$UV" ]; then
     echo "$(stamp) uv not found (set ASSIST_UV or put uv on PATH), $JOB not run"

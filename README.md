@@ -120,8 +120,14 @@ launchctl print gui/$(id -u)/com.tommy.investment-assist.weekly   # check one is
 
 The plists in git are templates. `install.sh` fills in the repo path (`ASSIST_REPO` overrides
 the main checkout) and the absolute `uv` path, because launchd's PATH has no Homebrew. Install
-from the main checkout after pulling. The jobs need Telegram credentials in the login Keychain,
-or the environment, to send.
+from the main checkout after pulling. The jobs need Telegram credentials to send: the login
+Keychain item, or `ASSIST_TELEGRAM_TOKEN` and `ASSIST_TELEGRAM_CHAT` in the environment or in the
+gitignored `.env` at the repo root (`chmod 600`), which `job.sh` loads before each run.
+
+Run the jobs on **one machine only**: each machine keeps its own journal and paper track, and two
+senders would deliver every message twice. Since 2026-11-06 that is this Mac (`/Users/tommy`,
+installed with `ASSIST_REPO=/Users/tommy/Projects/investment-assist`); the Windows tasks below
+are to be uninstalled.
 
 On Windows, `schedule.ps1` registers the same two jobs in Task Scheduler
 (`investment-assist-weekly` Monday 07:00, `investment-assist-regime` daily 07:05, so the check
