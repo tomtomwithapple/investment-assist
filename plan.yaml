@@ -846,7 +846,7 @@ slices:
 
   - id: P53-portfolio-trades
     title: "PLAN S32: layer 5 rolls each account forward from its latest statement through loaded financer `trades` documents (Stockbit TCs, Ajaib dailies) and carries documents.owner"
-    depends_on: [P4-portfolio]
+    depends_on: [P4-portfolio, P6-brief, F4-ops, F5-undervalued, F6-us-stocks, P42-ui-stance, P50-tier-replay]
     owns: ["src/assist/sources/financer.py", "src/assist/layers/portfolio.py", "src/assist/brief.py", "src/assist/views/stance.py", "tests/sources/test_financer.py", "tests/layers/test_portfolio.py", "tests/fixtures/financer/**", "docs/results/P53-portfolio-trades.md"]
     accept: uv run pytest -q tests/sources/test_financer.py tests/layers/test_portfolio.py tests/test_run_e2e.py && uv run ruff check .
     estimate: 1
