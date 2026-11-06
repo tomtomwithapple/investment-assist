@@ -14,6 +14,7 @@ import httpx
 
 from assist import brief, doctor, journal, notify, paper, pipeline, stance, status, web
 from assist.layers import regime as regime_layer
+from assist.layers import undervalued
 
 STATUS_HELP = ("local pages: stances, regime, signals, candidates, industries, portfolio, flows, "
                "paper, journal, source health")
@@ -179,9 +180,8 @@ def _brief(args: argparse.Namespace) -> int:
         print("telegram: nothing to send (out/ is empty)", file=sys.stderr)
         return 1
     day = date.fromisoformat(max(s["as_of"] for s in loaded.stances))
-    regimes = "/".join(sorted({s["regime"] for s in loaded.stances}))
-    msg = pipeline.message(loaded.stances, regime=regimes, day=day,
-                           brief_path=paths.briefs / f"{day}.md")
+    msg = pipeline.message(day=day, brief_path=paths.briefs / f"{day}.md",
+                           undervalued=undervalued.load_out(paths.out))
     result = notify.send(msg, kind="brief", day=day, state_dir=paths.notify)
     print(notify.describe(result), file=sys.stderr)
     return 0

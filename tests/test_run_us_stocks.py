@@ -252,9 +252,7 @@ def test_brief_has_a_usa_block_after_idn(tmp_path):
 
 def test_message_has_a_usa_top_five():
     p = journal.jsonable(build(inputs()))
-    st = [{"subject": "USA", "asset": "stocks", "stance": "overweight", "score": 64.3,
-           "portfolio": {"delta": "+5.0pt lump"}, "stale_inputs": []}]
-    text = pipeline.message(st, regime="neutral", day=DAY, brief_path=None, undervalued=[p])
+    text = pipeline.message(day=DAY, brief_path=None, undervalued=[p])
     assert "Undervalued USA" in text and "MSFT" in text and "KO" in text
 
 

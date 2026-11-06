@@ -302,9 +302,7 @@ def test_build_brief_adds_the_section_from_out_candidates(tmp_path):
 def test_message_lists_top_five():
     p = build(inputs({"dividend_value": screen("dividend_value", cands=DIV),
                       "garp": screen("garp", cands=GARP)}))
-    st = [{"subject": "IDN", "asset": "stocks", "stance": "neutral", "score": 48.6,
-           "portfolio": {"delta": "0.0pt hold"}, "stale_inputs": []}]
-    text = pipeline.message(st, regime="neutral", day=DAY, brief_path=None, undervalued=[p])
+    text = pipeline.message(day=DAY, brief_path=None, undervalued=[p])
     assert "Undervalued IDN" in text
     assert text.index("BMRI") < text.index("NICL")
     assert text.count("\n  ") >= 5 and text.rstrip().endswith("not investment advice.")

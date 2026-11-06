@@ -843,25 +843,52 @@ def _journal_idn(j: journal.Journal, layers: Layers, stances: Mapping, fp: str,
 # ---------------- notify ----------------
 
 
-def message(stances: Sequence[Mapping], *, regime: str | None, day: date,
-            brief_path: Path | None, undervalued: Sequence[Mapping] = ()) -> str:
-    """The Telegram text: every home-market stance plus every non-neutral one elsewhere, so the
-    message stays one Telegram part; the rest is counted and left to the brief. `undervalued`
-    (candidates payloads) adds each market's style verdicts and its top 5 names."""
-    shown = [s for s in stances if s.get("subject") == HOME or s.get("stance") != "neutral"]
-    hidden = len(stances) - len(shown)
-    text = notify.summary(shown, regime=regime, day=day)
-    notes = list(_undervalued_lines(undervalued))
-    if notes:
-        notes.append("")
-    if hidden:
-        notes.append(f"{hidden} neutral stance(s) elsewhere not shown")
+def message(*, day: date, brief_path: Path | None, undervalued: Sequence[Mapping] = ()) -> str:
+    """The Telegram text: per market (IDN, then USA) the undervalued top 5, then the names
+    sized to sell or buy (`sizing`). Stances, regime and the portfolio legs are in the brief."""
+    lines = [f"investment-assist {day.isoformat()}", ""]
+    lines += _undervalued_lines(undervalued) or ["Undervalued: no market read this run"]
+    trades = trade_lines(undervalued)
+    if trades:
+        lines += ["", *trades]
     if brief_path is not None:
-        notes.append(f"brief: {brief_path.name}")
-    if notes:
-        body, _, tail = text.rpartition("\n\n")  # keep the disclaimer last
-        text = "\n".join([body, "", *notes, "", tail])
-    return text
+        lines += ["", f"brief: {brief_path.name}"]
+    lines += ["", "Heuristic, not investment advice."]
+    return "\n".join(lines)
+
+
+def _m(idr: float) -> str:
+    return f"{idr / 1e6:,.1f}m"
+
+
+def trade_lines(payloads: Sequence[Mapping]) -> list[str]:
+    """Per market: every name sized to sell (`sizing.trims`, largest first, with its reason),
+    then every name sized to buy (a row's `size`), or one line saying there is none."""
+    lines: list[str] = []
+    for p in payloads:
+        mkt, sizing = p["market"], p.get("sizing") or {}
+        trims = sorted(sizing.get("trims") or (), key=lambda t: (-t["idr"], t["symbol"]))
+        if trims:
+            lines.append(f"{mkt} to sell ({len(trims)}, IDR {_m(sum(t['idr'] for t in trims))}):")
+            lines += [f"  {t['symbol']:<5} {_m(t['idr']):>6}  {t['reason']}" for t in trims]
+        else:
+            lines.append(f"{mkt} to sell: none")
+        buys, seen = [], set()
+        for st in p.get("styles") or ():
+            for r in st.get("rows") or ():
+                if r.get("size") and r["symbol"] not in seen:
+                    seen.add(r["symbol"])
+                    buys.append((r, st["style"]))
+        if buys:
+            total = sum(r["size"]["idr"] for r, _ in buys)
+            lines.append(f"{mkt} to buy ({len(buys)}, IDR {_m(total)}):")
+            lines += [f"  {r['symbol']:<5} {_m(r['size']['idr']):>6}  {style} #{r['rank']}"
+                      for r, style in buys]
+        else:
+            budget = sizing.get("budget_idr")
+            why = "" if not budget else f" (IDR {_m(budget)} budget unspent)"
+            lines.append(f"{mkt} to buy: none{why}")
+    return lines
 
 
 def _undervalued_lines(payloads: Sequence[Mapping]) -> list[str]:
@@ -1076,8 +1103,7 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
     res.ok = True
 
     if send:
-        msg = message(res.stances, regime=f"{layers.regime.state}, dollar {layers.regime.dollar}",
-                      day=day, brief_path=res.brief_path, undervalued=res.undervalued)
+        msg = message(day=day, brief_path=res.brief_path, undervalued=res.undervalued)
         res.notify = notify.send(msg, kind="brief", day=day, state_dir=paths.notify,
                                  **dict(notify_kw or {}))
     return res
