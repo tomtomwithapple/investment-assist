@@ -300,7 +300,7 @@ def test_paper_lines_benchmark_only_until_the_journal_has_history():
                                "2026-08-07")
     assert "4 stale week(s), not scored" in lines[0]
     assert "No stance history in the journal yet: benchmark marks only." in text
-    assert "Stale: JCI frozen at 2026-09-30" in text
+    assert "Stale: JCI ends 2026-09-30 (idxscape index_daily)" in text
     assert "Last scored week ends 2026-09-25" in text
 
 

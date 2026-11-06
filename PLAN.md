@@ -35,14 +35,13 @@ No stance has moved in phases B–D:
 - The foreign overrides and candidates are hand-set, so they move scores but not bands until they
   beat a placebo.
 
-**Paper tracking cannot score a single week, and gap 2b (no JCI fetcher) blocks it entirely**
-(P44). The JCI leg ends 2026-09-30 (idx-method CSVs frozen). The SBN leg now reads the IGSYC 10Y
-from idxscape's PHEI tables, which are on this Mac but start in October, so the first week both
-legs have data (2026-10-06) is already after the last JCI close: the legs never overlap. Every
-model segment shows 0 weeks scored. Only a JCI series that runs past 2026-10-06 unblocks it.
+**Gap 2b closed 2026-11-06 (P51-jci-idxscape):** JCI now reads idxscape `index_daily`
+COMPOSITE (nightly, 2021-10-01 on), stitched to idx-method's frozen CSV before that. Paper
+tracking scores its first week (2026-10-09 → 10-16, benchmark −9.4%); the bond leg is now the
+binding one: IGSYC.10 ends 2026-10-21 in this Mac's idxscape store.
 
-**Next up:** the fetcher-side data gaps below (a JCI fetcher first, since paper tracking needs
-it), then install the jobs and let the journal build a record.
+**Next up:** the IGSYC staleness in idxscape, then install the jobs and let the journal build a
+record.
 
 | Phase | Slices | Done |
 |---|---|---|
@@ -63,10 +62,13 @@ Each gap is fixed in the repo named, never here. The brief flags each one under 
   live doctor shows `igsyc_point PHEI` fresh (2026-10-26), and the paper track's SBN leg reads
   IGSYC.10 (P44). The IGSYC history starts in October 2026, so the rules' walk-forwards still
   have little to test on.
-- **There is no JCI fetcher.** idx-method's index CSVs have been frozen at 2026-09-30 since
-  2026-10-19. The paper track's JCI leg, the stocks rule's journalled verdict and JCI's earnings
-  yield history all stop there. Because the IGSYC 10Y leg starts in October, the two paper legs
-  never overlap, so **paper tracking scores no week at all** until this is fixed (P44, F7-ui).
+- ~~**There is no JCI fetcher.**~~ Closed 2026-11-06 (P51-jci-idxscape): idxscape
+  `index_daily` (47 indices, 2021-10-01 on, nightly); `jci()` stitches idx-method's CSV before
+  2021-10-01. Sector indices and LQ45 are readable as `IDX.<code>` for betas and S16.
+- **idxscape: IGSYC.10 ends 2026-10-21 on this Mac** while `index_daily` runs to 2026-11-05,
+  so the paper track's bond leg stops there (3 of 4 weeks since 2026-10-06 stale). Nothing
+  captures PHEI here (no launchd jobs; scheduling moved to Windows): the paper track needs
+  either the PHEI job on this Mac or this run moved to the machine that has it (user's call).
 - **jquantster runs on the J-Quants free plan.** `investor_types` is empty (no TSE flows), and
   daily bars end 2026-07-31.
 - **openkrx has no index Parquet on disk** (`tw_index`, KR index). There is no KR or TW index
@@ -503,9 +505,8 @@ idx-method V2/V3 land):
   consensus snapshot (EPS and revenue forecasts, target price) per month into `factor_series`,
   so S19's forward leg can be tested later. **New V5:** quarterly revenue and D&A, for PS,
   EV/EBITDA and revenue growth.
-- idxscape (or another fetcher): the JCI and sector index series (gap 2b). S16's replay
-  can build sector returns from `factor_series` mktcap meanwhile, but the paper track and betas
-  need the official indices.
+- ~~idxscape: the JCI and sector index series (gap 2b).~~ Done 2026-11-06 (`index_daily`,
+  read as `IDX.<code>`; P51). S16's replay and the betas can switch to the official indices.
 - jquantster: a fresher daily price source (paid plan or another feed) before S22 ranks JP.
 - openkrx: R1 HANDOFF and KR/TW daily prices on Parquet.
 
@@ -718,6 +719,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S31 top tier model (P48-tier-model) | done (S31 open: P49, P50) | 2026-10-29 | `a6e38ef` | 26 tiers (1373 total) | blocked: idx-method `store/data/stockbiter.db` absent on this Mac, so `assist industries` exits 1 (`SourceUnavailable`); the tier inputs alone load (976 rows from `factors.json`, liquidity derived for 17 of the 20 names in `cache/history/`), fixtures only |
 | S31 top tier page (P49-tier-ui) | done (S31 open: live run) | 2026-10-29 | `5760090` | 67 view + web (1385 total) | fixtures only (no schema 4 file here); checked by headless Chrome screenshot in light, dark and the schema 3 fallback |
 | S31 top tier replay (P50-tier-replay) | done (S31 open: live verdict) | 2026-10-29 | `3d940e6` | 16 replay (1401 total) | fixtures: planted signal passes (t 19.78, p 0.001, perm_p 0.005, control t 0.15, 17 quarters), noise fails (t −0.25); live `run_live` returns `blocked` (no S30 membership: `stockbiter.db` absent) |
+| Gap 2b JCI from idxscape (P51-jci-idxscape) | done | 2026-11-06 | this commit | 8 index + stitch (1412 total) | `jci()` 7,314 closes 1996-10-02 → 2026-11-05 (1,224 from idxscape); paper: 0 → 1 week scored (2026-10-16, benchmark −9.4%, JCI −14.9%); IGSYC.10 ends 2026-10-21 here, so 3 weeks stale; JCI −11.6% on 2026-10-16 in IDX's own data |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

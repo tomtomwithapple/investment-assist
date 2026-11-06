@@ -97,9 +97,8 @@ geospacer (alternative data) is for theme research only and does not feed the fl
 1. ~~Finish layer 0~~ (done 2026-10-13: DTWEXBGS, DFII10, NFCI, DCOILBRENTEU added to `../sec-edgar/config/fred.yaml`).
 2. ~~idxscape J4: PHEI parser~~ (done 2026-10-22: `igsyc_point`, `phei_bond_quote`,
    `credit_curve_point`; the jobs Mac must pull idxscape so migration 9 runs there).
-2b. **JCI and IDX index series have no fetcher** (since 2026-10-19 idx-method no longer updates
-   `data/*_daily.csv`; frozen at 2026-09-30). Needed by the regime walk-forward, the IDN stocks
-   rule and paper tracking; belongs in idxscape (or another fetcher), not here.
+2b. ~~JCI and IDX index series~~ (done 2026-11-06: idxscape `index_daily`, read as `IDX.<code>`;
+   JCI stitched to idx-method's frozen CSV before 2021-10-01, P51).
 3. ~~China monthly~~ (done 2026-10-14: dbnomics `cn.*`; NBS mirror stale since 2026-03, no TSF/credit).
 4. ~~Eurozone monthly~~ (done 2026-10-14: dbnomics via ECB; no Bund 2Y, the euro-area 2Y
    benchmark stands in; unemployment from OECD).

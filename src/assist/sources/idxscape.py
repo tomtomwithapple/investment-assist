@@ -18,6 +18,11 @@ overlay (`idxscape.queries.macro_overlay`), so both repos show the same numbers.
 - `BROKER_VALUE_IDR.<code>`: per-broker daily value traded from `broker_summary` (migration 4;
   buy and sell combined, no split). No fetch time is stored, so `as_of` is None. Asked for by id
   or all at once through `brokers()`; never in the default `rows()`.
+- `IDX.<index_code>` (`index_series`): IDX index daily close from `index_daily` (migration 10,
+  key (trade_date, index_code)); JCI is `IDX.COMPOSITE`, plus LQ45, IDX30, the sector indices
+  (IDXENERGY, IDXFINANCE, ...) and the rest IDX lists. No open price (IDX serves none) and no
+  fetch time is stored, so `as_of` is None. Holidays have no rows. Asked for by id only; never in
+  the default `rows()`. `idxmethod.jci()` reads COMPOSITE through here.
 
 The default `rows()` is every default series whose tables exist. A series asked for by id whose
 table is absent (migration not applied) is `missing`, as is a store with none of the tables.
@@ -38,6 +43,8 @@ from assist.sources.base import Row, SourceUnavailable, duckdb_ro
 
 __all__ = [
     "BROKER_VALUE",
+    "COMPOSITE",
+    "INDEX",
     "IDX_NET_FOREIGN_IDR",
     "IDX_NET_FOREIGN_USD",
     "JISDOR",
@@ -45,6 +52,7 @@ __all__ = [
     "SBN_TOTAL",
     "SOURCE",
     "IdxscapeSource",
+    "index_series",
     "sbn_series",
 ]
 
@@ -55,6 +63,14 @@ IDX_NET_FOREIGN_IDR = "IDX_NET_FOREIGN_IDR"
 IDX_NET_FOREIGN_USD = "IDX_NET_FOREIGN_USD"
 BROKER_VALUE = "BROKER_VALUE_IDR."
 SBN_INSTRUMENTS = ("SUN", "SBSN", "TOTAL")
+INDEX = "IDX."
+
+
+def index_series(index_code: str) -> str:
+    return INDEX + index_code
+
+
+COMPOSITE = index_series("COMPOSITE")  # JCI (IHSG)
 
 
 def sbn_series(instrument: str, investor_type: str) -> str:
@@ -81,6 +97,8 @@ def _kind(sid: str) -> str | None:
         return "usd"
     if sid.startswith(BROKER_VALUE) and len(sid) > len(BROKER_VALUE):
         return "broker"
+    if sid.startswith(INDEX) and len(sid) > len(INDEX):
+        return "index"
     parts = sid.split(".")
     if len(parts) == 3 and parts[0] == "SBN" and parts[1] in SBN_INSTRUMENTS and parts[2]:
         return "sbn"
@@ -93,6 +111,7 @@ TABLES = {
     "usd": ("stock_summary", "fx_rate"),
     "sbn": ("sbn_ownership",),
     "broker": ("broker_summary",),
+    "index": ("index_daily",),
 }
 
 
@@ -200,6 +219,13 @@ class IdxscapeSource:
                 + f" where {' and '.join(['o.instrument = ?', 'o.investor_type = ?', *where])}"
                 " order by o.as_of",
                 [instrument, investor, *params],
+            )
+        if kind == "index":
+            where, params = _window("trade_date", start, end)
+            return (
+                "select trade_date, close, null::date from index_daily"
+                f" where {' and '.join(['index_code = ?', *where])} order by trade_date",
+                [sid.removeprefix(INDEX), *params],
             )
         where, params = _window("trade_date", start, end)
         return (

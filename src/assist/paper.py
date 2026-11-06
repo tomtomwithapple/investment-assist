@@ -8,8 +8,9 @@ fingerprint's rule set.
 - **Grid.** Marks fall on Fridays. A week runs from one Friday (`week_start`) to the next
   (`week_end`); a leg's level on a mark is its last value on or before that Friday.
 - **JCI leg.** P3's `idxmethod.jci()`, the one place JCI is read (price index, dividends not
-  included). idx-method's index CSVs are frozen at 2026-09-30 until a JCI fetcher exists: a mark
-  after the last close has no return and is reported stale, never carried forward.
+  included): idxscape `index_daily` COMPOSITE from 2021-10-01 (nightly), idx-method's frozen
+  CSV before that (P51). A mark after the last close has no return and is reported stale, never
+  carried forward.
 - **SBN leg.** OPEN QUESTION (PLAN.md): which SBN index. The leg is pluggable (`YieldBondLeg`
   or anything with the same `returns`/`stale_reason`); the default is a labelled synthetic
   constant-maturity 10Y par bond: each week it earns a week of coupon at the starting yield and
@@ -129,7 +130,8 @@ class JciLeg:
     """JCI (IHSG) weekly price returns; no return past the last close."""
 
     name = "JKSE"
-    label = "JCI (IHSG) price index, idx-method data/jkse_daily.csv (dividends not included)"
+    label = ("JCI (IHSG) price index, idxscape index_daily COMPOSITE, idx-method"
+             " data/jkse_daily.csv before 2021-10-01 (dividends not included)")
 
     def __init__(self, rows: Iterable[Row], stale_inputs: Iterable[str] = ()):
         self.series = _Series((r.date, r.value) for r in rows)
@@ -156,7 +158,7 @@ class JciLeg:
         if vt is None:
             return "JCI: no data (" + (", ".join(self.stale_inputs) or "empty") + ")"
         if d > vt:
-            return f"JCI: no close after {vt} (idx-method index CSVs frozen; no JCI fetcher)"
+            return f"JCI: no close after {vt} (idxscape index_daily)"
         return f"JCI: no close on or before {d}"
 
 
@@ -443,7 +445,7 @@ def paper_track(
 
     stale = [*jci.stale_inputs, *bond.stale_inputs]
     if jci.valid_through and until > jci.valid_through:
-        stale.append(f"JCI frozen at {jci.valid_through} (idx-method index CSVs; no JCI fetcher)")
+        stale.append(f"JCI ends {jci.valid_through} (idxscape index_daily)")
     if bond.valid_through and until > bond.valid_through:
         stale.append(f"{bond.name} ends {bond.valid_through}")
 

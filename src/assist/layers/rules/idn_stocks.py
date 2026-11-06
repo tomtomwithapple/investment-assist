@@ -26,10 +26,10 @@ Three inputs, each read point in time (rows dated on or before `as_of` and known
 `decide`: **enter** (overweight) when the market is cheap against the hurdle and neither flows
 nor macro are against it; **reduce** (underweight) when it is rich and flows or macro are against
 it; **hold** (neutral) otherwise; **no_call** when an input is missing. An enter is laddered when
-the regime is risk-off (or not given). The JCI level (idx-method, frozen at 2026-09-30, no
-fetcher) is context and the placebo's return series; its age is named in stale_inputs. The
-thresholds are hand-set: `gated_stance` lets the call change a stance only with a passing placebo
-verdict (`rule_verdict`, P9 harness).
+the regime is risk-off (or not given). The JCI level (`JciSource`: idxscape index_daily,
+idx-method CSV before 2021-10) is context and the placebo's return series; its age is named in
+stale_inputs. The thresholds are hand-set: `gated_stance` lets the call change a stance only with
+a passing placebo verdict (`rule_verdict`, P9 harness).
 
 PHEI is for the owner's local use only: drivers and details carry derived numbers (EY − 10Y, the
 real yield, the implied ERP), never the raw IGSYC 10Y.
@@ -56,7 +56,7 @@ from assist.layers.types import AssetScore, Regime, Signal
 from assist.sources.base import Row, Source, SourceUnavailable
 from assist.sources.bpslooker import CPI_YOY, BpsLookerSource
 from assist.sources.dbnomics import DbnomicsSource
-from assist.sources.idxmethod import JCI, IdxMethodIndexSource
+from assist.sources.idxmethod import JCI, JciSource
 from assist.sources.idxmethod_stocks import IdxMethodStocks
 from assist.sources.idxscape_phei import IGSYC_10Y, PheiSource
 from assist.sources.worldbankscape import WorldbankscapeSource
@@ -468,7 +468,7 @@ def _jci(b: _Builder, src: Source) -> None:
     if last is None:
         return
     if b.as_of - last.date > MAX_AGE["jci"]:
-        b.stale.append(f"{src.name} {JCI} (frozen, last {last.date})")
+        b.stale.append(f"{src.name} {JCI} (stale, last {last.date})")
     b.drivers.append(f"JCI {last.value:,.0f} on {last.date}")
 
 
@@ -503,7 +503,7 @@ def idn_stocks(
     valuation, v = _valuation(b, ey, ten, proxy, cpi, hurdle)
     flows = _flows(b, signals if signals is not None else idn_signals(as_of))
     macro, adjusted = _macro(b, score, worldbankscape, overrides)
-    _jci(b, idxmethod or IdxMethodIndexSource.from_config())
+    _jci(b, idxmethod or JciSource.from_config())
 
     if overrides is not None and (bi := overrides.component("bi_rate")) is not None:
         b.drivers.append(bi.detail)

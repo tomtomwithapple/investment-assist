@@ -820,3 +820,14 @@ slices:
       today's membership back-filled and flagged (survivorship until idx-method V2). Uses
       assist.eval.placebo; weights frozen before the run, per-pillar results are diagnostics only.
       A failing or insufficient verdict leaves the tiers context only.
+  - id: P51-jci-idxscape
+    title: "Gap 2b closed: JCI from idxscape index_daily COMPOSITE (stitched to idx-method's frozen CSV before 2021-10-01); IDX.<code> index series in the idxscape adapter"
+    depends_on: [P3-idn-prices, P30-paper]
+    owns: ["src/assist/sources/idxscape.py", "src/assist/sources/idxmethod.py", "tests/sources/test_idxscape_index.py", "tests/fixtures/idxscape/index_daily.sql", "docs/results/P51-jci-idxscape.md"]
+    accept: uv run pytest -q tests/sources/test_idxscape_index.py tests/sources/test_idxmethod_index.py tests/test_paper.py && uv run ruff check .
+    estimate: 1
+    notes: >-
+      Asked by the idxscape session (2026-11-06). index_daily (migration 10, key trade_date,
+      index_code) has 47 indices from 2021-10-01, nightly; COMPOSITE matches jkse_daily.csv
+      within 0.01 to 2026-09-30 (idxscape K1). The seam is idxscape's first close, never the
+      window's. Sector indices and LQ45 are now readable as IDX.<code> for betas and S16.

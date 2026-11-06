@@ -210,7 +210,7 @@ class IdnSources:
     kseistat: Any
     tic: Any
     phei: Any
-    idxmethod: Any  # idx-method index CSVs (JCI)
+    idxmethod: Any  # JCI: idxscape index_daily, idx-method CSV before 2021-10 (JciSource)
     snapshots: Any  # idx-method dated screener cross-sections (JCI earnings yield)
     stocks: Any  # idx-method stock files (screens, costs, entry levels)
 
@@ -220,7 +220,7 @@ class IdnSources:
         from assist.sources.bisfetcher import BisfetcherSource
         from assist.sources.bpslooker import BpsLookerSource
         from assist.sources.dbnomics import DbnomicsSource
-        from assist.sources.idxmethod import IdxMethodIndexSource
+        from assist.sources.idxmethod import JciSource
         from assist.sources.idxmethod_stocks import IdxMethodStocks
         from assist.sources.idxscape import IdxscapeSource
         from assist.sources.idxscape_phei import PheiSource
@@ -233,7 +233,7 @@ class IdnSources:
                    satudatascape=SatudatascapeSource.from_config(),
                    idxscape=IdxscapeSource.from_config(), kseistat=KseistatSource.from_config(),
                    tic=TicSource(), phei=PheiSource.from_config(),
-                   idxmethod=IdxMethodIndexSource.from_config(),
+                   idxmethod=JciSource.from_config(),
                    snapshots=FactorSnapshots.from_config(), stocks=IdxMethodStocks.from_config())
 
 

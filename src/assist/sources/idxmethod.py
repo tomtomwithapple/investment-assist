@@ -3,8 +3,13 @@
 idx-method stopped updating these on 2026-10-19 (README, *Changes the parent must follow*):
 they stay committed but frozen at their last pull (2026-09-30 daily, 2026-09-25 weekly). Every
 row's `as_of` is its file's real last date, so a stance built on them names the staleness.
-JCI (IHSG, `jkse_daily.csv`) is read through `jci()` only, so a future JCI fetcher swaps in
-there. Stock-level reads (stockbiter.db, cache/) are P19's, not this file's.
+Stock-level reads (stockbiter.db, cache/) are P19's, not this file's.
+
+JCI (IHSG) is read through `jci()` / `JciSource` only (gap 2b, closed by P51-jci-idxscape):
+idxscape's `index_daily` COMPOSITE (2021-10-01 on, nightly) wherever it has rows, and idx-method's
+`jkse_daily.csv` (1996 on, frozen) only for days before idxscape's first close. The two agree
+within 0.01 up to 2026-09-30 (idxscape slice K1), so the seam has no break. Every row keeps the
+series id `JKSE` and names its own source.
 """
 
 from __future__ import annotations
@@ -18,7 +23,7 @@ from pathlib import Path
 from assist.doctor import DEFAULT_CONFIG, load_sources
 from assist.sources.base import Row, Source, SourceUnavailable
 
-__all__ = ["JCI", "SERIES", "SOURCE", "IdxMethodIndexSource", "jci"]
+__all__ = ["JCI", "SERIES", "SOURCE", "IdxMethodIndexSource", "JciSource", "jci"]
 
 SOURCE = "idx-method"
 JCI = "JKSE"
@@ -98,8 +103,52 @@ class IdxMethodIndexSource:
             return list(csv.DictReader(f))
 
 
+class JciSource:
+    """JCI as one series: idxscape COMPOSITE where it has rows, idx-method's frozen CSV before
+    idxscape's first close. A source that is missing or locked drops out and the other carries
+    on; only both gone raises (idxscape's error). Any series other than `JKSE` is ignored."""
+
+    name = "idxscape+idx-method"
+
+    def __init__(self, idxscape: Source, idxmethod: Source):
+        self.idxscape, self.idxmethod = idxscape, idxmethod
+
+    @classmethod
+    def from_config(cls, config: Path = DEFAULT_CONFIG, env: dict | None = None) -> JciSource:
+        from assist.sources.idxscape import IdxscapeSource
+
+        return cls(IdxscapeSource.from_config(config, env),
+                   IdxMethodIndexSource.from_config(config, env))
+
+    def rows(
+        self,
+        series_ids: Sequence[str] | None = None,
+        start: date | None = None,
+        end: date | None = None,
+    ) -> list[Row]:
+        from assist.sources.idxscape import COMPOSITE
+
+        if series_ids is not None and JCI not in series_ids:
+            return []
+        errors = []
+        try:  # from idxscape's first close, not the window's, so the seam never moves
+            live = [r._replace(series_id=JCI)
+                    for r in self.idxscape.rows([COMPOSITE], None, end)]
+        except SourceUnavailable as e:
+            live, errors = [], [e]
+        first = live[0].date if live else None
+        try:
+            old = [r for r in self.idxmethod.rows([JCI], start, end)
+                   if first is None or r.date < first]
+        except SourceUnavailable as e:
+            old, errors = [], [*errors, e]
+        if len(errors) == 2:
+            raise errors[0]
+        return old + [r for r in live if start is None or r.date >= start]
+
+
 def jci(
     start: date | None = None, end: date | None = None, source: Source | None = None
 ) -> list[Row]:
-    """JCI (IHSG) daily close. The one place JCI is read: point it at a new fetcher here."""
-    return (source or IdxMethodIndexSource.from_config()).rows([JCI], start, end)
+    """JCI (IHSG) daily close. The one place JCI is read; defaults to `JciSource`."""
+    return (source or JciSource.from_config()).rows([JCI], start, end)

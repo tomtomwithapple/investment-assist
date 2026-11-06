@@ -404,7 +404,7 @@ def test_stale_snapshot_flagged():
 
 def test_jci_frozen_flagged_but_does_not_block():
     s = run()
-    assert "idx-method JKSE (frozen, last 2026-09-30)" in s.stale_inputs
+    assert "idx-method JKSE (stale, last 2026-09-30)" in s.stale_inputs
     assert s.call == "enter"
     s = run(idxmethod=Fake("idx-method", error="missing"))
     assert "idx-method (missing)" in s.stale_inputs and s.call == "enter"
