@@ -154,7 +154,7 @@ def bond_returns(yields: Sequence[tuple[date, float]], horizon: int = 3,
     Yields in %; the tail without a forward point is dropped."""
     pts = sorted(yields)
     return [(d, y / 100 * horizon / 12 - duration * (pts[i + horizon][1] - y) / 100)
-            for i, (d, y) in enumerate(pts[:len(pts) - horizon])]
+            for i, (d, y) in enumerate(pts[:max(0, len(pts) - horizon)])]
 
 
 def rule_verdict(calls: Mapping[date, str], yields: Sequence[tuple[date, float]],

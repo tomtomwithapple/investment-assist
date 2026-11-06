@@ -355,6 +355,13 @@ def test_bond_returns_carry_minus_duration():
     assert out[date(2024, 1, 1)] == pytest.approx(0.07 * 3 / 12 + 7.0 * 0.005)
 
 
+@pytest.mark.parametrize("n", [0, 1, 2, 3])
+def test_bond_returns_too_few_points_is_empty(n):
+    # 2 points with horizon 3 once sliced pts[:-1] (a negative stop) and indexed past the end
+    ys = [(date(2024, m, 1), 7.0) for m in range(1, n + 1)]
+    assert bond_returns(ys, horizon=3) == []
+
+
 def test_rule_verdict_passes_a_rule_that_works_and_fails_noise():
     months = _months(date(2025, 12, 1), 180)
     ys, calls, y = [], {}, 7.0
