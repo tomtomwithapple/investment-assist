@@ -943,4 +943,6 @@ slices:
     notes: >-
       US leg: sec-edgar Alpaca SPY adjusted (alpaca_bar_adjusted_lookup) or FRED SP500, times
       USD/IDR. JISDOR here starts 2026-10-22; pick a longer IDR rate or an idxscape backfill and
-      record the choice. CLAUDE.md's 60/40 line changes only with the user's OK.
+      record the choice. CLAUDE.md's 60/40 line changes only with the user's OK. Done: also
+      edits brief.paper_lines, the cli paper header, tests/test_ops.py, and a per-Usfin HTTP
+      timeout (sources/base.http_csv, sources/usfin) because `usfin serve` takes ~12 s for SPY.

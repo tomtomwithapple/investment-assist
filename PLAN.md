@@ -8,7 +8,7 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-11-06 (S39 done, P59-benchmark: whole-portfolio benchmark IDN stocks 48 / IDN bonds 32 / USA stocks 20; every target is benchmark + tilt, the three legs scaled pro rata to at most 100%, the rest cash; the other 46 stances target 0% outside the 80/20 mandate; live 45.7 / 30.5 / 23.8 = 100%, cash 0%; model 0.4.0, new journal segment). Earlier: 2026-11-06 (**phase H done**, S37 F8-ui-layers: the nav adds Regime, Signals, Portfolio and Flows; the overview banner links `/regime`, a stance's Drivers card links `/signals/<SUBJECT>` (only when that layer file exists) and its Portfolio card `/portfolio`; every page and its `.json` twin is 200 live and in the e2e test). Earlier: 2026-11-06 (S32 done, P53-portfolio-trades: layer 5 rolls each account forward through financer's loaded trade documents and splits the household by owner; live IDN stocks 96.90%, bonds 1.79%, cash 1.31% of Rp55.4 M, the second owner's 63 Stockbit lines Rp36.5 M at last trade prices). Earlier: 2026-10-29 (P48–P50 tiers). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against Stockbit's industry average and the sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S31 (top tier per industry) is built, P48–P50, but waits for a live run and replay verdict on a Mac with idx-method's `stockbiter.db`. S15 and S22 are open.
+**Last updated:** 2026-11-06 (S40 done, P60-paper-benchmark, **phase I done**: the paper benchmark is 48% JCI / 32% SBN leg / 20% US stocks in IDR (unhedged price index: Alpaca SPY × USD/IDR, JISDOR from 2026-10-22 spliced onto the MAS cross before it), from `stance.BENCHMARK_PCT`; the old 60/40 is reported beside it and still scores every segment journalled before S39; live 1 week scored (10-16, −7.7% vs −9.4% on 60/40), 3 stale on the IGSYC hole and the 11-06 mark). Earlier: 2026-11-06 (S39 done, P59-benchmark: whole-portfolio benchmark IDN stocks 48 / IDN bonds 32 / USA stocks 20; every target is benchmark + tilt, the three legs scaled pro rata to at most 100%, the rest cash; the other 46 stances target 0% outside the 80/20 mandate; live 45.7 / 30.5 / 23.8 = 100%, cash 0%; model 0.4.0, new journal segment). Earlier: 2026-11-06 (**phase H done**, S37 F8-ui-layers: the nav adds Regime, Signals, Portfolio and Flows; the overview banner links `/regime`, a stance's Drivers card links `/signals/<SUBJECT>` (only when that layer file exists) and its Portfolio card `/portfolio`; every page and its `.json` twin is 200 live and in the e2e test). Earlier: 2026-11-06 (S32 done, P53-portfolio-trades: layer 5 rolls each account forward through financer's loaded trade documents and splits the household by owner; live IDN stocks 96.90%, bonds 1.79%, cash 1.31% of Rp55.4 M, the second owner's 63 Stockbit lines Rp36.5 M at last trade prices). Earlier: 2026-10-29 (P48–P50 tiers). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against Stockbit's industry average and the sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S31 (top tier per industry) is built, P48–P50, but waits for a live run and replay verdict on a Mac with idx-method's `stockbiter.db`. S15 and S22 are open.
 
 What `assist run` does:
 - It reads layers 0, 1 and 5 for every subject.
@@ -55,7 +55,7 @@ a record.
 | F. Undervalued stocks, macro-weighted (IDN, then US, JP) | S16–S22 | 7 / 8 |
 | G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S30 | 8 / 8 |
 | H. Layer pages (regime, signals, portfolio) | S33–S37 | 5 / 5 |
-| I. Benchmark and portfolio limits (80% IDN / 20% US stocks) | S39–S40 | 0 / 2 |
+| I. Benchmark and portfolio limits (80% IDN / 20% US stocks) | S39–S40 | 2 / 2 |
 
 ### Open data gaps (fetcher side)
 
@@ -949,7 +949,7 @@ USA stocks stance.
    the 80/20 mandate"; a holding there shows as a trim (S39).
 2. ✓ (S39) Across all 49 stances the targets sum to at most 100%, tested; `/portfolio` shows the sums
    and the cash remainder; the S20a sizing reads the new targets (its 5% per-name cap stays) (S39).
-3. The paper track's benchmark becomes 48% JCI / 32% SBN leg / 20% US stocks in IDR (unhedged,
+3. ✓ (S40) The paper track's benchmark becomes 48% JCI / 32% SBN leg / 20% US stocks in IDR (unhedged,
    price index), marked weekly as now; the old 60/40 segment stays as it was scored (S40).
 
 - [x] **S39 Benchmark 48/32/20 and the 100% rule** (P59-benchmark). `stance.BENCHMARK_PCT`,
@@ -959,11 +959,18 @@ USA stocks stance.
   *Done 2026-11-06:* `docs/results/P59-benchmark.md`. A mandate leg more than
   `stance.TRANSITION_PT` (10 pt) from its target is laddered 3 × 10 days, adds and trims alike
   (user, 2026-11-06); live all three legs are.
-- [ ] **S40 Paper benchmark with a US leg** (P60-paper-benchmark). A third paper leg: US stocks
+- [x] **S40 Paper benchmark with a US leg** (P60-paper-benchmark). A third paper leg: US stocks
   in IDR from sec-edgar (Alpaca SPY adjusted bars, or FRED SP500) × USD/IDR. Data gap: this
   Mac's JISDOR starts 2026-10-22, so the history needs another IDR rate (FRED
   CCUSMA02IDM618N is monthly) or an idxscape JISDOR backfill; decide in the slice. CLAUDE.md's
   "fixed IDR 60/40 benchmark" line changes with this slice, with the user's OK.
+  *Done 2026-11-06:* `docs/results/P60-paper-benchmark.md`. US index: Alpaca SPY close × split
+  factor (price, 2016-01-04 →; FRED SP500 is not in sec-edgar). USD/IDR: JISDOR from
+  2026-10-22, the MAS cross USD/SGD ÷ IDR/SGD (singstat, daily from 2005) before it; on the 10
+  overlap days the two differ by at most 0.12%. The 60/40 is kept side by side, not chained: a
+  segment whose stance payloads carry `portfolio.benchmark_pct` (S39 on) is scored on 48/32/20
+  with its journalled targets, every older one exactly as before. CLAUDE.md's paper-benchmark
+  line awaits the user's OK.
 
 ## Open questions
 
@@ -1012,6 +1019,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S36 /portfolio (P57-ui-portfolio) | done | 2026-11-06 | this commit | 19 view (1519 total) | `/portfolio` 200 (57,991 B), `.json` 200 (43,597 B): Rp55,415,423 as of 11-02; stocks 96.90% vs 111.90% summed targets, bonds 1.79% vs 26.80%; 18 of 49 stances with a weight, target or entry; priskila 65.94%, tommy 34.06%; 12 accounts masked, bnisek statement 98 d flagged, Ajaib check matches; unmapped 0; IDN 10 trims, no adds; screenshots light and dark |
 | S37 fan-in: nav and cross-links (F8-ui-layers) | done | 2026-11-06 | this commit | e2e +11 routes, 5 web, 2 stance, 1 overview (1571 total) | nav Overview, Regime, Signals, Candidates, Industries, Portfolio, Flows, Paper, Journal, Status; live on a copy of the S33 `out/` + `assist flows`: 20 pages and their twins 200 (`/signals/IDN` 105 kB, `/portfolio` 58 kB, `/flows/2026-10` 15.5 kB), unknown subject and month 404; IDN bonds links `/signals/IDN` and `/portfolio`, GOLD only `/portfolio`; `/industries` a notice (no `IDN.json` in the copy); screenshots light and dark |
 | S39 benchmark 48/32/20 and the 100% rule (P59-benchmark) | done | 2026-11-06 | this commit | 45 stance (+15), 1 portfolio view, 1 stance view, layers out extended (1592 total) | 49 stances, model 0.4.0 `sha256:7822bcfd80…`: raw targets IDN stocks 48 (neutral) + IDN bonds 32 (neutral) + USA stocks 25 (overweight) = 105 → ×0.952 → 45.7 / 30.5 / 23.8 = 100.0%, cash 0%; moves above 10pt laddered 3×10d, adds and trims: IDN stocks 96.9 → 45.7 −51.2pt trim over 3 tranches, IDN bonds 1.8 → 30.5 +28.7pt over 3 tranches, USA stocks 0 → 23.8 +23.8pt over 3 tranches (estate-tax risk line); 46 outside the mandate at 0%, 0 trims there (nothing held outside IDN); S20a budget IDN Rp0 (trims only), USA Rp13,188,871 (unspent, no names); `/portfolio` 200 shows the sums and cash rest |
+| S40 paper benchmark with a US leg (P60-paper-benchmark) | done | 2026-11-06 | this commit | 30 paper (+10), 24 paper view (+2), ops updated (1604 total) | `assist paper` live: 48/32/20 from 2026-10-06, 1 week scored (10-16: −7.7% = JCI −14.9%, SBN leg −1.0%, US stocks −1.1% = SPY −2.0% × USD/IDR +0.9%), 3 stale (10-23 and 10-30: the IGSYC hole 10-22 → 11-03; 11-06: no JCI, SPY or JISDOR after 11-05 yet); legacy 60/40 1 week, −9.4%; journal segments `4ef43996` and `9607e4bd` are both pre-S39 and score identically to the old code (nothing scored yet); SPY 2016-01-04 → 2026-11-05 (2727 bars), USD/IDR MAS 2005-01-03 → 2026-10-21 + JISDOR 2026-10-22 → 11-05 |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

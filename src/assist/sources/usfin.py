@@ -25,7 +25,7 @@ from pathlib import Path
 import duckdb
 import httpx
 
-from assist.doctor import DEFAULT_CONFIG, load_sources
+from assist.doctor import DEFAULT_CONFIG, HTTP_TIMEOUT, load_sources
 from assist.sources.base import Row, SourceUnavailable, attach_ro, http_csv
 
 __all__ = [
@@ -77,6 +77,7 @@ class Usfin:
         self.client = client
         self.source = source
         self.via: str | None = None
+        self.timeout = HTTP_TIMEOUT  # a long read (a symbol's whole bar history) may raise it
 
     @classmethod
     def from_config(
@@ -95,7 +96,8 @@ class Usfin:
         if self.client is None:
             self.client = httpx.Client()
         try:
-            return http_csv(self.client, self.url + route, self.source, params)
+            return http_csv(self.client, self.url + route, self.source, params,
+                            timeout=self.timeout)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 return None

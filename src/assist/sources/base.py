@@ -195,7 +195,8 @@ def postgres_ro(dsn: str, source: str) -> Iterator[duckdb.DuckDBPyConnection]:
 
 
 def http_csv(
-    client: httpx.Client, url: str, source: str, params: dict | None = None
+    client: httpx.Client, url: str, source: str, params: dict | None = None,
+    timeout: float = HTTP_TIMEOUT,
 ) -> list[dict[str, str]]:
     """GET `url?format=csv` from a localhost server → one dict per CSV row.
 
@@ -203,7 +204,7 @@ def http_csv(
     5xx → error. A 4xx is a wrong path or id, so it raises."""
     check_local_url(url)
     try:
-        r = client.get(url, params={**(params or {}), "format": "csv"}, timeout=HTTP_TIMEOUT)
+        r = client.get(url, params={**(params or {}), "format": "csv"}, timeout=timeout)
     except httpx.TransportError as e:
         raise SourceUnavailable(source, "missing", f"{url}: {type(e).__name__}") from e
     if r.status_code >= 500:

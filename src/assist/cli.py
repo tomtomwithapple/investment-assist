@@ -225,7 +225,7 @@ def _paper(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(rep.to_dict(marks=args.marks), indent=2, sort_keys=True))
         return 0
-    print(f"paper track {day} (IDN sleeve vs the IDR 60/40 benchmark)")
+    print(f"paper track {day} (model allocation vs the IDR benchmark 48/32/20, legacy 60/40)")
     for line in brief.paper_lines(rep):
         print(f"- {line}")
     print(rep.disclaimer)
@@ -367,7 +367,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="with --check: compare only, write and send nothing")
     g.set_defaults(func=_regime)
 
-    p = sub.add_parser("paper", help="paper track: IDN stances vs the IDR 60/40 benchmark")
+    p = sub.add_parser("paper", help="paper track: stances vs the IDR benchmark "
+                                     "(48/32/20; legacy 60/40)")
     p.add_argument("--today", help="YYYY-MM-DD, mark up to this day (default today)")
     p.add_argument("--json", action="store_true", help="the full report as JSON")
     p.add_argument("--marks", action="store_true", help="with --json: include weekly marks")

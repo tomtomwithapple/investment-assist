@@ -1,5 +1,6 @@
-"""Paper tracking (PLAN S13): stance-implied IDN allocation vs a fixed IDR 60/40 benchmark (60%
-JCI, 40% SBN leg), marked weekly, scored per model fingerprint and never across fingerprints."""
+"""Paper tracking (PLAN S13, S40): stance-implied allocation vs the IDR benchmark 48% JCI / 32%
+SBN leg / 20% US stocks in IDR (the legacy 60/40 for segments before S39), marked weekly, scored
+per model fingerprint and never across fingerprints. No store is opened: every leg is given."""
 
 from datetime import date, timedelta
 
@@ -38,6 +39,14 @@ def _jci_rows(closes, start=FRI, last=None):
 
 def _flat_bond(n, y=7.0, start=FRI):
     return pp.YieldBondLeg([(d, y) for d in _fridays(n, start)], label="test flat 10Y")
+
+
+def _flat_us(n, start=FRI, usd=500.0, fx=16000.0):
+    days = _fridays(n, start)
+    return pp.UsLeg([(d, usd) for d in days], [(d, fx) for d in days], label="test US leg")
+
+
+LEGACY = pp.LEGACY_BENCHMARK_PCT
 
 
 # ---------------- grid and legs ----------------
@@ -170,7 +179,7 @@ def test_daily_bond_capture_gap_while_idx_traded_leaves_weeks_unscored():
     caught = [d for d in days if d <= date(2026, 10, 21) or d >= date(2026, 11, 4)]
     bond = pp.YieldBondLeg([(d, 7.0) for d in caught], label="x", name="IGSYC.10", daily=True)
     grid = pp.fridays(date(2026, 10, 9), date(2026, 11, 6))
-    marks = pp.benchmark_marks(jci, bond, grid)
+    marks = pp.benchmark_marks(jci, bond, grid, pct=LEGACY)
     got = {m.week_end: m.benchmark is not None for m in marks}
     # 10-16 scored; 10-23 and 10-30 lag (yield 10-21); 11-06 starts from the lagging 10-30 mark
     assert got == {date(2026, 10, 16): True, date(2026, 10, 23): False,
@@ -180,7 +189,7 @@ def test_daily_bond_capture_gap_while_idx_traded_leaves_weeks_unscored():
         "SBN leg: no IGSYC.10 yield on 2026-10-23's last IDX day (last 2026-10-21)"]
     # the same yields as a monthly-style leg (daily=False) carry forward as before
     loose = pp.YieldBondLeg([(d, 7.0) for d in caught], label="x", name="IGSYC.10")
-    assert all(m.benchmark is not None for m in pp.benchmark_marks(jci, loose, grid))
+    assert all(m.benchmark is not None for m in pp.benchmark_marks(jci, loose, grid, pct=LEGACY))
 
 
 def test_daily_bond_holiday_shuts_both_markets_and_is_not_a_gap():
@@ -188,14 +197,14 @@ def test_daily_bond_holiday_shuts_both_markets_and_is_not_a_gap():
     days = [d for d in _daily(date(2026, 10, 16), 11) if d != date(2026, 10, 23)]
     jci = pp.JciLeg([Row("JKSE", d, 100.0, None, "idxscape") for d in days])
     bond = pp.YieldBondLeg([(d, 7.0) for d in days], label="x", name="IGSYC.10", daily=True)
-    marks = pp.benchmark_marks(jci, bond, [date(2026, 10, 16), date(2026, 10, 23)])
+    marks = pp.benchmark_marks(jci, bond, [date(2026, 10, 16), date(2026, 10, 23)], pct=LEGACY)
     assert marks[0].benchmark is not None and marks[0].stale == []
 
 
 def test_benchmark_marks_are_60_40_rebalanced_weekly_and_stale_marks_carry_no_return():
     jci = pp.JciLeg(_jci_rows([100.0, 110.0, 121.0]))
     bond = _flat_bond(4, 5.2)
-    marks = pp.benchmark_marks(jci, bond, _fridays(4))
+    marks = pp.benchmark_marks(jci, bond, _fridays(4), pct=LEGACY)
     assert len(marks) == 3
     m = marks[0]
     assert m.week_start == FRI and m.week_end == _fridays(2)[1]
@@ -229,7 +238,7 @@ def test_segments_scored_separately_and_never_pooled(tmp_path):
     j.record(kind="candidate", fingerprint=FP_B, inputs={}, outputs={}, as_of=d[4])  # ignored
     jci = pp.JciLeg(_jci_rows([100, 102, 104, 103, 105, 107, 106, 110]))
     bond = _flat_bond(8, 7.0)
-    rep = pp.paper_track(journal=j, jci=jci, bond=bond, until=d[-1])
+    rep = pp.paper_track(journal=j, jci=jci, bond=bond, until=d[-1], us=_flat_us(8))
 
     a, b = rep.segments
     assert (a.fingerprint, b.fingerprint) == (FP_A, FP_B)
@@ -255,7 +264,7 @@ def test_stance_known_only_from_week_start_no_lookahead(tmp_path):
     _stance(j, FP_A, "stocks", "neutral", d[0])
     _stance(j, FP_A, "stocks", "avoid", d[1] + timedelta(days=2))  # Sunday after d1
     rep = pp.paper_track(journal=j, jci=pp.JciLeg(_jci_rows([100, 101, 102, 103])),
-                         bond=_flat_bond(4), until=d[-1])
+                         bond=_flat_bond(4), until=d[-1], us=_flat_us(4))
     (seg,) = rep.segments
     assert [m.weights["stocks"] for m in seg.marks] == [60.0, 60.0, 0.0]
 
@@ -265,7 +274,7 @@ def test_weeks_past_frozen_jci_are_stale_and_excluded(tmp_path):
     d = _fridays(5)
     _stance(j, FP_A, "stocks", "neutral", d[0])
     rep = pp.paper_track(journal=j, jci=pp.JciLeg(_jci_rows([100, 101, 102])),
-                         bond=_flat_bond(5), until=d[-1])
+                         bond=_flat_bond(5), until=d[-1], us=_flat_us(5))
     (seg,) = rep.segments
     assert seg.weeks == 2 and seg.stale_weeks == 2
     assert all(m.portfolio is None and m.stale for m in seg.marks[2:])
@@ -277,7 +286,7 @@ def test_identical_stances_track_the_benchmark(tmp_path):
     _stance(j, FP_A, "stocks", "neutral", d[0])
     _stance(j, FP_A, "bonds", "neutral", d[0])
     rep = pp.paper_track(journal=j, jci=pp.JciLeg(_jci_rows([100, 97, 99, 104, 101])),
-                         bond=_flat_bond(5), until=d[-1])
+                         bond=_flat_bond(5), until=d[-1], us=_flat_us(5))
     (seg,) = rep.segments
     assert seg.active_return == pytest.approx(0.0, abs=1e-12)
     assert seg.tracking_error == pytest.approx(0.0, abs=1e-12)
@@ -288,7 +297,8 @@ def test_no_journal_gives_benchmark_marks_only(tmp_path):
     d = _fridays(4)
     rep = pp.paper_track(journal=Journal(tmp_path / "none"),
                          jci=pp.JciLeg(_jci_rows([100, 101, 102, 103])),
-                         bond=_flat_bond(4), start=d[0], until=d[-1])
+                         bond=_flat_bond(4), start=d[0], until=d[-1],
+                         us=_flat_us(4))
     assert rep.segments == []
     assert len(rep.benchmark) == 3
     assert any("no stance records" in n for n in rep.notes)
@@ -303,6 +313,180 @@ def test_report_names_stale_inputs_and_frozen_jci():
     bond = pp.bond_leg(phei=FakeSource("idxscape_phei", error="missing"),
                        dbn=FakeSource("dbnomics", [
                            Row("idn.rate.long", date(2025, 12, 1), 6.0, None, "dbnomics")]))
-    rep = pp.paper_track(records=[], jci=jci, bond=bond, start=d[0], until=d[-1])
+    rep = pp.paper_track(records=[], jci=jci, bond=bond, start=d[0], until=d[-1],
+                         us=_flat_us(3))
     assert "idxscape_phei (missing)" in rep.stale_inputs
     assert any(s.startswith("JCI") for s in rep.stale_inputs)
+
+
+# ---------------- S40: the US leg and the 48/32/20 benchmark ----------------
+
+
+def test_benchmark_weights_come_from_stance_and_sum_to_100():
+    from assist import stance
+
+    assert pp.BENCHMARK_PCT == {"stocks": 48.0, "bonds": 32.0, "usa": 20.0}
+    assert sum(pp.BENCHMARK_PCT.values()) == pytest.approx(100.0)
+    assert {pp.LEG_KEYS[k]: v for k, v in stance.BENCHMARK_PCT.items()} == pp.BENCHMARK_PCT
+    assert sum(pp.LEGACY_BENCHMARK_PCT.values()) == pytest.approx(100.0)
+    assert pp.pct_text(pp.BENCHMARK_PCT) == "48% JCI / 32% SBN leg / 20% US stocks (IDR)"
+
+
+def _us(usd, fx, days=None):
+    days = days or _fridays(len(usd))
+    return pp.UsLeg(list(zip(days, usd, strict=True)), list(zip(days, fx, strict=True)),
+                    label="t")
+
+
+def test_us_leg_idr_return_rises_with_usd_and_with_a_weaker_rupiah():
+    g = _fridays(2)
+    only_usd = _us([100.0, 110.0], [16000.0, 16000.0]).weekly(g)[g[1]]
+    only_fx = _us([100.0, 100.0], [16000.0, 16800.0]).weekly(g)[g[1]]
+    both = _us([100.0, 110.0], [16000.0, 16800.0]).weekly(g)[g[1]]
+    assert only_usd[0] == pytest.approx(0.10) and only_usd[2] == pytest.approx(0.0)
+    assert only_fx[0] == pytest.approx(0.05) and only_fx[1] == pytest.approx(0.0)
+    assert both[:3] == pytest.approx((1.10 * 1.05 - 1, 0.10, 0.05))
+    assert both[3] == []
+    stronger = _us([100.0, 100.0], [16000.0, 15200.0]).weekly(g)[g[1]]
+    assert stronger[0] == pytest.approx(-0.05)  # rupiah stronger: the unhedged leg loses
+
+
+def test_us_leg_staleness_is_its_own_calendar_not_idx():
+    fri0, fri1 = date(2026, 10, 16), date(2026, 10, 23)
+    mon = date(2026, 10, 26)
+    fx = [(fri0, 16000.0), (fri1, 16100.0), (mon, 16100.0)]
+    # US closed Friday 10-23 (holiday): Thursday's close is the mark's level once Monday's exists
+    leg = pp.UsLeg([(fri0, 100.0), (date(2026, 10, 22), 101.0), (mon, 102.0)], fx, label="t")
+    r, *_, why = leg.weekly([fri0, fri1])[fri1]
+    assert why == [] and r == pytest.approx(1.01 * 16100 / 16000 - 1)
+    # before Monday's close the Friday close may still come: past the last close is stale
+    early = pp.UsLeg([(fri0, 100.0), (date(2026, 10, 22), 101.0)], fx, label="t")
+    assert early.weekly([fri0, fri1])[fri1][3] == [
+        "US leg: no SPY close after 2026-10-22 (mark 2026-10-23)"]
+    # last US close Wednesday: a capture gap, stale and named
+    gap = pp.UsLeg([(fri0, 100.0), (date(2026, 10, 21), 101.0), (mon, 102.0)], fx, label="t")
+    r, *_, why = gap.weekly([fri0, fri1])[fri1]
+    assert r is None and why == ["US leg: no SPY close for the 2026-10-23 mark (last 2026-10-21)"]
+    # IDX shut Friday but the US traded: the US leg does not need IDX's last day
+    jci = pp.JciLeg([Row("JKSE", d, 100.0, None, "idxscape")
+                     for d in (fri0, date(2026, 10, 22))])
+    ok = pp.UsLeg([(fri0, 100.0), (fri1, 102.0)], fx, label="t")
+    assert ok.weekly([fri0, fri1], jci.series.last_day)[fri1][3] == []
+
+
+def test_us_leg_fx_gap_while_idx_traded_is_stale_but_a_long_idx_holiday_is_not():
+    fri0, fri1 = date(2026, 10, 16), date(2026, 10, 23)
+    usd = [(fri0, 100.0), (fri1, 100.0), (date(2026, 10, 26), 100.0)]
+    fx = [(fri0, 16000.0), (date(2026, 10, 20), 16050.0),  # Tuesday, then nothing to Monday
+          (date(2026, 10, 26), 16060.0)]
+    leg = pp.UsLeg(usd, fx, label="t")
+    traded = pp.JciLeg([Row("JKSE", d, 1.0, None, "x") for d in (fri0, fri1)])
+    why = leg.weekly([fri0, fri1], traded.series.last_day)[fri1][3]
+    assert why == ["US leg: no USD/IDR fixing for the 2026-10-23 mark (last 2026-10-20)"]
+    lebaran = pp.JciLeg([Row("JKSE", d, 1.0, None, "x") for d in (fri0, date(2026, 10, 20))])
+    assert leg.weekly([fri0, fri1], lebaran.series.last_day)[fri1][3] == []
+
+
+def test_benchmark_48_32_20_mix_and_us_staleness_only_where_held():
+    d = _fridays(3)
+    jci = pp.JciLeg(_jci_rows([100.0, 110.0, 110.0]))
+    bond = _flat_bond(3, 5.2)
+    us = _us([100.0, 104.0], [16000.0, 16000.0], d[:2])  # US ends after week 1
+    marks = pp.benchmark_marks(jci, bond, d, us)
+    assert marks[0].benchmark == pytest.approx(0.48 * 0.10 + 0.32 * 0.052 / 52 + 0.20 * 0.04)
+    assert marks[0].usa == pytest.approx(0.04) and marks[0].usd_idr == pytest.approx(0.0)
+    assert marks[1].benchmark is None and any(s.startswith("US leg") for s in marks[1].stale)
+    legacy = pp.benchmark_marks(jci, bond, d, us, pct=LEGACY)
+    assert legacy[1].benchmark is not None and legacy[1].stale == []  # 60/40 needs no US
+
+
+def test_us_index_is_split_adjusted_price_not_total_return():
+    from assist.sources.usfin_stocks import UsBar
+
+    class Stocks:
+        def bars(self, symbol):
+            assert symbol == "SPY"
+            return [UsBar(date(2026, 1, 2), "SPY", 600.0, 1.0, 590.0, 1.0, 0.98),
+                    UsBar(date(2026, 1, 5), "SPY", 300.0, 1.0, 295.0, 2.0, 0.98)]
+
+    pts, stale = pp.us_index(Stocks())
+    assert pts == [(date(2026, 1, 2), 600.0), (date(2026, 1, 5), 600.0)] and stale == []
+
+
+def test_usd_idr_splices_mas_cross_before_jisdor_and_names_the_seam():
+    seam = date(2026, 10, 22)
+    days = [date(2026, 10, 20), date(2026, 10, 21), seam, date(2026, 10, 23)]
+    sg = FakeSource("singstat", [
+        *[Row("mas:fx:usdsgd", d, 1.28, None, "singstat") for d in days],
+        *[Row("mas:fx:idrsgd", d, 1.28 / 18000, None, "singstat") for d in days]])
+    idx = FakeSource("idxscape", [Row("JISDOR", d, 18047.0, None, "idxscape")
+                                  for d in days[2:]])
+    pts, pieces, stale = pp.usd_idr(idx=idx, sg=sg)
+    assert [d for d, _ in pts] == days and stale == []
+    assert pts[0][1] == pytest.approx(18000.0) and pts[2][1] == 18047.0  # JISDOR from the seam
+    assert [(p.name, p.first, p.last) for p in pieces] == [
+        ("MAS", days[0], days[1]), ("JISDOR", seam, days[3])]
+    # without singstat the history before JISDOR is missing and named, not invented
+    pts, pieces, stale = pp.usd_idr(idx=idx, sg=FakeSource("singstat", error="locked"))
+    assert [d for d, _ in pts] == days[2:] and stale == ["singstat (locked)"]
+
+
+def _rec(fp, subject, asset, stance, as_of, target=None, s39=True):
+    port = {"target_pct": target} if target is not None else {}
+    if s39:
+        port["benchmark_pct"] = 0.0
+    return {"kind": "stance", "fingerprint": fp, "subject": subject, "asset": asset,
+            "as_of": as_of.isoformat(), "outputs": {"stance": stance, "portfolio": port}}
+
+
+def test_s39_segment_scored_on_48_32_20_and_legacy_segment_unchanged():
+    d = _fridays(7)
+    jci = pp.JciLeg(_jci_rows([100, 102, 104, 103, 105, 107, 106]))
+    bond = _flat_bond(7, 7.0)
+    us = _us([100, 101, 103, 102, 104, 105, 107], [16000 + 50 * i for i in range(7)])
+    legacy_recs = [_rec(FP_A, "IDN", "stocks", "overweight", d[0], s39=False),
+                   _rec(FP_A, "IDN", "bonds", "neutral", d[0], s39=False),
+                   _rec(FP_A, "USA", "stocks", "overweight", d[0], s39=False)]
+    new_recs = [_rec(FP_B, "IDN", "stocks", "neutral", d[3], 45.7),
+                _rec(FP_B, "IDN", "bonds", "neutral", d[3], 30.5),
+                _rec(FP_B, "USA", "stocks", "overweight", d[3], 23.8)]
+    rep = pp.paper_track(records=legacy_recs + new_recs, jci=jci, bond=bond, us=us, until=d[-1])
+    a, b = rep.segments
+    # the legacy segment: the same score as the 60/40 code without any US leg (P30)
+    cut = _rec(FP_B, "IDN", "stocks", "neutral", d[3], s39=False)  # the same segment end
+    alone = pp.paper_track(records=[*legacy_recs[:2], cut], jci=jci, bond=bond, until=d[-1],
+                           us=pp.UsLeg([], [], label="none"))
+    old = alone.segments[0]
+    assert a.benchmark_pct == LEGACY and a.decisions == 2
+    assert (a.portfolio_return, a.benchmark_return, a.weeks) == (
+        old.portfolio_return, old.benchmark_return, old.weeks)
+    assert "usa" not in a.marks[0].weights
+    # the S39 segment holds the journalled targets and is scored on 48/32/20
+    assert b.benchmark_pct == pp.BENCHMARK_PCT and b.decisions == 3
+    w = b.marks[0].weights
+    assert (w["stocks"], w["bonds"], w["usa"]) == (45.7, 30.5, 23.8)
+    assert w["cash"] == pytest.approx(0.0, abs=1e-9)
+    m = b.marks[0]
+    assert m.benchmark == pytest.approx(0.48 * m.jci + 0.32 * m.sbn + 0.20 * m.usa)
+    assert m.portfolio == pytest.approx(0.457 * m.jci + 0.305 * m.sbn + 0.238 * m.usa)
+    # both benchmarks are reported side by side
+    assert rep.benchmark_pct == pp.BENCHMARK_PCT and rep.legacy_benchmark_pct == LEGACY
+    assert rep.benchmark and rep.legacy_benchmark and "usa" in rep.legs
+
+
+def test_mandate_weights_fall_back_to_benchmark_plus_tilt_and_scale():
+    w = pp.mandate_weights({"stocks": ("overweight", None), "usa": ("avoid", None)})
+    assert (w["stocks"], w["bonds"], w["usa"], w["cash"]) == (53.0, 32.0, 0.0, 15.0)
+    w = pp.mandate_weights({k: ("neutral", 50.0) for k in pp.LEGS})
+    assert sum(w[k] for k in pp.LEGS) == pytest.approx(100.0) and w["cash"] == 0.0
+
+
+def test_missing_us_store_leaves_the_benchmark_weeks_stale_and_named():
+    d = _fridays(3)
+    us = pp.UsLeg([], [], label="none", stale_inputs=["sec-edgar (locked)"])
+    rep = pp.paper_track(records=[], jci=pp.JciLeg(_jci_rows([100, 101, 102])),
+                         bond=_flat_bond(3), us=us, until=d[-1])
+    assert len(rep.benchmark) == 2 and all(m.benchmark is None for m in rep.benchmark)
+    assert all(any(s.startswith("US leg") for s in m.stale) for m in rep.benchmark)
+    assert "sec-edgar (locked)" in rep.stale_inputs
+    assert rep.legacy_summary["weeks"] == 2  # the 60/40 needs no US leg

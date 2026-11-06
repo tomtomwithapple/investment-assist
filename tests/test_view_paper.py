@@ -1,8 +1,9 @@
-"""The paper and journal pages (/paper, /journal): the 60/40 benchmark summary with the worst
-week computed here, each model segment, stale reasons, a failing paper callable as a notice, the
-report cached per (day, journal mtime), the chain check (ok and broken) with records per model,
-the .json twins and escaping. A canned PaperReport and a tmp journal built with journal.Journal;
-no real store, journal or network. The journal file must be byte-identical after every request."""
+"""The paper and journal pages (/paper, /journal): the benchmark summary (48/32/20 with the US
+leg, or an old 60/40 report) with the worst week computed here, each model segment, stale
+reasons, a failing paper callable as a notice, the report cached per (day, journal mtime), the
+chain check (ok and broken) with records per model, the .json twins and escaping. A canned
+PaperReport and a tmp journal built with journal.Journal; no real store, journal or network.
+The journal file must be byte-identical after every request."""
 
 from __future__ import annotations
 
@@ -153,6 +154,47 @@ def test_paper_summary_and_worst_week(jroot):
     assert "computed here" in s
     assert "Last scored week ends 2026-10-02: benchmark +0.5%" in s
     assert "JCI (IHSG) price index" in s and "synthetic 10Y par bond" in s
+
+
+def s40_report() -> PaperReport:
+    """A 48/32/20 report with the US leg and the legacy 60/40 beside it (S40)."""
+    rep = report()
+    rep.benchmark_pct = {"stocks": 48.0, "bonds": 32.0, "usa": 20.0}
+    rep.legs["usa"] = ("US stocks in IDR, unhedged, price index: Alpaca SPY close × split factor "
+                       "(sec-edgar) × USD/IDR (MAS cross then JISDOR)")
+    m = rep.benchmark[2]
+    m.usa, m.usa_usd, m.usd_idr = 0.0151, 0.01, 0.005
+    rep.legacy_benchmark_pct = {"stocks": 60.0, "bonds": 40.0}
+    rep.legacy_start = date(2026, 9, 11)
+    rep.legacy_summary = {"weeks": 3, "stale_weeks": 2, "cumulative": -0.004,
+                          "annualized": -0.07, "volatility": 0.1}
+    rep.segments[0].benchmark_pct = {"stocks": 60.0, "bonds": 40.0}
+    rep.segments[1].benchmark_pct = dict(rep.benchmark_pct)
+    return rep
+
+
+def test_paper_shows_the_us_leg_weights_sources_and_legacy_benchmark(jroot):
+    body = _get(_app(jroot, Paper(s40_report())), "/paper").body
+    s = _card(body, "summary")
+    assert "IDR benchmark 48/32/20" in s
+    assert "48% JCI / 32% SBN leg / 20% US stocks (IDR)" in s
+    assert "<th>US stocks leg (20%)</th>" in s and "Alpaca SPY" in s and "JISDOR" in s
+    assert "<th>Stocks leg (48%)</th>" in s and "<th>Bonds leg (32%)</th>" in s
+    assert ("US stocks (IDR) +1.5% = SPY +1.0% × USD/IDR +0.5%" in s)
+    legacy = _card(body, "legacy")
+    assert "Legacy benchmark 60/40" in legacy and "60% JCI / 40% SBN leg" in legacy
+    assert "never chained" in legacy
+    seg = _card(body, "segments")
+    rows = re.findall(r"<tr>(.*?)</tr>", seg, re.S)
+    assert "<td>60/40</td>" in rows[1] and "<td>48/32/20</td>" in rows[2]
+    d = json.loads(_get(_app(jroot, Paper(s40_report())), "/paper.json").body)
+    assert d["report"]["benchmark_pct"]["usa"] == 20.0
+    assert "legacy_benchmark" not in d["report"]
+
+
+def test_paper_old_report_without_us_leg_still_renders(jroot):
+    body = _get(_app(jroot), "/paper").body
+    assert "IDR benchmark 60/40" in body and 'class="card legacy"' not in body
 
 
 def test_paper_worst_week_none_when_nothing_scored(jroot):

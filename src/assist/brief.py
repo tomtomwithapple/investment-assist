@@ -12,9 +12,9 @@ listed under *Problems*, never raised. Same inputs give the same bytes (no clock
 
 Two optional sections come from outside `out/` (PLAN S14), each passed in as ready-made lines so
 the brief stays a pure function of its inputs: *Data health* (the doctor, one line per missing,
-locked or stale source; `health_lines`) right under the disclaimer, and *Paper track* (the 60/40
-benchmark and each model segment; `paper_lines`) before the details. Without them the brief is
-exactly as before.
+locked or stale source; `health_lines`) right under the disclaimer, and *Paper track* (the
+48/32/20 benchmark, the legacy 60/40 and each model segment; `paper_lines`) before the details.
+Without them the brief is exactly as before.
 
 *Undervalued candidates* (PLAN S20) is rendered from `out/candidates/*.json`
 (`schema/candidates.schema.json`) when that directory holds any valid file, so `assist brief`
@@ -185,30 +185,58 @@ def _signed(x: float | None) -> str:
     return "n/a" if x is None else f"{x * 100:+.1f}%"
 
 
-def paper_lines(report: Any) -> list[str]:
-    """`paper.PaperReport` in a few lines: the benchmark's scored and stale weeks, the last
-    scored week, one line per model segment (or "benchmark marks only"), stale legs, the legs.
-    A stale week is counted, never filled in."""
-    pct, bs = report.benchmark_pct, report.benchmark_summary
-    head = f"Benchmark {pct['stocks']:g}% JCI / {pct['bonds']:g}% SBN leg: "
-    if bs["weeks"]:
-        head += (f"{bs['weeks']} week(s) scored from {report.start}, cumulative "
-                 f"{_signed(bs['cumulative'])}, annualised {_signed(bs['annualized'])}")
+_LEG_NAMES = {"stocks": "JCI", "bonds": "SBN leg", "usa": "US stocks (IDR)"}
+
+
+def _pct_text(pct: Mapping) -> str:
+    return " / ".join(f"{pct[k]:g}% {n}" for k, n in _LEG_NAMES.items() if k in pct)
+
+
+def _bench_line(name: str, pct: Mapping, summary: Mapping, start: Any) -> str:
+    line = f"{name} {_pct_text(pct)}: "
+    if summary.get("weeks"):
+        line += (f"{summary['weeks']} week(s) scored from {start}, cumulative "
+                 f"{_signed(summary['cumulative'])}, annualised {_signed(summary['annualized'])}")
     else:
-        head += "no week scored"
-    if bs["stale_weeks"]:
-        head += f"; {bs['stale_weeks']} stale week(s), not scored"
-    lines = [head + "."]
+        line += "no week scored"
+    if summary.get("stale_weeks"):
+        line += f"; {summary['stale_weeks']} stale week(s), not scored"
+    return line + "."
+
+
+def mark_legs(m: Any) -> str:
+    """'JCI +1.0%, SBN leg +0.2%, US stocks (IDR) +0.9% = SPY +0.5% × USD/IDR +0.4%'."""
+    out = f"JCI {_signed(m.jci)}, SBN leg {_signed(m.sbn)}"
+    if getattr(m, "usa", None) is not None:
+        out += (f", US stocks (IDR) {_signed(m.usa)} = SPY {_signed(m.usa_usd)} × USD/IDR "
+                f"{_signed(m.usd_idr)}")
+    return out
+
+
+def paper_lines(report: Any) -> list[str]:
+    """`paper.PaperReport` in a few lines: the benchmark's scored and stale weeks (and the legacy
+    60/40's beside it), the last scored week with each leg, one line per model segment with the
+    benchmark it is scored on (or "benchmark marks only"), stale legs, the legs and their sources.
+    A stale week is counted, never filled in."""
+    lines = [_bench_line("Benchmark", report.benchmark_pct, report.benchmark_summary,
+                         report.start)]
     scored = [m for m in report.benchmark if m.benchmark is not None]
     if scored:
         m = scored[-1]
         lines.append(f"Last scored week ends {m.week_end}: benchmark {_signed(m.benchmark)} "
-                     f"(JCI {_signed(m.jci)}, SBN leg {_signed(m.sbn)}).")
+                     f"({mark_legs(m)}).")
+    legacy = getattr(report, "legacy_summary", None)
+    if legacy is not None and getattr(report, "legacy_benchmark_pct", None):
+        lines.append(_bench_line("Legacy benchmark (segments before S39)",
+                                 report.legacy_benchmark_pct, legacy, report.legacy_start))
     if not report.segments:
         lines.append("No stance history in the journal yet: benchmark marks only.")
     for seg in report.segments:
-        line = (f"Model `{_fingerprint(seg.fingerprint)}`: from {seg.first_as_of}, "
-                f"{seg.weeks} week(s) scored ({seg.stale_weeks} stale)")
+        pct = getattr(seg, "benchmark_pct", None)
+        line = (f"Model `{_fingerprint(seg.fingerprint)}`"
+                + (f" (vs {'/'.join(f'{v:g}' for v in pct.values())})" if pct else "")
+                + f": from {seg.first_as_of}, {seg.weeks} week(s) scored "
+                f"({seg.stale_weeks} stale)")
         if seg.weeks:
             hit = "n/a" if seg.hit_rate is None else f"{seg.hit_rate * 100:.0f}%"
             line += (f": portfolio {_signed(seg.portfolio_return)} vs benchmark "
@@ -218,7 +246,9 @@ def paper_lines(report: Any) -> list[str]:
             line += ": nothing scored yet"
         lines.append(line + ".")
     lines += [f"Stale: {x}." for x in report.stale_inputs]
-    lines.append(f"Legs: stocks = {report.legs['stocks']}; bonds = {report.legs['bonds']}.")
+    legs = "; ".join(f"{_LEG_NAMES[k]} = {report.legs[k]}" for k in _LEG_NAMES
+                     if k in report.legs)
+    lines.append(f"Legs: {legs}.")
     return lines
 
 

@@ -290,14 +290,19 @@ def _paper_report(records=()) -> paper.PaperReport:
     jci = paper.JciLeg([Row("JKSE", d, 7000 + 10 * i, d, "idx-method")
                         for i, d in enumerate(days) if d <= date(2026, 9, 30)])
     bond = paper.YieldBondLeg([(d, 6.5) for d in days], label="test 10Y", name="test10y")
-    return paper.paper_track(records=list(records), jci=jci, bond=bond, until=DAY)
+    us = paper.UsLeg([(d, 600 + i) for i, d in enumerate(days)],
+                     [(d, 16000 + 5 * i) for i, d in enumerate(days)], label="test SPY x USD/IDR")
+    return paper.paper_track(records=list(records), jci=jci, bond=bond, until=DAY, us=us)
 
 
 def test_paper_lines_benchmark_only_until_the_journal_has_history():
     lines = brief.paper_lines(_paper_report())
     text = "\n".join(lines)
-    assert lines[0].startswith("Benchmark 60% JCI / 40% SBN leg: 7 week(s) scored from "
-                               "2026-08-07")
+    assert lines[0].startswith("Benchmark 48% JCI / 32% SBN leg / 20% US stocks (IDR): 7 "
+                               "week(s) scored from 2026-08-07")
+    assert any(x.startswith("Legacy benchmark (segments before S39) 60% JCI / 40% SBN leg: 7 "
+                            "week(s)") for x in lines)
+    assert "US stocks (IDR) = test SPY x USD/IDR" in lines[-1]
     assert "4 stale week(s), not scored" in lines[0]
     assert "No stance history in the journal yet: benchmark marks only." in text
     assert "Stale: JCI ends 2026-09-30 (idxscape index_daily)" in text
@@ -325,7 +330,7 @@ def test_cli_paper_text_and_json(monkeypatch, capsys):
     monkeypatch.setattr(paper, "paper_track", lambda **kw: rep)
     assert cli.main(["paper", "--today", DAY.isoformat()]) == 0
     out = capsys.readouterr().out
-    assert "Benchmark 60% JCI" in out and DISCLAIMER in out
+    assert "Benchmark 48% JCI" in out and "Legacy benchmark" in out and DISCLAIMER in out
     assert cli.main(["paper", "--json"]) == 0
     assert '"segments": []' in capsys.readouterr().out
 

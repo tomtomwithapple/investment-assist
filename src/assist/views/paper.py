@@ -1,8 +1,10 @@
 """The paper and journal pages (/paper, /journal).
 
-/paper: `app.paper(until=app.today())`, the IDN sleeve per model segment vs the IDR 60/40
-benchmark, worded as `brief.paper_lines`. The worst week is the minimum of `m.benchmark` over the
-report's scored benchmark marks, computed here (the report has no such field). Stale reasons are
+/paper: `app.paper(until=app.today())`, each model segment's allocation vs the IDR benchmark
+(48% JCI / 32% SBN leg / 20% US stocks in IDR since S40; the legacy 60/40 beside it, for the
+segments journalled before S39), worded as `brief.paper_lines`. Each leg names its source. The
+worst week is the minimum of `m.benchmark` over the report's scored benchmark marks, computed
+here (the report has no such field). Stale reasons are
 `report.stale_inputs` plus every distinct `mark.stale`. The paper callable reads sibling stores
 (dbnomics' lock is mutual), so any exception is a notice and the page still renders. A report is
 cached on the App per (day, journal mtime), so reloads and HEAD do not reopen the stores; an
@@ -32,8 +34,9 @@ TITLE = "Assist Paper"
 JOURNAL_TITLE = "Assist Journal"
 NA = "n/a"
 CACHE_KEY = "paper"
-SEG_COLUMNS = ("Model", "Span", "Until", "Decisions", "Weeks", "Stale weeks", "Portfolio",
-               "Benchmark", "Active", "Hit rate", "")
+SEG_COLUMNS = ("Model", "Vs", "Span", "Until", "Decisions", "Weeks", "Stale weeks",
+               "Portfolio", "Benchmark", "Active", "Hit rate", "")
+LEG_ROWS = {"stocks": "Stocks leg", "bonds": "Bonds leg", "usa": "US stocks leg"}
 MODEL_COLUMNS = ("Model", "Records", "Stances", "Span")
 _LOCK = threading.Lock()  # one paper build at a time; the others wait for its cached report
 
@@ -131,6 +134,14 @@ def stale_reasons(rep: Any) -> list[str]:
     return out
 
 
+def _pct(pct: Any) -> str:
+    return esc(brief._pct_text(pct or {}))
+
+
+def _mix_name(pct: Any) -> str:
+    return "/".join(format(v, "g") for v in (pct or {}).values()) or NA
+
+
 def _summary(rep: Any) -> str:
     pct, bs = rep.benchmark_pct, rep.benchmark_summary
     ww = worst_week(rep)
@@ -141,26 +152,43 @@ def _summary(rep: Any) -> str:
     if scored:
         m = scored[-1]
         last = (f"<p>Last scored week ends {esc(str(m.week_end))}: benchmark "
-                f"{_signed(m.benchmark)} (JCI {_signed(m.jci)}, SBN leg {_signed(m.sbn)}).</p>")
-    head = (f"<p>Benchmark {esc(format(pct['stocks'], 'g'))}% JCI / "
-            f"{esc(format(pct['bonds'], 'g'))}% SBN leg, rebalanced weekly, from "
+                f"{_signed(m.benchmark)} ({esc(brief.mark_legs(m))}).</p>")
+    head = (f"<p>Benchmark {_pct(pct)}, rebalanced weekly, from "
             f"{esc(str(rep.start or NA))} to {esc(str(rep.as_of))}.</p>")
-    return _card("summary", "IDR 60/40 benchmark", head + _kv([
+    legs = [(f"{name} ({esc(format(pct[k], 'g'))}%)", esc(str(rep.legs.get(k, NA))))
+            for k, name in LEG_ROWS.items() if k in pct]
+    return _card("summary", f"IDR benchmark {_mix_name(pct)}", head + _kv([
         ("Weeks scored", esc(str(bs["weeks"]))), ("Stale weeks", esc(str(bs["stale_weeks"]))),
         ("Cumulative", _signed(bs["cumulative"])), ("Annualised", _signed(bs["annualized"])),
         ("Volatility", _vol(bs["volatility"])),
         ("Worst week", worst + (' <span class="muted">(computed here from the weekly marks)'
                                 "</span>" if ww else "")),
-        ("Stocks leg", esc(str(rep.legs.get("stocks", NA)))),
-        ("Bonds leg", esc(str(rep.legs.get("bonds", NA)))),
+        *legs,
         ("Bond series", esc(str(rep.bond_series)))]) + last
         + '<p class="muted">A stale week is counted, never filled in.</p>')
+
+
+def _legacy(rep: Any) -> str:
+    """The pre-S39 60/40 benchmark beside the current one (never chained)."""
+    pct, ls = getattr(rep, "legacy_benchmark_pct", None), getattr(rep, "legacy_summary", None)
+    if not pct or ls is None:
+        return ""
+    return _card("legacy", f"Legacy benchmark {_mix_name(pct)}", (
+        f"<p>{_pct(pct)}, from {esc(str(getattr(rep, 'legacy_start', None) or NA))}: scores the "
+        "model segments journalled before S39. Shown beside the current benchmark, never "
+        "chained to it.</p>") + _kv([
+            ("Weeks scored", esc(str(ls["weeks"]))),
+            ("Stale weeks", esc(str(ls["stale_weeks"]))),
+            ("Cumulative", _signed(ls["cumulative"])),
+            ("Annualised", _signed(ls["annualized"]))]))
 
 
 def _seg_row(s: Any) -> list[str]:
     scored = bool(s.weeks)
     hit = NA if s.hit_rate is None else f"{s.hit_rate * 100:.0f}%"
-    return [_short(s.fingerprint), _span(s.first_as_of, s.last_as_of),
+    pct = getattr(s, "benchmark_pct", None)
+    return [_short(s.fingerprint), esc(_mix_name(pct)) if pct else NA,
+            _span(s.first_as_of, s.last_as_of),
             "current" if s.until is None else esc(str(s.until)), esc(str(s.decisions)),
             esc(str(s.weeks)), esc(str(s.stale_weeks)), _signed(s.portfolio_return),
             _signed(s.benchmark_return), _signed(s.active_return), esc(hit),
@@ -174,8 +202,9 @@ def _segments(rep: Any) -> str:
         notes = [f"{brief._fingerprint(str(s.fingerprint))}: {n}" for s in rep.segments
                  for n in (s.notes or [])]
         inner = (_rows(SEG_COLUMNS, [_seg_row(s) for s in rep.segments])
-                 + '<p class="muted">Each segment is scored on its own weeks only; "until" is the '
-                   "next model's first decision.</p>" + (_list(notes) if notes else ""))
+                 + '<p class="muted">Each segment is scored on its own weeks only, against the '
+                   'benchmark in its Vs column; "until" is the next model\'s first decision.</p>'
+                 + (_list(notes) if notes else ""))
     return _card("segments", "Model segments", inner)
 
 
@@ -186,8 +215,8 @@ def _data(rep: Any) -> Any:
 def page(app: web.App, _m: re.Match[str]) -> web.View:
     day = app.today()
     built, error = report_for(app, day)
-    head = ('<h1>Paper track</h1><p class="muted">IDN sleeve per model vs the IDR 60/40 '
-            "benchmark.</p>")
+    head = ('<h1>Paper track</h1><p class="muted">Each model\'s allocation vs the IDR benchmark '
+            "(48/32/20 since S39; the legacy 60/40 for the segments before it).</p>")
     if built is None:
         body = head + web.notice(f"paper track unavailable: {error}")
         return web.View(TITLE, body, {"as_of": day, "error": error, "report": None,
@@ -195,7 +224,7 @@ def page(app: web.App, _m: re.Match[str]) -> web.View:
     rep = built.report
     try:
         reasons = stale_reasons(rep)
-        body = (head + _summary(rep) + _segments(rep)
+        body = (head + _summary(rep) + _legacy(rep) + _segments(rep)
                 + _card("stale", "Stale reasons", _list(reasons))
                 + _card("notes", "Notes", _list(rep.notes))
                 + f'<p class="muted">Report for {esc(str(day))}, built '
