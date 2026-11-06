@@ -104,6 +104,7 @@ def test_bond_leg_prefers_igsyc_10y_and_labels_it_synthetic():
     assert leg.stale_inputs == []
     assert dbn.calls == []
     assert leg.valid_through == days[-1]
+    assert leg.daily
 
 
 def test_bond_leg_falls_back_to_dbnomics_long_rate_at_month_end():
@@ -156,6 +157,39 @@ def test_implied_weights_tilt_from_60_40():
 
 
 # ---------------- benchmark ----------------
+
+
+def _daily(start, n):
+    return [start + timedelta(days=i) for i in range(n)]
+
+
+def test_daily_bond_capture_gap_while_idx_traded_leaves_weeks_unscored():
+    # JCI trades every day 2026-10-09 .. 11-06; IGSYC captured to 10-21, then 11-04 .. 11-06
+    days = _daily(date(2026, 10, 9), 29)
+    jci = pp.JciLeg([Row("JKSE", d, 100.0 + i, None, "idxscape") for i, d in enumerate(days)])
+    caught = [d for d in days if d <= date(2026, 10, 21) or d >= date(2026, 11, 4)]
+    bond = pp.YieldBondLeg([(d, 7.0) for d in caught], label="x", name="IGSYC.10", daily=True)
+    grid = pp.fridays(date(2026, 10, 9), date(2026, 11, 6))
+    marks = pp.benchmark_marks(jci, bond, grid)
+    got = {m.week_end: m.benchmark is not None for m in marks}
+    # 10-16 scored; 10-23 and 10-30 lag (yield 10-21); 11-06 starts from the lagging 10-30 mark
+    assert got == {date(2026, 10, 16): True, date(2026, 10, 23): False,
+                   date(2026, 10, 30): False, date(2026, 11, 6): False}
+    m23 = next(m for m in marks if m.week_end == date(2026, 10, 23))
+    assert m23.sbn is None and m23.stale == [
+        "SBN leg: no IGSYC.10 yield on 2026-10-23's last IDX day (last 2026-10-21)"]
+    # the same yields as a monthly-style leg (daily=False) carry forward as before
+    loose = pp.YieldBondLeg([(d, 7.0) for d in caught], label="x", name="IGSYC.10")
+    assert all(m.benchmark is not None for m in pp.benchmark_marks(jci, loose, grid))
+
+
+def test_daily_bond_holiday_shuts_both_markets_and_is_not_a_gap():
+    # Friday 10-23 is a holiday for both: last JCI close and last yield are both Thursday
+    days = [d for d in _daily(date(2026, 10, 16), 11) if d != date(2026, 10, 23)]
+    jci = pp.JciLeg([Row("JKSE", d, 100.0, None, "idxscape") for d in days])
+    bond = pp.YieldBondLeg([(d, 7.0) for d in days], label="x", name="IGSYC.10", daily=True)
+    marks = pp.benchmark_marks(jci, bond, [date(2026, 10, 16), date(2026, 10, 23)])
+    assert marks[0].benchmark is not None and marks[0].stale == []
 
 
 def test_benchmark_marks_are_60_40_rebalanced_weekly_and_stale_marks_carry_no_return():

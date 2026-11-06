@@ -831,3 +831,15 @@ slices:
       index_code) has 47 indices from 2021-10-01, nightly; COMPOSITE matches jkse_daily.csv
       within 0.01 to 2026-09-30 (idxscape K1). The seam is idxscape's first close, never the
       window's. Sector indices and LQ45 are now readable as IDX.<code> for betas and S16.
+  - id: P52-paper-daily-gap
+    title: "Paper track: a daily bond leg (IGSYC) with no yield on JCI's last trading day of a mark leaves that week unscored instead of carrying the old yield"
+    depends_on: [P30-paper, P51-jci-idxscape]
+    owns: ["src/assist/paper.py", "tests/test_paper.py"]
+    accept: uv run pytest -q tests/test_paper.py && uv run ruff check .
+    estimate: 1
+    notes: >-
+      User's call 2026-11-06 after this Mac's IGSYC gap 2026-10-22 → 11-03 (PHEI serves only
+      the current page). JCI's trading days are the calendar, so holidays (both markets shut)
+      never count as a gap; the monthly dbnomics fallback is not checked. Backfilling the gap
+      from the Windows machine's raw PHEI captures is deferred until this Mac's own PHEI
+      history is long enough.

@@ -6,7 +6,9 @@ Every number here is a score of past decisions, never a decision, so this module
 fingerprint's rule set.
 
 - **Grid.** Marks fall on Fridays. A week runs from one Friday (`week_start`) to the next
-  (`week_end`); a leg's level on a mark is its last value on or before that Friday.
+  (`week_end`); a leg's level on a mark is its last value on or before that Friday. A daily
+  bond leg (IGSYC) must also have a yield on JCI's last trading day before the mark: a capture
+  gap while IDX traded makes the mark stale rather than carrying the old yield (P52).
 - **JCI leg.** P3's `idxmethod.jci()`, the one place JCI is read (price index, dividends not
   included): idxscape `index_daily` COMPOSITE from 2021-10-01 (nightly), idx-method's frozen
   CSV before that (P51). A mark after the last close has no return and is reported stale, never
@@ -103,6 +105,11 @@ class _Series:
         i = bisect_right(self.days, d)
         return self.points[i - 1][1] if i else None
 
+    def last_day(self, d: date) -> date | None:
+        """The date of the point `at(d)` would use (None if none)."""
+        i = bisect_right(self.days, d)
+        return self.days[i - 1] if i else None
+
 
 class BondLeg(Protocol):
     name: str
@@ -187,9 +194,11 @@ class YieldBondLeg:
         stale_inputs: Iterable[str] = (),
         tenor_y: float = TENOR_Y,
         grace_days: int = 0,
+        daily: bool = False,
     ):
         self.series = _Series(yields, grace_days=grace_days)
         self.label, self.name, self.tenor_y = label, name, tenor_y
+        self.daily = daily  # a daily yield must exist on JCI's last trading day of each mark
         self.stale_inputs = list(stale_inputs)
 
     @property
@@ -236,7 +245,7 @@ def bond_leg(
         stale.append(e.stale_input)
     if rows:
         return YieldBondLeg(
-            [(r.date, r.value) for r in rows], name=IGSYC_10Y,
+            [(r.date, r.value) for r in rows], name=IGSYC_10Y, daily=True,
             label="synthetic constant-maturity 10Y par bond from the IGSYC 10Y yield "
                   "(idxscape PHEI, daily); not an SBN index")
 
@@ -295,14 +304,35 @@ class Mark:
     stale: list[str] = field(default_factory=list)
 
 
+def _lagging(jci: JciLeg, bond: BondLeg, grid: Sequence[date]) -> dict[date, date]:
+    """Marks where a daily bond leg's last yield is older than JCI's last close: IDX traded
+    but the yield was not captured, so the level would be carried forward. Mark → yield date.
+    A holiday shuts both markets, so it never shows here; a monthly leg is never checked."""
+    series = getattr(bond, "series", None)
+    if not getattr(bond, "daily", False) or series is None:
+        return {}
+    out = {}
+    for m in grid:
+        j, y = jci.series.last_day(m), series.last_day(m)
+        if j is not None and y is not None and y < j:
+            out[m] = y
+    return out
+
+
 def _marks(jci: JciLeg, bond: BondLeg, grid: Sequence[date]) -> list[Mark]:
     rj, rb = jci.returns(grid), bond.returns(grid)
+    lag = _lagging(jci, bond, grid)
     out = []
     for a, b in zip(grid, grid[1:], strict=False):
         stale = []
         if rj[b] is None:
             stale.append(jci.stale_reason(b))
-        if rb[b] is None:
+        late = [(m, lag[m]) for m in (a, b) if m in lag]
+        if late:
+            rb = {**rb, b: None}
+            stale += [f"SBN leg: no {bond.name} yield on {m}'s last IDX day (last {y})"
+                      for m, y in late]
+        elif rb[b] is None:
             stale.append(bond.stale_reason(b))
         bench = None if stale else _mix(BENCHMARK_PCT, rj[b], rb[b])
         out.append(Mark(a, b, rj[b], rb[b], bench, stale=stale))

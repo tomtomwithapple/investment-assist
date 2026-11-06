@@ -37,11 +37,13 @@ No stance has moved in phases B–D:
 
 **Gap 2b closed 2026-11-06 (P51-jci-idxscape):** JCI now reads idxscape `index_daily`
 COMPOSITE (nightly, 2021-10-01 on), stitched to idx-method's frozen CSV before that. Paper
-tracking scores its first week (2026-10-09 → 10-16, benchmark −9.4%); the bond leg is now the
-binding one: IGSYC.10 ends 2026-10-21 in this Mac's idxscape store.
+tracking scores its first week (2026-10-09 → 10-16, benchmark −9.4%). PHEI capture now runs on
+this Mac (idxscape, 2026-11-06), but IGSYC has a hole 2026-10-22 → 11-03 here; since P52 a week
+whose mark falls in a capture gap is left unscored rather than priced on an old yield.
 
-**Next up:** the IGSYC staleness in idxscape, then install the jobs and let the journal build a
-record.
+**Next up:** let this Mac's PHEI history build; then backfill 10-22 → 11-03 from the Windows
+machine's raw PHEI captures (user's call, deferred); install the jobs and let the journal build
+a record.
 
 | Phase | Slices | Done |
 |---|---|---|
@@ -65,10 +67,11 @@ Each gap is fixed in the repo named, never here. The brief flags each one under 
 - ~~**There is no JCI fetcher.**~~ Closed 2026-11-06 (P51-jci-idxscape): idxscape
   `index_daily` (47 indices, 2021-10-01 on, nightly); `jci()` stitches idx-method's CSV before
   2021-10-01. Sector indices and LQ45 are readable as `IDX.<code>` for betas and S16.
-- **idxscape: IGSYC.10 ends 2026-10-21 on this Mac** while `index_daily` runs to 2026-11-05,
-  so the paper track's bond leg stops there (3 of 4 weeks since 2026-10-06 stale). Nothing
-  captures PHEI here (no launchd jobs; scheduling moved to Windows): the paper track needs
-  either the PHEI job on this Mac or this run moved to the machine that has it (user's call).
+- **idxscape: IGSYC hole 2026-10-22 → 11-03 on this Mac.** PHEI capture runs here since
+  2026-11-06 (`com.tommy.idxscape.phei`, user's call), from 11-04 on. PHEI serves only the
+  current page, so the hole can only be filled from the Windows machine's raw captures:
+  deferred by the user until this Mac's own history suffices. Until then the paper weeks ending
+  10-23, 10-30 and 11-06 stay unscored (P52).
 - **jquantster runs on the J-Quants free plan.** `investor_types` is empty (no TSE flows), and
   daily bars end 2026-07-31.
 - **openkrx has no index Parquet on disk** (`tw_index`, KR index). There is no KR or TW index
@@ -720,6 +723,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S31 top tier page (P49-tier-ui) | done (S31 open: live run) | 2026-10-29 | `5760090` | 67 view + web (1385 total) | fixtures only (no schema 4 file here); checked by headless Chrome screenshot in light, dark and the schema 3 fallback |
 | S31 top tier replay (P50-tier-replay) | done (S31 open: live verdict) | 2026-10-29 | `3d940e6` | 16 replay (1401 total) | fixtures: planted signal passes (t 19.78, p 0.001, perm_p 0.005, control t 0.15, 17 quarters), noise fails (t −0.25); live `run_live` returns `blocked` (no S30 membership: `stockbiter.db` absent) |
 | Gap 2b JCI from idxscape (P51-jci-idxscape) | done | 2026-11-06 | this commit | 8 index + stitch (1412 total) | `jci()` 7,314 closes 1996-10-02 → 2026-11-05 (1,224 from idxscape); paper: 0 → 1 week scored (2026-10-16, benchmark −9.4%, JCI −14.9%); IGSYC.10 ends 2026-10-21 here, so 3 weeks stale; JCI −11.6% on 2026-10-16 in IDX's own data |
+| Paper capture gaps (P52-paper-daily-gap) | done | 2026-11-06 | this commit | 2 paper (1414 total) | live: with PHEI resumed (IGSYC to 11-05) the old carry scored 3 weeks (10-23 and 10-30 on the 10-21 yield); now 1 scored (10-16, −9.4%), 3 stale, each naming the yield gap |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`
