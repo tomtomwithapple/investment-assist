@@ -182,6 +182,11 @@ def _flows_month(app: App, m: re.Match[str]) -> View | None:
     return flows.page(app, m)
 
 
+def _regime(app: App, m: re.Match[str]) -> View:
+    from assist.views import regime
+    return regime.page(app, m)
+
+
 def _paper(app: App, m: re.Match[str]) -> View:
     from assist.views import paper
     return paper.page(app, m)
@@ -199,6 +204,7 @@ ROUTES: list[Route] = [(re.compile(r"^/$"), _overview),
                        (re.compile(r"^/industries$"), _industries),
                        (re.compile(r"^/flows$"), _flows),  # S38; the nav link comes with F8
                        (re.compile(r"^/flows/([^/]+)$"), _flows_month),
+                       (re.compile(r"^/regime$"), _regime),  # S34; the nav link comes with F8
                        (re.compile(r"^/paper$"), _paper),
                        (re.compile(r"^/journal$"), _journal)]
 
