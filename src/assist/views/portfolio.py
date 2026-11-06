@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from assist import web
+from assist.stance import mandate_summary
 from assist.views import candidates as cand
 from assist.views.overview import TONE
 from assist.web import esc
@@ -189,8 +190,34 @@ def _num_td(s: str) -> str:
 # ---------------- weights ----------------
 
 
+def mandate(p: Mapping) -> dict:
+    """The file's `mandate` block (S39), or the same sums worked out from its stance rows when
+    the file predates it."""
+    m = _d(p.get("mandate"))
+    if _isnum(m.get("target_sum_pct")) and _isnum(m.get("cash_pct")):
+        return {"benchmark_pct": dict(_d(m.get("benchmark_pct"))),
+                "targets_pct": dict(_d(m.get("targets_pct"))),
+                "target_sum_pct": m["target_sum_pct"], "cash_pct": m["cash_pct"]}
+    rows = [s for s in _l(p.get("stances")) if "subject" in s and "asset" in s]
+    return mandate_summary(rows)
+
+
+def _mandate_note(p: Mapping) -> str:
+    m = mandate(p)
+    bm = {str(k): v for k, v in m["benchmark_pct"].items() if _isnum(v)}
+    legs = " + ".join(f"{k.replace('/', ' ')} {pct(v)}" for k, v in sorted(m["targets_pct"].items())
+                      if _isnum(v))
+    bench = " / ".join(f"{k.replace('/', ' ')} {v:g}%" for k, v in sorted(bm.items()))
+    return (f'<p class="muted mandate">Targets: {esc(legs or DASH)} = '
+            f"<b>{esc(pct(m['target_sum_pct']))}</b> of the household; cash rest "
+            f"<b>{esc(pct(m['cash_pct']))}</b>. Benchmark {esc(bench or DASH)}, each leg tilted "
+            "±5 pt by its stance and scaled down pro rata if they pass 100%; every other stance "
+            "is outside the 80/20 mandate and targets 0%.</p>")
+
+
 def asset_classes(p: Mapping) -> list[dict]:
-    """Per asset class: current % (layer 5 buckets) and target % (sum of the stances' targets)."""
+    """Per asset class: current % (layer 5 buckets) and target % (sum of the stances' targets;
+    for cash, the cash rest the mandate leaves below 100%)."""
     out: dict[str, dict] = {}
     for b in _l(p.get("buckets")):
         a = out.setdefault(str(b.get("asset")), {"asset": str(b.get("asset")), "idr": 0.0,
@@ -202,6 +229,10 @@ def asset_classes(p: Mapping) -> list[dict]:
                                                  "current_pct": 0.0, "target_pct": None})
         if _isnum(s.get("target_pct")):
             a["target_pct"] = (a["target_pct"] or 0.0) + s["target_pct"]
+    if _l(p.get("stances")) and "cash" not in {str(s.get("asset")) for s in _l(p.get("stances"))}:
+        cash = out.setdefault("cash", {"asset": "cash", "idr": 0.0, "current_pct": 0.0,
+                                       "target_pct": None})
+        cash["target_pct"] = mandate(p)["cash_pct"]
     return sorted(out.values(), key=lambda a: (-a["current_pct"], a["asset"]))
 
 
@@ -253,9 +284,7 @@ def weights(p: Mapping) -> str:
     return _card("weights", "Weights against the stances' targets", (
         "<h3>Per asset class</h3>"
         + _table(("Asset class", "Value IDR", "Current %", "Target %", ""), ac, "no buckets")
-        + '<p class="muted">Target per asset class is the sum of each stance\'s own target; the '
-          "stances are sized one by one, so the targets need not add up to 100%.</p>"
-        + legend + "<h3>Per subject (layer 5 buckets)</h3>"
+        + _mandate_note(p) + legend + "<h3>Per subject (layer 5 buckets)</h3>"
         + _table(("Subject", "Asset", "Value IDR", "Weight %"), buckets, "no buckets")
         + f"<h3>Per stance ({len(active)} with a weight, a target or an entry)</h3>"
         + _table(head, _stance_rows(active, 100.0), "no stance holds or targets anything")

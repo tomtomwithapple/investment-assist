@@ -56,6 +56,7 @@ from assist.sources.idxscape import (
     SBN_NON_RESIDENT,
 )
 from assist.sources.usfin import net_liquidity
+from assist.stance import mandate_summary
 
 __all__ = ["DIR", "SCHEMA_VERSION", "portfolio_payload", "regime_payload", "subject_payload",
            "idn_charts", "validator", "write_layers"]
@@ -378,8 +379,8 @@ def _stance_row(p: Mapping) -> dict:
     pf = p.get("portfolio") or {}
     return {"subject": p["subject"], "asset": p["asset"], "stance": p["stance"],
             "score": p["score"], "current_pct": pf.get("current_pct"),
-            "target_pct": pf.get("target_pct"), "delta": pf.get("delta"),
-            "entry": dict(p["entry"])}
+            "target_pct": pf.get("target_pct"), "benchmark_pct": pf.get("benchmark_pct"),
+            "delta": pf.get("delta"), "entry": dict(p["entry"])}
 
 
 def portfolio_payload(day: date, fingerprint: str, portfolio: Portfolio | None,
@@ -417,6 +418,7 @@ def portfolio_payload(day: date, fingerprint: str, portfolio: Portfolio | None,
         "notes": list(pf.notes) if pf is not None else [],
         "stances": [_stance_row(s) for s in sorted(stances,
                                                    key=lambda s: (s["subject"], s["asset"]))],
+        "mandate": mandate_summary(stances),
     })
     own = list(pf.stale_inputs) if pf is not None else []
     return _tail(p, [*stale, *own], ["financer"])

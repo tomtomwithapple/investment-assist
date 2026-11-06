@@ -100,19 +100,32 @@
         "score": {"type": "number"},
         "current_pct": {"$ref": "#/$defs/number"},
         "target_pct": {"$ref": "#/$defs/number"},
+        "benchmark_pct": {"$ref": "#/$defs/number", "description": "Benchmark weight, 0 outside the 80/20 mandate (PLAN S39)."},
         "delta": {"type": ["string", "null"]},
         "entry": {
           "type": "object",
           "additionalProperties": false,
           "required": ["style", "tranches", "spacing_days"],
           "properties": {
-            "style": {"enum": ["lump", "ladder", "none"]},
+            "style": {"enum": ["lump", "ladder", "none"], "description": "As in the stance schema: a ladder with a negative delta is a laddered trim (S39)."},
             "tranches": {"type": "integer"},
             "spacing_days": {"type": "integer"}
           }
         }
       }
     }},
+    "mandate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["benchmark_pct", "targets_pct", "target_sum_pct", "cash_pct"],
+      "description": "PLAN S39: the whole-portfolio benchmark (SUBJECT/asset → %), each mandate leg's target after the pro-rata cap, the sum of every stance's target (at most 100) and the cash rest below 100.",
+      "properties": {
+        "benchmark_pct": {"type": "object", "additionalProperties": {"type": "number"}},
+        "targets_pct": {"type": "object", "additionalProperties": {"type": "number"}},
+        "target_sum_pct": {"type": "number", "minimum": 0, "maximum": 100},
+        "cash_pct": {"type": "number", "minimum": 0, "maximum": 100}
+      }
+    },
     "stale_inputs": {"$ref": "#/$defs/texts"},
     "sources": {"$ref": "#/$defs/texts"},
     "disclaimer": {"type": "string", "minLength": 1}

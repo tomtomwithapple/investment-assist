@@ -1,7 +1,9 @@
 """Position sizing (PLAN S20a): an IDR amount for each candidate that passes, top-down.
 
 - **Budget.** The layer-5 `target_pct` minus `current_pct` of the market's stocks stance (S5),
-  times the portfolio value (financer). An `underweight` or `avoid` stance, or a target at or
+  times the portfolio value (financer). Since S39 the target is the benchmark leg (IDN stocks
+  48%, USA stocks 20%) plus the tilt, after the pro-rata 100% cap; a market outside the mandate
+  targets 0%, so it only trims. An `underweight` or `avoid` stance, or a target at or
   below the holding, gives no new money: only trims.
 - **Split.** Inside the budget, weight ∝ `margin_pt` ÷ `vol_1y`, so a cheaper, calmer name gets
   more. A name that fails its screen, has a margin ≤ 0 or no `vol_1y` gets nothing.

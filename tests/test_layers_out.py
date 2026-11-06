@@ -389,7 +389,14 @@ def test_portfolio_file_has_buckets_owners_accounts_and_stance_targets(run):
         assert got["target_pct"] == s["portfolio"]["target_pct"]
         assert got["delta"] == s["portfolio"]["delta"]
         assert got["entry"] == s["entry"] and got["stance"] == s["stance"]
+        assert got["benchmark_pct"] == s["portfolio"]["benchmark_pct"]
     assert p["statement_as_of"] is not None
+    # S39: the mandate block sums every target and names the cash rest
+    m = p["mandate"]
+    total = sum(s["portfolio"]["target_pct"] for s in res.stances)
+    assert m["target_sum_pct"] == pytest.approx(total, abs=0.05) and total <= 100
+    assert m["cash_pct"] == pytest.approx(100 - total, abs=0.05)
+    assert set(m["benchmark_pct"]) == {"IDN/stocks", "IDN/bonds", "USA/stocks"}
 
 
 def test_portfolio_store_missing_is_stale(tmp_path):

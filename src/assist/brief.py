@@ -42,6 +42,7 @@ from typing import Any
 from assist.candidates import tiers_replay
 from assist.layers.types import DISCLAIMER, stance_validator
 from assist.layers.undervalued import load_out as load_candidates
+from assist.stance import mandate_summary
 
 __all__ = [
     "ASSET_ORDER",
@@ -58,6 +59,7 @@ __all__ = [
     "previous_snapshot",
     "render",
     "save_snapshot",
+    "targets_line",
 ]
 
 HOME = "IDN"  # the investor's home market sorts first
@@ -355,6 +357,16 @@ def _cell(text: str) -> str:
     return str(text).replace("|", "\\|").replace("\n", " ")
 
 
+def targets_line(stances: Sequence[Mapping]) -> str:
+    """S39: the mandate legs' targets, their sum over every stance and the cash rest."""
+    m = mandate_summary(stances)
+    legs = " + ".join(f"{k.replace('/', ' ')} {_pct(v)}" for k, v in m["targets_pct"].items())
+    bench = " / ".join(f"{k.replace('/', ' ')} {v:g}%" for k, v in m["benchmark_pct"].items())
+    return (f"Targets: {legs or 'no mandate leg'} = {_pct(m['target_sum_pct'])}; cash rest "
+            f"{_pct(m['cash_pct'])}. Benchmark {bench}; every other stance is outside the 80/20 "
+            "mandate and targets 0%.")
+
+
 def _entry(e: Mapping) -> str:
     if e["style"] == "ladder":
         return f"ladder {e['tranches']}×{e['spacing_days']}d"
@@ -478,6 +490,7 @@ def render(current: Sequence[Mapping], previous: Sequence[Mapping] | None = None
         notes = sorted({n for s in stances for n in s["portfolio"].get("notes", [])})
         if notes:
             out += ["", "Holdings: " + "; ".join(notes) + "."]
+        out += ["", targets_line(stances)]
     else:
         out.append("No stances.")
     out.append("")

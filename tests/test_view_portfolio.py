@@ -77,8 +77,11 @@ def test_weights_per_asset_class_and_stance(out):
     w = _card(_get(out, "/portfolio").body, "weights")
     # asset classes: stocks 85.15% vs targets 85.1 + 5 = 90.1; bonds 8.91% vs 15
     assert "85.15%" in w and "90.10%" in w and "8.91%" in w and "15.00%" in w
-    # cash has no stance: target "-"
-    assert re.search(r"<td>cash</td>.*?5\.94%</td><td class=\"num\">-</td>", w, re.S)
+    # S39: cash has no stance; its target is the cash rest. This fixture predates the mandate
+    # block, so the rest is worked out from its rows (old targets sum 105.1%, so no cash rest)
+    assert re.search(r"<td>cash</td>.*?5\.94%</td><td class=\"num\">0\.00%</td>", w, re.S)
+    assert "targets need not add up" not in w
+    assert "= <b>105.10%</b>" in w and "cash rest <b>0.00%</b>" in w
     # stances with a weight, target or entry; GOLD at 0 with nothing to do is folded away
     assert 'href="/stance/IDN/bonds"' in w and 'href="/stance/USA/stocks"' in w
     assert "+6.1pt over 3 tranches" in w and "ladder · 3 tranches, every 10 d" in w
@@ -86,6 +89,22 @@ def test_weights_per_asset_class_and_stance(out):
     assert "1 more at 0% with nothing to do" in w
     assert w.index("<details>") < w.index("/stance/GOLD/commodities")
     assert w.count('<svg class="bar"') >= 3 + 4  # 3 asset classes, 4 stances
+
+
+def test_weights_show_the_mandate_sums_and_cash_rest(out):
+    p = _payload(out)
+    p["mandate"] = {"benchmark_pct": {"IDN/bonds": 32.0, "IDN/stocks": 48.0, "USA/stocks": 20.0},
+                    "targets_pct": {"IDN/bonds": 32.0, "IDN/stocks": 43.0, "USA/stocks": 20.0},
+                    "target_sum_pct": 95.0, "cash_pct": 5.0}
+    _put(out, p)
+    w = _card(_get(out, "/portfolio").body, "weights")
+    assert "IDN bonds 32.00% + IDN stocks 43.00% + USA stocks 20.00% = <b>95.00%</b>" in w
+    assert "cash rest <b>5.00%</b>" in w
+    assert "IDN bonds 32% / IDN stocks 48% / USA stocks 20%" in w
+    assert "outside the 80/20 mandate" in w
+    assert re.search(r"<td>cash</td>.*?5\.94%</td><td class=\"num\">5\.00%</td>", w, re.S)
+    assert view.mandate(p)["cash_pct"] == 5.0
+    assert json.loads(_get(out, "/portfolio.json").body)["portfolio"]["mandate"] == p["mandate"]
 
 
 def test_bar_scales_current_and_target():

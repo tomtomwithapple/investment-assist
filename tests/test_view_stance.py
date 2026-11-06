@@ -85,6 +85,20 @@ def test_portfolio_notes_shown_and_escaped(out_copy):
     assert "Notes" not in _section(_get("/stance/IDN/bonds").body, "portfolio")
 
 
+def test_portfolio_benchmark_row_inside_and_outside_the_mandate(out_copy):
+    """PLAN S39: the benchmark weight, or the outside-mandate note at 0; absent before 0.4.0."""
+    assert "Benchmark" not in _section(_get("/stance/IDN/bonds").body, "portfolio")
+    for subject, asset, bench in (("IDN", "bonds", 32.0), ("USA", "bonds", 0.0)):
+        f = out_copy / subject / f"{asset}.json"
+        s = json.loads(f.read_text())
+        s["portfolio"]["benchmark_pct"] = bench
+        f.write_text(json.dumps(s))
+    pf = _section(_get("/stance/IDN/bonds", out_dir=out_copy).body, "portfolio")
+    assert "Benchmark</th><td>32%" in pf
+    pf = _section(_get("/stance/USA/bonds", out_dir=out_copy).body, "portfolio")
+    assert "Benchmark</th><td>0% (outside the 80/20 mandate)" in pf
+
+
 def test_usa_bonds_flags_as_severity_chips_and_stale_inputs():
     body = _get("/stance/USA/bonds").body
     flags = _section(body, "flags")

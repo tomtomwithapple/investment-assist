@@ -100,7 +100,8 @@ def test_rule_view_with_a_passed_stance_replaces_the_band_and_uses_its_entry():
     out = valid(st.build_stance(score=score(), regime=regime(), weights=weights(), rule=rv))
     assert out["stance"] == "overweight"
     assert out["entry"] == ladder
-    assert out["portfolio"]["delta"] == "+5.0pt over 3 tranches"
+    # S39: target = IDN bonds benchmark 32 + tilt 5 = 37 against 8 held
+    assert out["portfolio"]["delta"] == "+29.0pt over 3 tranches"
 
 
 def test_rule_view_for_another_key_raises():

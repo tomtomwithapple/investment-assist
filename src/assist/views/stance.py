@@ -110,6 +110,9 @@ def _entry(e: Mapping) -> str:
 def _portfolio(p: Mapping) -> str:
     rows = [("Current", esc(_pct(p["current_pct"]))),
             ("Target", esc(_pct(p["target_pct"]))), ("Delta", esc(p["delta"]))]
+    if "benchmark_pct" in p:  # S39; absent in payloads before model 0.4.0
+        b = p["benchmark_pct"]
+        rows.insert(1, ("Benchmark", esc(_pct(b)) if b else "0% (outside the 80/20 mandate)"))
     if p.get("notes"):
         rows.append(("Notes", "<br>".join(esc(n) for n in p["notes"])))
     return _table(rows)

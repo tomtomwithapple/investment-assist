@@ -711,17 +711,20 @@ def _idn_view(score: AssetScore, layers: Layers) -> stance.RuleView | None:
 
 
 def build(layers: Layers, fingerprint: str) -> list[dict]:
-    """One stance payload per in-scope score, in a stable order, each schema-valid."""
+    """One stance payload per in-scope score, in a stable order, each schema-valid. The
+    portfolio pass (`stance.apply_limits`, S39) runs over all of them before validation, so the
+    targets sum to at most 100%."""
     v = stance_validator()
-    out = []
-    for s in sorted(layers.scores, key=lambda s: (s.subject, s.asset)):
-        payload = stance.build_stance(score=s, regime=layers.regime, weights=layers.weights,
-                                      overrides=layers.overrides, as_of=layers.day,
-                                      fingerprint=fingerprint, rule=rule_view(s, layers))
-        errors = sorted(v.iter_errors(payload), key=lambda e: list(e.absolute_path))
+    out = [stance.build_stance(score=s, regime=layers.regime, weights=layers.weights,
+                               overrides=layers.overrides, as_of=layers.day,
+                               fingerprint=fingerprint, rule=rule_view(s, layers))
+           for s in sorted(layers.scores, key=lambda s: (s.subject, s.asset))]
+    stance.apply_limits(out)
+    for p in out:
+        errors = sorted(v.iter_errors(p), key=lambda e: list(e.absolute_path))
         if errors:  # a bug in this repo, not a data problem: stop before writing anything
-            raise ValueError(f"{s.subject}/{s.asset} stance fails the schema: {errors[0].message}")
-        out.append(payload)
+            raise ValueError(f"{p['subject']}/{p['asset']} stance fails the schema: "
+                             f"{errors[0].message}")
     return out
 
 

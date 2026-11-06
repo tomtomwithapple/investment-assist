@@ -4,6 +4,7 @@ only; nothing here reads a store."""
 from __future__ import annotations
 
 import json
+import random
 from datetime import date
 
 import pytest
@@ -94,13 +95,17 @@ def test_stance_bands(value, expected):
 # ---------------- target, delta, entry ----------------
 
 
-def test_overweight_adds_tilt_and_lumps_when_not_risk_off():
+def test_overweight_adds_tilt_to_the_benchmark_and_lumps_when_not_risk_off():
+    # S39: the target anchors on the benchmark (IDN bonds 32%), no longer on what is held
     out = valid(build(score=score(80.0), weights=weights(8.0)))
     assert out["stance"] == "overweight"
     tilt = st.TILT_PT["overweight"]
-    assert out["portfolio"] == {"current_pct": 8.0, "target_pct": 8.0 + tilt,
-                                "delta": f"+{tilt:.1f}pt lump"}
+    bench = st.BENCHMARK_PCT[("IDN", "bonds")]
+    assert out["portfolio"] == {"current_pct": 8.0, "target_pct": bench + tilt,
+                                "benchmark_pct": bench,
+                                "delta": f"+{bench + tilt - 8.0:.1f}pt lump"}
     assert out["entry"] == {"style": "lump", "tranches": 1, "spacing_days": 0}
+    assert f"benchmark {bench:g}%, tilt +{tilt:g}pt (overweight)" in out["drivers"]
 
 
 def test_ladder_when_risk_off():
@@ -111,28 +116,60 @@ def test_ladder_when_risk_off():
     assert out["portfolio"]["delta"].endswith(f"over {st.LADDER_TRANCHES} tranches")
 
 
-def test_neutral_holds():
-    out = valid(build(score=score(50.0)))
-    assert out["portfolio"]["target_pct"] == 8.0
+def test_neutral_at_the_benchmark_holds():
+    out = valid(build(score=score(50.0), weights=weights(32.0)))
+    assert out["portfolio"]["target_pct"] == 32.0
     assert out["portfolio"]["delta"] == "0.0pt hold"
     assert out["entry"] == {"style": "none", "tranches": 0, "spacing_days": 0}
 
 
 def test_underweight_trims_and_avoid_exits():
-    under = valid(build(score=score(st.STANCE_BANDS[2][0] + 1)))
+    under = valid(build(score=score(st.STANCE_BANDS[2][0] + 1), weights=weights(32.0)))
     assert under["stance"] == "underweight"
-    assert under["portfolio"]["target_pct"] == 8.0 + st.TILT_PT["underweight"]
-    assert under["portfolio"]["delta"].endswith("trim")
+    assert under["portfolio"]["target_pct"] == 32.0 + st.TILT_PT["underweight"]
+    assert under["portfolio"]["delta"] == "-5.0pt trim"
     assert under["entry"]["style"] == "none"
-    avoid = valid(build(score=score(5.0)))
+    avoid = valid(build(score=score(5.0), weights=weights(32.0)))
     assert avoid["stance"] == "avoid"
     assert avoid["portfolio"]["target_pct"] == 0
-    assert avoid["portfolio"]["delta"] == "-8.0pt trim"
+    assert avoid["portfolio"]["delta"] == "-32.0pt trim"
 
 
 def test_target_never_below_zero():
-    out = valid(build(score=score(st.STANCE_BANDS[2][0] + 1), weights=weights(1.0)))
+    out = valid(build(score=score(st.STANCE_BANDS[2][0] + 1), weights=weights(1.0),
+                      benchmark={("IDN", "bonds"): 2.0}))
     assert out["portfolio"]["target_pct"] == 0
+
+
+def test_outside_the_mandate_keeps_its_view_targets_zero_and_trims_a_holding():
+    key = ("JPN", "stocks")
+    out = valid(build(score=score(80.0, subject="JPN", asset="stocks"),
+                      weights=weights(6.0, key=key)))
+    assert out["stance"] == "overweight" and out["score"] == 80.0
+    assert out["portfolio"]["target_pct"] == 0
+    assert out["portfolio"]["benchmark_pct"] == 0
+    assert out["portfolio"]["delta"] == "-6.0pt trim"
+    assert out["entry"]["style"] == "none"
+    assert st.OUTSIDE_NOTE in out["drivers"] and "80/20 mandate" in st.OUTSIDE_NOTE
+    unheld = valid(build(score=score(80.0, subject="JPN", asset="stocks")))
+    assert unheld["portfolio"]["delta"] == "0.0pt hold"
+
+
+def test_currency_is_a_view_not_an_allocation():
+    out = valid(build(score=score(80.0, asset="currency"), weights=weights(8.0)))
+    assert out["stance"] == "overweight"
+    assert out["portfolio"]["target_pct"] == 0
+    assert out["portfolio"]["delta"] == "0.0pt hold"
+    assert st.CURRENCY_NOTE in out["drivers"]
+
+
+def test_usa_stocks_names_the_estate_tax_risk():
+    out = valid(build(score=score(50.0, subject="USA", asset="stocks"),
+                      weights=weights(0.0, key=("USA", "stocks"))))
+    assert out["portfolio"]["target_pct"] == 20.0
+    assert any("estate tax" in r and "US$60k" in r and "not tax advice" in r
+               for r in out["risks"])
+    assert not any("estate tax" in r for r in build(score=score(50.0))["risks"])
 
 
 def test_benchmark_anchors_target_when_given():
@@ -219,3 +256,142 @@ def test_dumps_fixed_float_format():
     assert data["layer1_score"] == 58.1
     assert data["portfolio"]["current_pct"] == 8.3
     assert data["score"] == 58.1
+
+
+# ---------------- portfolio pass: the 100% rule (S39) ----------------
+
+LEGS = (("IDN", "stocks"), ("IDN", "bonds"), ("USA", "stocks"))
+SCORE_FOR = {"overweight": 80.0, "neutral": 50.0, "underweight": 30.0, "avoid": 5.0}
+
+
+def _stances(calls: dict, held: dict | None = None, regime_state="neutral") -> list[dict]:
+    held = dict(held or {})
+    w = Weights(as_of=D, weights={**held, ("IDN", "cash"): 100.0 - sum(held.values())})
+    return [st.build_stance(score=score(SCORE_FOR[c], subject=k[0], asset=k[1]),
+                            regime=regime(regime_state), weights=w)
+            for k, c in calls.items()]
+
+
+def _by(stances, subject, asset):
+    return next(p for p in stances if (p["subject"], p["asset"]) == (subject, asset))
+
+
+def test_all_three_legs_overweight_scale_115_to_100_pro_rata():
+    out = _stances({k: "overweight" for k in LEGS}, {("IDN", "stocks"): 96.9})
+    summary = st.apply_limits(out)
+    for p in out:
+        valid(p)
+    t = {k: _by(out, *k)["portfolio"]["target_pct"] for k in LEGS}
+    # 53 / 37 / 25 × 100/115 = 46.09 / 32.17 / 21.74, 0.1 pt steps by largest remainder
+    assert t == {("IDN", "stocks"): 46.1, ("IDN", "bonds"): 32.2, ("USA", "stocks"): 21.7}
+    assert summary["target_sum_pct"] == 100.0 and summary["cash_pct"] == 0.0
+    assert summary["scale"] == round(100 / 115, 4)
+    idn = _by(out, "IDN", "stocks")
+    # S39 transition: both moves are above TRANSITION_PT, so both are laddered
+    assert idn["portfolio"]["delta"] == "-50.8pt trim over 3 tranches"
+    assert idn["entry"]["style"] == "ladder"
+    usa = _by(out, "USA", "stocks")
+    assert usa["portfolio"]["delta"] == "+21.7pt over 3 tranches"
+    assert usa["entry"]["style"] == "ladder"
+    assert any("scaled ×0.870 pro rata" in d for d in usa["drivers"])
+
+
+def test_scaled_ladder_keeps_its_tranches():
+    out = _stances({k: "overweight" for k in LEGS}, {("IDN", "bonds"): 25.0}, "risk_off")
+    st.apply_limits(out)
+    bonds = _by(out, "IDN", "bonds")
+    assert bonds["portfolio"]["target_pct"] == 32.2
+    # 7.2pt is under TRANSITION_PT: the ladder comes from risk_off and survives the scaling
+    assert bonds["portfolio"]["delta"] == f"+7.2pt over {st.LADDER_TRANCHES} tranches"
+    assert bonds["entry"]["style"] == "ladder"
+    assert not any("laddered over" in d for d in bonds["drivers"])
+
+
+LADDER = {"style": "ladder", "tranches": st.LADDER_TRANCHES, "spacing_days": st.LADDER_SPACING_DAYS}
+
+
+@pytest.mark.parametrize(
+    ("key", "held", "delta", "entry"),
+    [(("IDN", "bonds"), 3.3, "+28.7pt over 3 tranches", LADDER),
+     (("IDN", "stocks"), 99.2, "-51.2pt trim over 3 tranches", LADDER),
+     (("USA", "stocks"), 10.1, "+9.9pt lump", {"style": "lump", "tranches": 1,
+                                               "spacing_days": 0}),
+     (("USA", "stocks"), 29.9, "-9.9pt trim", {"style": "none", "tranches": 0,
+                                               "spacing_days": 0}),
+     (("USA", "stocks"), 30.0, "-10.0pt trim", {"style": "none", "tranches": 0,
+                                                "spacing_days": 0})],
+)
+def test_moves_above_transition_pt_are_laddered_adds_and_trims(key, held, delta, entry):
+    """S39 (user, 2026-11-06): a leg more than TRANSITION_PT from its target ladders, both ways;
+    at or under it the per-stance entry stands (neutral regime: lump add, trim with none)."""
+    assert st.TRANSITION_PT == 10.0 and st.MODEL_CONFIG["transition_pt"] == 10.0
+    out = _stances({key: "neutral"}, {key: held})
+    st.apply_limits(out)
+    p = valid(out[0])
+    assert p["portfolio"]["delta"] == delta
+    assert p["entry"] == entry
+    assert any("laddered over 3 tranches" in d for d in p["drivers"]) == (entry == LADDER)
+
+
+def test_transition_ladder_is_fingerprinted():
+    cfg = {**st.MODEL_CONFIG, "transition_pt": 20.0}
+    assert st.model_fingerprint(cfg) != st.model_fingerprint()
+
+
+def test_outside_the_mandate_trims_are_not_laddered():
+    out = _stances({("JPN", "stocks"): "overweight"}, {("JPN", "stocks"): 40.0})
+    st.apply_limits(out)
+    assert out[0]["portfolio"]["delta"] == "-40.0pt trim"
+    assert out[0]["entry"]["style"] == "none"
+
+
+def test_idn_stocks_underweight_alone_leaves_5pt_cash():
+    calls = {("IDN", "stocks"): "underweight", ("IDN", "bonds"): "neutral",
+             ("USA", "stocks"): "neutral"}
+    out = _stances(calls)
+    summary = st.apply_limits(out)
+    assert summary["targets_pct"] == {"IDN/bonds": 32.0, "IDN/stocks": 43.0, "USA/stocks": 20.0}
+    assert summary["target_sum_pct"] == 95.0 and summary["cash_pct"] == 5.0
+    assert summary["scale"] == 1.0
+    assert not any("scaled" in d for p in out for d in p["drivers"])
+
+
+def test_mandate_summary_reads_layer_rows_too():
+    rows = [{"subject": "IDN", "asset": "stocks", "target_pct": 48.0},
+            {"subject": "JPN", "asset": "stocks", "target_pct": 0.0},
+            {"subject": "IDN", "asset": "cash", "target_pct": None}]
+    s = st.mandate_summary(rows)
+    assert s["target_sum_pct"] == 48.0 and s["cash_pct"] == 52.0
+    assert s["targets_pct"] == {"IDN/stocks": 48.0}
+
+
+def test_targets_never_sum_past_100_for_any_mix():
+    rng = random.Random(39)
+    outside = [("JPN", "stocks"), ("DEU", "bonds"), ("GOLD", "commodities"), ("IDN", "currency"),
+               ("USA", "bonds")]
+    for _ in range(400):
+        calls = {k: rng.choice(tuple(SCORE_FOR)) for k in LEGS}
+        calls.update({k: "overweight" for k in outside})
+        held = {k: rng.choice((0.0, 3.0, 12.0)) for k in (*LEGS, *outside)}
+        out = _stances(calls, held, rng.choice(("risk_on", "neutral", "risk_off")))
+        summary = st.apply_limits(out)
+        targets = [p["portfolio"]["target_pct"] for p in out]
+        assert 0 <= sum(targets) <= 100 + 1e-9, (calls, targets)
+        assert all(0 <= t <= 100 for t in targets)
+        for k in outside:
+            p = _by(out, *k)
+            assert p["portfolio"]["target_pct"] == 0 and p["stance"] == "overweight"
+            assert p["portfolio"]["delta"] == {12.0: "-12.0pt trim", 3.0: "-3.0pt trim",
+                                               0.0: "0.0pt hold"}[held[k]]
+        legs = {calls[k] for k in LEGS}
+        if {"underweight", "avoid"} & legs and "overweight" not in legs:
+            assert summary["cash_pct"] > 0, calls  # nothing tilts up to fill the gap
+        for p in out:
+            valid(p)
+            gap = round(p["portfolio"]["target_pct"] - p["portfolio"]["current_pct"], 1)
+            leg = (p["subject"], p["asset"]) in LEGS
+            if leg and abs(gap) > st.TRANSITION_PT:  # S39 transition: ladder, add or trim
+                assert p["entry"] == LADDER, p["portfolio"]
+                assert p["portfolio"]["delta"].endswith("over 3 tranches")
+            else:
+                assert (p["entry"]["style"] == "none") == (gap <= 0), p["portfolio"]

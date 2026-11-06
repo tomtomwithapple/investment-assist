@@ -32,7 +32,7 @@
       "additionalProperties": false,
       "required": ["style", "tranches", "spacing_days"],
       "properties": {
-        "style": {"enum": ["lump", "ladder", "none"], "description": "ladder when the regime is risk_off; none when nothing is to be bought."},
+        "style": {"enum": ["lump", "ladder", "none"], "description": "How the delta is carried out; its direction is the sign of portfolio.delta. ladder: when the regime is risk_off or a gated rule says so (adds), or, since S39, for any mandate leg more than TRANSITION_PT (10) from its target, adds and trims alike (a ladder with a negative delta is a laddered trim). lump: one add. none: a smaller trim, a hold, or no holdings."},
         "tranches": {"type": "integer", "minimum": 0},
         "spacing_days": {"type": "integer", "minimum": 0}
       }
@@ -43,7 +43,8 @@
       "required": ["current_pct", "target_pct", "delta"],
       "properties": {
         "current_pct": {"type": ["number", "null"], "minimum": 0, "maximum": 100, "description": "null when holdings are unavailable (financer listed in stale_inputs)."},
-        "target_pct": {"type": "number", "minimum": 0, "maximum": 100},
+        "target_pct": {"type": "number", "minimum": 0, "maximum": 100, "description": "Benchmark + tilt, scaled pro rata with the other mandate legs to a sum of at most 100 (PLAN S39); 0 outside the mandate."},
+        "benchmark_pct": {"type": "number", "minimum": 0, "maximum": 100, "description": "The whole-portfolio benchmark weight of this (subject, asset); 0 outside the 80/20 mandate (PLAN S39). Absent in payloads before model 0.4.0."},
         "delta": {"type": "string", "minLength": 1},
         "notes": {"$ref": "#/$defs/texts", "description": "How layer 5 valued the holdings, e.g. lines valued at their last trade price (PLAN S32). Absent when there is nothing to say."}
       }

@@ -16,6 +16,8 @@
 | IDN | bonds | overweight | 68 | 58 | 0.74 | ladder 3×10d | 8% → 15% | +7pt over 3 tranches |
 | USA | bonds | underweight | 41 | 44 | 0.55 | none | n/a → 0% | unknown: holdings unavailable |
 
+Targets: IDN bonds 15% + IDN stocks 30% = 45%; cash rest 55%. Benchmark IDN bonds 32% / IDN stocks 48% / USA stocks 20%; every other stance is outside the 80/20 mandate and targets 0%.
+
 ## Changes since last run
 
 Compared with 2026-10-06.

@@ -158,7 +158,7 @@ def test_usa_stocks_idr_edge_names_hedged_and_unhedged():
     assert len(edge) == 1
     assert "unhedged +5.41%" in edge[0] and "hedged +8.11%" in edge[0]
     assert "survives hedged" in edge[0]
-    assert p["risks"] == []
+    assert p["risks"] == list(st.LEG_RISKS[("USA", "stocks")])  # S39: estate tax
 
 
 def test_an_edge_that_does_not_survive_is_a_risk_not_a_stance_change():
