@@ -55,6 +55,7 @@ a record.
 | F. Undervalued stocks, macro-weighted (IDN, then US, JP) | S16–S22 | 7 / 8 |
 | G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S30 | 8 / 8 |
 | H. Layer pages (regime, signals, portfolio) | S33–S37 | 5 / 5 |
+| I. Benchmark and portfolio limits (80% IDN / 20% US stocks) | S39–S40 | 0 / 2 |
 
 ### Open data gaps (fetcher side)
 
@@ -916,11 +917,56 @@ signals have series worth drawing.
   (Done 2026-11-06, `docs/results/F8-ui-layers.md`. `assist run` does not yet write
   `out/flows/`, so run `assist flows` for now.)
 
+### Phase I — benchmark and portfolio limits (planned 2026-11-06)
+
+**Why.** `BENCHMARK_PCT` is empty, so each stance anchors on what is already held and adds its
+own tilt (+5 pt overweight). Nothing ties the targets together: on 2026-11-06 the stock targets
+sum to 111.9% (96.9% held IDN stocks + 3 overweight stock stances at 0 + 5) and bonds to 26.8%.
+The deltas are directions, not a plan that can be carried out.
+
+**Decided by the user (2026-11-06).** The whole portfolio's benchmark is **80% Indonesia, 20% US
+stocks**, with the paper track's 60/40 stocks/bonds kept inside the 80:
+
+| Leg | Benchmark |
+|---|---|
+| IDN stocks | 48% |
+| IDN bonds (SBN) | 32% |
+| USA stocks | 20% |
+| everything else (other countries, foreign bonds, commodities) | 0% (outside the mandate) |
+
+Context the user weighed (heuristic, not tax advice; confirm with a tax consultant): US stocks
+have beaten JCI for an IDR holder mostly through USD/IDR depreciation; US dividends carry 15%
+withholding with a W-8BEN (treaty), foreign dividends are exempt in Indonesia only if reinvested
+here (UU Cipta Kerja / PMK 18/2021), foreign capital gains are taxed at progressive rates, and
+US-situs assets above US$60k fall under US estate tax for a non-resident (Ireland-domiciled
+UCITS ETFs avoid that). None of this is modelled yet; the brief names the estate-tax risk on the
+USA stocks stance.
+
+**Done when:**
+1. Every stance's target follows one rule: benchmark + tilt (±5 pt, `avoid` → 0), then the three
+   legs are scaled down pro rata if they sum above 100; anything below 100 is cash. A stance
+   outside the mandate keeps its view (stance, score, drivers) but targets 0% and says "outside
+   the 80/20 mandate"; a holding there shows as a trim (S39).
+2. Across all 49 stances the targets sum to at most 100%, tested; `/portfolio` shows the sums
+   and the cash remainder; the S20a sizing reads the new targets (its 5% per-name cap stays) (S39).
+3. The paper track's benchmark becomes 48% JCI / 32% SBN leg / 20% US stocks in IDR (unhedged,
+   price index), marked weekly as now; the old 60/40 segment stays as it was scored (S40).
+
+- [ ] **S39 Benchmark 48/32/20 and the 100% rule** (P59-benchmark). `stance.BENCHMARK_PCT`,
+  the outside-mandate note and the pro-rata cap in `stance.py`; brief, `/portfolio` and sizing
+  follow. The model fingerprint changes, so the journal opens a new segment. Expect large trims
+  at first (IDN stocks 96.9% held vs 48% target, USA 0% vs 20%): the entry stays laddered.
+- [ ] **S40 Paper benchmark with a US leg** (P60-paper-benchmark). A third paper leg: US stocks
+  in IDR from sec-edgar (Alpaca SPY adjusted bars, or FRED SP500) × USD/IDR. Data gap: this
+  Mac's JISDOR starts 2026-10-22, so the history needs another IDR rate (FRED
+  CCUSMA02IDM618N is monthly) or an idxscape JISDOR backfill; decide in the slice. CLAUDE.md's
+  "fixed IDR 60/40 benchmark" line changes with this slice, with the user's OK.
+
 ## Open questions
 
-- Target weight bands per stance (e.g. overweight = benchmark + 10 pt): needs the user's
-  risk limits and the benchmark choice confirmed. **S20a sizes from these bands**, so they
-  (and its 5% per-name cap) must be confirmed before its sizes are more than paper.
+- ~~Target weight bands per stance~~: benchmark decided 2026-11-06 (80% IDN as 48 stocks / 32
+  SBN, 20% US stocks; phase I). The ±5 pt tilt and S20a's 5% per-name cap are still the
+  placeholders; confirm them once phase I runs.
 - Which SBN index for the benchmark (the 40% leg): pick once the PHEI parser shows what's
   available.
 

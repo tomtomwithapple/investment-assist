@@ -923,3 +923,24 @@ slices:
       equal amount to the rupiah, within 3 days, one-to-one greedy by gap. A trades document is one
       settlement movement (-closing on settle_date), never its fee rows. Names come only from the
       gitignored config/household.local.yaml.
+  - id: P59-benchmark
+    title: "PLAN S39: benchmark IDN stocks 48 / IDN bonds 32 / USA stocks 20 (user, 2026-11-06); target = benchmark + tilt, scaled to at most 100, rest cash; other subjects outside the mandate target 0"
+    depends_on: [P53-portfolio-trades, F8-ui-layers]
+    owns: ["src/assist/stance.py", "tests/test_stance.py", "src/assist/brief.py", "src/assist/candidates/sizing.py", "src/assist/views/portfolio.py", "docs/results/P59-benchmark.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 1
+    notes: >-
+      The pro-rata cap needs every stance at once, so it runs after the per-stance build (in
+      pipeline.build or a stance.apply_limits pass). Outside-mandate stances keep stance, score
+      and drivers; only target and delta change. Fingerprint changes (new journal segment). Test:
+      targets sum <= 100 across all stances for any mix of stances; /portfolio shows the cash rest.
+  - id: P60-paper-benchmark
+    title: "PLAN S40: paper benchmark 48% JCI / 32% SBN leg / 20% US stocks in IDR (unhedged price index); old 60/40 segment kept"
+    depends_on: [P59-benchmark, P52-paper-daily-gap]
+    owns: ["src/assist/paper.py", "tests/test_paper.py", "src/assist/views/paper.py", "docs/results/P60-paper-benchmark.md"]
+    accept: uv run pytest -q tests/test_paper.py tests/test_view_paper.py && uv run ruff check .
+    estimate: 1
+    notes: >-
+      US leg: sec-edgar Alpaca SPY adjusted (alpaca_bar_adjusted_lookup) or FRED SP500, times
+      USD/IDR. JISDOR here starts 2026-10-22; pick a longer IDR rate or an idxscape backfill and
+      record the choice. CLAUDE.md's 60/40 line changes only with the user's OK.
