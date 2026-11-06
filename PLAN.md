@@ -8,7 +8,7 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-10-29 (P48–P50 tiers). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against Stockbit's industry average and the sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S31 (top tier per industry) is built, P48–P50, but waits for a live run and replay verdict on a Mac with idx-method's `stockbiter.db`. S15 and S22 are open.
+**Last updated:** 2026-11-06 (planned S32: layer 5 reads financer's trade documents and owners, P53-portfolio-trades). Earlier: 2026-10-29 (P48–P50 tiers). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against Stockbit's industry average and the sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S31 (top tier per industry) is built, P48–P50, but waits for a live run and replay verdict on a Mac with idx-method's `stockbiter.db`. S15 and S22 are open.
 
 What `assist run` does:
 - It reads layers 0, 1 and 5 for every subject.
@@ -47,7 +47,7 @@ a record.
 
 | Phase | Slices | Done |
 |---|---|---|
-| A. Skeleton + base layers (0, 1, 5) | S0–S6 | 7 / 7 |
+| A. Skeleton + base layers (0, 1, 5; S32: layer 5 reads trade documents) | S0–S6, S32 | 7 / 8 |
 | B. Indonesia overrides and rules (2, 3, 4) | S7–S10 | 4 / 4 |
 | C. Foreign markets | S11–S12 | 2 / 2 |
 | D. Track record and ops | S13–S14 | 2 / 2 |
@@ -223,6 +223,87 @@ real stores → record numbers in the Progress table → commit. One slice per c
 - [x] **S6 Brief + Telegram.** Markdown brief (regime, stance table, changes since last run,
   stale inputs, disclaimer); Telegram summary; same never-fail and send-once rules as idx-method's former paper daemon.
   *Done when:* a live brief is sent and a second send the same day is skipped.
+
+- [ ] **S32 Layer 5 reads financer's trade documents (planned 2026-11-06).** Roll each account's
+  holdings forward from its latest statement through the trade confirmations and dailies that
+  came after it, and carry each document's owner.
+  - **Why.** financer slice 13 (2026-11-06) loads Stockbit Trade Confirmations as documents with
+    `doc_type = 'trades'`, alongside Ajaib's dailies (also `trades`, since its slice 11). The
+    adapter reads only `portfolio`, `broker_soa` and `savings_statement` (`_LATEST`), so layer 5
+    misses:
+    - **Priskila's Stockbit `4848825`, her whole account.** It has 8 confirmations (16–30 Oct
+      2026), 95 trades, 37.2M IDR at cost, 63 positions, and no SOA yet. Layer 5 shows nothing
+      for it.
+    - **Every trade after an account's latest statement.** For example, Ajaib's 2026-11-02 daily
+      (an ARNA sell) after its 2026-10-31 portfolio.
+  - **financer's contract** (its `PLAN.md` *Slice 12 outcome* and *Slice 13 outcome*, schema 9):
+    - `documents.owner` is `tommy` or `priskila`, and there is a new table `account_owners`. This
+      adapter does not read either yet.
+    - A `trades` document is `superseded` once a loaded SOA of the same account prints all its
+      orders. So **`status = 'loaded'` already excludes every trade an SOA states**, and the
+      adapter never has to de-duplicate.
+    - A superseded document's settlement rows stay in `transactions`. That doesn't matter here,
+      because the adapter does not read `transactions`.
+    - Trades are in `trades` (`trade_date`, `symbol`, `side`, `quantity` in shares, `price_minor`,
+      `gross_minor`, `net_minor`), keyed by `document_id`.
+  - **Rule.** For each account (`issuer`, `coalesce(account_ref, '')`), the new holdings are the
+    latest loaded broker statement's holdings, as today, plus the trades of every loaded `trades`
+    document of that account with `statement_date` **after** that statement's `as_of`.
+    - An account with no broker statement starts from nothing.
+    - Each trade adds `quantity` for a buy and subtracts it for a sell.
+    - A changed or new line is valued at the **last trade price** for that symbol in those
+      documents, and an unchanged line keeps the statement's market value. The adapter has no
+      price feed of its own; layer 4's idx-method bars are not on this Mac.
+    - A line that reaches zero is dropped. A negative line (a sell of a position no statement
+      shows) is kept in `unmapped` with its value, and never subtracted from a bucket.
+    - `as_of` becomes the latest trade document's date.
+  - **Known risk: the date basis of a statement's holdings.** Ajaib's portfolio moves on the trade
+    date (financer FINDINGS). Whether Stockbit's SOA holdings are by trade date or by settlement
+    date is unknown until Priskila's first SOA arrives. The rule assumes trade date (it applies
+    trades dated after the statement). If her first SOA shows otherwise, the fix is recorded then.
+  - **New fields on `Statement`:**
+    - `owner`: read from `documents.owner` when the column exists, otherwise `'tommy'`
+      (financer schema 8 and the test fixture).
+    - `rolled_from`: the date of the broker statement the holdings start from, or None.
+    - `trade_docs`: how many trade documents were applied.
+    - `priced_at_trade`: the symbols valued at a trade price rather than a statement price.
+  - **Layer 5 output.**
+    - `build_portfolio` sums both owners into one household portfolio, which is the user's goal
+      in financer's slice 12.
+    - `Portfolio` gains `by_owner`: IDR per owner per bucket.
+    - `StatementCheck` is unchanged for a statement with no rolled trades. A rolled account's
+      check compares the statement's own lines with its printed total, before rolling.
+    - `stale_inputs` names an account whose latest input is older than `STALE_DAYS`, as today.
+      For an account valued partly at trade prices, a `notes` line reads "valued at last trade
+      price: N lines". It goes in the brief and the `/stance` portfolio block, not in
+      `stale_inputs`.
+  - **Known gap (not this slice).** Priskila's RDN `6622844750` has no statement in financer yet
+    (her Gmail filter is pending). About 12.8M IDR of her cash is therefore invisible. It appears
+    without a code change once financer loads that statement, because it is an ordinary
+    `savings_statement`.
+  - **Tests** (`tests/layers/test_portfolio.py` and a new `tests/sources/test_financer.py`):
+    - Fixture schema 9: `tests/fixtures/financer/schema.sql` gains `owner`, the `trades` table
+      and the `account_owners` table, and its seed gains:
+      - a priskila Stockbit account with two `trades` documents and no SOA;
+      - an Ajaib-like account with a portfolio and one later daily that sells a held line to
+        zero;
+      - a superseded `trades` document, which must be ignored;
+      - a `trades` document dated on or before its statement, which must be ignored.
+    - A second fixture without `owner` (schema 8), to show the fallback.
+    - Rolling forward: buys, a sell to zero, a negative line going to `unmapped`, the last
+      trade price, and `as_of`.
+    - `by_owner` adds up to `total_idr`.
+    - `rows()` includes rolled holdings.
+    - A rerun gives byte-identical stance JSON.
+  - **Live:** read-only against `~/.financer/financer.db`, with the file's mtime unchanged.
+    - Expect Priskila's 63 IDN stock lines, about 37.15M at trade prices. That is a little
+      different from cost, which includes fees.
+    - Expect Ajaib's ARNA line gone, and `by_owner` showing both owners.
+    - Results go in `docs/results/P53-portfolio-trades.md`, with no account numbers (as in P4).
+  - *Done when:* layer 5 lists her Stockbit positions and Ajaib's post-statement sale, owners are
+    split in `by_owner`, the weights still add up to 100, and a statement-only account's numbers
+    are unchanged from before.
+  - **Slice** (`plan.yaml`): P53-portfolio-trades.
 
 ### Phase B — Indonesia
 

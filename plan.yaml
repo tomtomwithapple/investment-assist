@@ -843,3 +843,18 @@ slices:
       never count as a gap; the monthly dbnomics fallback is not checked. Backfilling the gap
       from the Windows machine's raw PHEI captures is deferred until this Mac's own PHEI
       history is long enough.
+
+  - id: P53-portfolio-trades
+    title: "PLAN S32: layer 5 rolls each account forward from its latest statement through loaded financer `trades` documents (Stockbit TCs, Ajaib dailies) and carries documents.owner"
+    depends_on: [P4-portfolio]
+    owns: ["src/assist/sources/financer.py", "src/assist/layers/portfolio.py", "src/assist/brief.py", "src/assist/views/stance.py", "tests/sources/test_financer.py", "tests/layers/test_portfolio.py", "tests/fixtures/financer/**", "docs/results/P53-portfolio-trades.md"]
+    accept: uv run pytest -q tests/sources/test_financer.py tests/layers/test_portfolio.py tests/test_run_e2e.py && uv run ruff check .
+    estimate: 1
+    notes: >-
+      financer slices 12-13 (2026-11-06): schema 9 adds documents.owner and account_owners;
+      Stockbit TCs load as doc_type trades, superseded once a loaded SOA prints all their orders,
+      so status = 'loaded' already removes every trade an SOA states. Only trades documents dated
+      after the account's latest loaded broker statement are applied; an account with no
+      statement (Priskila's Stockbit 4848825) starts empty. Changed lines are valued at the last
+      trade price (no price feed here); negatives go to unmapped. owner falls back to 'tommy' when
+      the column is absent. Her RDN cash waits for financer to load her RDN statement.
