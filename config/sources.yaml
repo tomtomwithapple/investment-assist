@@ -157,6 +157,10 @@ sources:
         sql: select max(as_of) from igsyc_point
         max_age_days: 7
         optional: true
+      - name: index_daily JCI
+        sql: select max(trade_date) from index_daily where index_code = 'COMPOSITE'
+        max_age_days: 7
+        optional: true
 
   kseistat:
     repo: kseistat
@@ -176,10 +180,6 @@ sources:
     path: idx-method
     env: ASSIST_IDX_METHOD_DIR
     probes:
-      - name: jkse_daily.csv
-        csv: data/jkse_daily.csv
-        column: date
-        max_age_days: 7
       - name: stockbiter bars
         sqlite: store/data/stockbiter.db
         sql: select max(date) from bars
