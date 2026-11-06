@@ -197,6 +197,11 @@ def _signals_subject(app: App, m: re.Match[str]) -> View | None:
     return signals.page(app, m)
 
 
+def _portfolio(app: App, m: re.Match[str]) -> View:
+    from assist.views import portfolio
+    return portfolio.page(app, m)
+
+
 def _paper(app: App, m: re.Match[str]) -> View:
     from assist.views import paper
     return paper.page(app, m)
@@ -217,6 +222,7 @@ ROUTES: list[Route] = [(re.compile(r"^/$"), _overview),
                        (re.compile(r"^/regime$"), _regime),  # S34; the nav link comes with F8
                        (re.compile(r"^/signals$"), _signals),  # S35; nav link with F8
                        (re.compile(r"^/signals/([^/]+)$"), _signals_subject),
+                       (re.compile(r"^/portfolio$"), _portfolio),  # S36; nav link with F8
                        (re.compile(r"^/paper$"), _paper),
                        (re.compile(r"^/journal$"), _journal)]
 

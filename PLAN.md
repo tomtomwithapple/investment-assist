@@ -54,7 +54,7 @@ a record.
 | E. Layer 4 refinements (S31: top tier per industry) | S15, S31 | 0 / 2 |
 | F. Undervalued stocks, macro-weighted (IDN, then US, JP) | S16–S22 | 7 / 8 |
 | G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S30 | 8 / 8 |
-| H. Layer pages (regime, signals, portfolio) | S33–S37 | 3 / 5 |
+| H. Layer pages (regime, signals, portfolio) | S33–S37 | 4 / 5 |
 
 ### Open data gaps (fetcher side)
 
@@ -827,8 +827,8 @@ signals have series worth drawing.
 - [x] **S35 `/signals/<SUBJECT>`** (P56-ui-signals). Layer-2 and layer-3 tables for every
   subject; the IDN charts listed above. (Done 2026-11-06, `docs/results/P56-ui-signals.md`;
   also `/signals`, an index of the subject files.)
-- [ ] **S36 `/portfolio`** (P57-ui-portfolio). After P53 (it owns `layers/portfolio.py` and the
-  stance view's portfolio card).
+- [x] **S36 `/portfolio`** (P57-ui-portfolio). After P53 (it owns `layers/portfolio.py` and the
+  stance view's portfolio card). Done 2026-11-06, `docs/results/P57-ui-portfolio.md`.
 - [x] **S38 `/flows`: where the household's money moved** (P58-flows, planned 2026-11-06; done
   2026-11-06, `docs/results/P58-flows.md`).
   Months of transfers between the household's own accounts, matched across financer's
@@ -958,6 +958,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S33 layer files in `out/layers/` (P54-layer-out) | done | 2026-11-06 | this commit | 17 layers out (1449 total) | 8 files, all schema-valid: regime neutral, dollar flat (off 1: real yield 2.64%), 9 inputs × 52 weekly points; IDN 5 components (stocks −5, bonds −4, currency +2), 5 signals, flows 60 IDX days 08-12 → 11-05 (USD null before JISDOR's first fixing 10-22), JISDOR 11 fixings, JCI 239 closes, SBN 239 days, IGSYC 11-05 vs 10-08; USA, JPN, EMU, AUS, SGP files; portfolio Rp55.42 M as of 11-02, 12 accounts, 49 stance targets |
 | S34 /regime (P55-ui-regime) | done | 2026-11-06 | this commit | 19 view (1519 total) | `/regime` 200 16,604 B, `.json` 200 61,713 B on the S33 live file: neutral, dollar flat (broad dollar +1.64%/13w inside ±2%), points off 1 / on 0; 9 inputs (5 counted) with 52-week lines, e.g. VIX 16.61 (11-04), real yield 2.64 risk-off +1, STLFSI4 −0.52 risk-on −1 (candidate, not counted); none stale; history 2 regime records (10-29, 11-06, both neutral/flat); headless Chrome light and dark |
 | S35 /signals/<SUBJECT> (P56-ui-signals) | done | 2026-11-06 | this commit | 21 signals view (1521 total) | on the S33 files: `/signals/IDN` 200 (105 kB; 5 components, shifts stocks −5, bonds −4, currency +2, none capped; 5 signals, tally stocks −3, bonds +2; 6 SVG charts: net foreign 60 IDX days 08-12 → 11-05, USD bar missing on 49 days before JISDOR's first fixing 10-22; JISDOR 11 fixings, 0 carried forward; IGSYC 31 tenors 11-05 vs 10-08; SBN non-resident 914.8T, +4.5%/1y; JCI 5,030, −39.7%/1y), `.json` twin 200 (63 kB) = the file; `/signals/USA` 200 tables only (7 components, IDR 18,094.00 on 11-05), `/signals/EMU` 200; `/signals/NOPE`, `/signals/idn` 404; screenshots light and dark |
+| S36 /portfolio (P57-ui-portfolio) | done | 2026-11-06 | this commit | 19 view (1519 total) | `/portfolio` 200 (57,991 B), `.json` 200 (43,597 B): Rp55,415,423 as of 11-02; stocks 96.90% vs 111.90% summed targets, bonds 1.79% vs 26.80%; 18 of 49 stances with a weight, target or entry; priskila 65.94%, tommy 34.06%; 12 accounts masked, bnisek statement 98 d flagged, Ajaib check matches; unmapped 0; IDN 10 trims, no adds; screenshots light and dark |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`
