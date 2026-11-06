@@ -187,6 +187,16 @@ def _regime(app: App, m: re.Match[str]) -> View:
     return regime.page(app, m)
 
 
+def _signals(app: App, m: re.Match[str]) -> View:
+    from assist.views import signals
+    return signals.index(app, m)
+
+
+def _signals_subject(app: App, m: re.Match[str]) -> View | None:
+    from assist.views import signals
+    return signals.page(app, m)
+
+
 def _paper(app: App, m: re.Match[str]) -> View:
     from assist.views import paper
     return paper.page(app, m)
@@ -205,6 +215,8 @@ ROUTES: list[Route] = [(re.compile(r"^/$"), _overview),
                        (re.compile(r"^/flows$"), _flows),  # S38; the nav link comes with F8
                        (re.compile(r"^/flows/([^/]+)$"), _flows_month),
                        (re.compile(r"^/regime$"), _regime),  # S34; the nav link comes with F8
+                       (re.compile(r"^/signals$"), _signals),  # S35; nav link with F8
+                       (re.compile(r"^/signals/([^/]+)$"), _signals_subject),
                        (re.compile(r"^/paper$"), _paper),
                        (re.compile(r"^/journal$"), _journal)]
 
