@@ -222,3 +222,11 @@ def test_app_default_paper_uses_its_journal(tmp_path, monkeypatch):
     app = web.App(journal_path=tmp_path / "j", health=lambda: None)
     assert app.paper(date(2026, 10, 27)) == "report"
     assert seen == {"root": tmp_path / "j", "until": date(2026, 10, 27)}
+
+
+def test_flows_is_served_over_http_without_a_nav_link(base):
+    url, _ = base  # the temp out/ has no flows/: a 200 page with a notice, never a 500
+    r = _get(url + "/flows")
+    assert r.status_code == 200 and "no flows in out/flows/ yet" in r.text
+    assert 'href="/flows"' not in r.text  # the nav link comes with F8
+    assert _get(url + "/flows/2026-10").status_code == 404

@@ -1,0 +1,8 @@
+# Household names for `assist flows` (PLAN S38). Copy to config/household.local.yaml (gitignored)
+# and put each owner's names as they appear in bank transfer descriptions. The keys are financer's
+# `documents.owner` values. A debit whose raw description contains one of these names, and that
+# has no matching credit in another statement, is listed as a transfer to that owner. The names
+# are matched case-insensitively and are never written to out/.
+owners:
+  alice: ["ALICE EXAMPLE"]
+  bob: ["BOB SAMPLE"]

@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tomtomtomdev/investment-assist/schema/flows.schema.json",
+  "title": "investment-assist household flows (one month)",
+  "description": "PLAN S38: where the household's money moved in one month, written to out/flows/{YYYY-MM}.json by `assist flows`; out/flows/index.json follows $defs.index. Transfers between the household's own accounts are matched across financer's loaded statements on amount (to the rupiah) and date (at most rules.max_gap_days apart), one to one; a trades document counts as one settlement. Accounts are shown by their last 4 characters only and no name from the household file is written. Context only, not investment advice.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "month", "as_of", "currency", "rules", "accounts", "transfers",
+    "unmatched_named", "unmatched_settlements", "external", "totals", "stale_inputs", "sources",
+    "disclaimer"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "month": {"$ref": "#/$defs/month"},
+    "as_of": {"$ref": "#/$defs/date", "description": "Latest movement date in the month."},
+    "currency": {"const": "IDR"},
+    "rules": {"type": "object", "required": ["max_gap_days"], "properties": {"max_gap_days": {"type": "integer", "minimum": 0}}},
+    "accounts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "issuer", "account", "owner", "kind", "opening", "closing", "statements"],
+        "properties": {
+          "id": {"$ref": "#/$defs/account_id"},
+          "issuer": {"type": "string", "minLength": 1},
+          "account": {"type": "string", "maxLength": 4, "description": "The last 4 characters of the account ref (or the card's last 4); never the full number."},
+          "owner": {"type": "string", "minLength": 1},
+          "kind": {"type": "string", "description": "financer doc_type of the account's documents."},
+          "opening": {"type": ["number", "null"], "description": "Opening balance of the first statement dated in the month, else null."},
+          "closing": {"type": ["number", "null"], "description": "Closing balance of the last statement dated in the month, else null."},
+          "statements": {"type": "array", "items": {"$ref": "#/$defs/date"}}
+        }
+      }
+    },
+    "transfers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["date", "date_to", "from", "to", "amount", "gap_days", "kind", "from_description", "to_description"],
+        "properties": {
+          "date": {"$ref": "#/$defs/date", "description": "The debit's date; a transfer belongs to this month."},
+          "date_to": {"$ref": "#/$defs/date", "description": "The credit's date."},
+          "from": {"$ref": "#/$defs/account_id"},
+          "to": {"$ref": "#/$defs/account_id"},
+          "amount": {"type": "number", "exclusiveMinimum": 0},
+          "gap_days": {"type": "integer", "minimum": 0},
+          "kind": {"enum": ["transfer", "settlement", "card_payment"]},
+          "from_description": {"type": "string"},
+          "to_description": {"type": "string"}
+        }
+      }
+    },
+    "unmatched_named": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["date", "from", "to_owner", "amount", "description", "reason"],
+        "properties": {
+          "date": {"$ref": "#/$defs/date"},
+          "from": {"$ref": "#/$defs/account_id"},
+          "to_owner": {"type": "string", "minLength": 1, "description": "Owner key from the household file, never the name itself."},
+          "amount": {"type": "number", "exclusiveMinimum": 0},
+          "description": {"type": "string", "description": "financer's short description (the name is in raw_description, which is not written)."},
+          "reason": {"type": "string"}
+        }
+      }
+    },
+    "unmatched_settlements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["date", "account", "direction", "amount", "reason"],
+        "properties": {
+          "date": {"$ref": "#/$defs/date", "description": "Settlement date of the trades document."},
+          "account": {"$ref": "#/$defs/account_id"},
+          "direction": {"enum": ["credit", "debit"], "description": "credit: a buy paid into the broker; debit: sale proceeds out of it."},
+          "amount": {"type": "number", "exclusiveMinimum": 0},
+          "reason": {"type": "string"}
+        }
+      }
+    },
+    "external": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accounts", "owners"],
+      "properties": {
+        "accounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["account", "in", "out", "n_in", "n_out"],
+            "properties": {
+              "account": {"$ref": "#/$defs/account_id"},
+              "in": {"type": "number", "minimum": 0},
+              "out": {"type": "number", "minimum": 0},
+              "n_in": {"type": "integer", "minimum": 0},
+              "n_out": {"type": "integer", "minimum": 0}
+            }
+          }
+        },
+        "owners": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["owner", "in", "out"],
+            "properties": {
+              "owner": {"type": "string"},
+              "in": {"type": "number", "minimum": 0},
+              "out": {"type": "number", "minimum": 0}
+            }
+          }
+        }
+      }
+    },
+    "totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transfers", "unmatched_named", "unmatched_settlements"],
+      "properties": {
+        "transfers": {"$ref": "#/$defs/total"},
+        "unmatched_named": {"$ref": "#/$defs/total"},
+        "unmatched_settlements": {"$ref": "#/$defs/total"}
+      }
+    },
+    "stale_inputs": {"$ref": "#/$defs/texts"},
+    "sources": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "disclaimer": {"type": "string", "pattern": "[Nn]ot investment advice"}
+  },
+  "$defs": {
+    "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "month": {"type": "string", "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"},
+    "account_id": {"type": "string", "minLength": 1, "description": "issuer-last4-owner, unique in the file."},
+    "texts": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "total": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["n", "amount"],
+      "properties": {"n": {"type": "integer", "minimum": 0}, "amount": {"type": "number", "minimum": 0}}
+    },
+    "index": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "as_of", "latest", "months", "stale_inputs", "sources", "disclaimer"],
+      "properties": {
+        "schema_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+        "as_of": {"anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}]},
+        "latest": {"anyOf": [{"$ref": "#/$defs/month"}, {"type": "null"}]},
+        "months": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["month", "file", "transfers", "unmatched"],
+            "properties": {
+              "month": {"$ref": "#/$defs/month"},
+              "file": {"type": "string", "pattern": "^\\d{4}-\\d{2}\\.json$"},
+              "transfers": {"type": "integer", "minimum": 0},
+              "unmatched": {"type": "integer", "minimum": 0}
+            }
+          }
+        },
+        "stale_inputs": {"$ref": "#/$defs/texts"},
+        "sources": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "disclaimer": {"type": "string", "pattern": "[Nn]ot investment advice"}
+      }
+    }
+  }
+}

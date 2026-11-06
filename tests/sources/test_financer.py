@@ -118,3 +118,68 @@ def test_positional_statement_still_builds():
     """Callers that build a Statement by position (layer-4 tests) keep working."""
     s = Statement("ajaib", "A", "portfolio", date(2026, 9, 30), None, None, None, ())
     assert s.owner == "tommy" and s.trade_docs == 0 and s.unheld == ()
+
+
+# ---------------- movements (PLAN S38, P58-flows) ----------------
+
+FLOWS = FIXTURES / "flows"
+
+
+def _flows(tmp_path: Path) -> FinancerSource:
+    extra = (FLOWS / "transactions.sql").read_text() + (FLOWS / "seed.sql").read_text()
+    return _db(tmp_path, "schema.sql", extra=extra)
+
+
+def test_movements_read_loaded_documents_only(tmp_path):
+    ms = _flows(tmp_path).movements()
+    docs = {m.document_id for m in ms}
+    assert docs == {101, 102, 103, 105, 106, 107, 108, 109, 110}  # 104 and 111 superseded
+    assert all(m.amount_minor > 0 for m in ms)
+    assert ms == sorted(ms, key=lambda m: (m.date, m.document_id, m.ref or 0))
+
+
+def test_trades_document_is_one_settlement_not_its_fee_rows(tmp_path):
+    ms = _flows(tmp_path).movements()
+    aj = [m for m in ms if m.document_id == 105]
+    assert len(aj) == 1
+    m = aj[0]
+    assert (m.date, m.issuer, m.account, m.owner, m.doc_type) == (
+        date(2026, 10, 7), "ajaib", "AJ-3333", "tommy", "trades")
+    # minus closing_minor: a buy's payment due is money the broker account receives
+    assert (m.direction, m.amount_minor, m.amount, m.ref) == ("credit", 50_005_000, 500_050.0, None)
+    sb = [m for m in ms if m.document_id == 110]
+    assert [(m.date, m.direction, m.amount) for m in sb] == [
+        (date(2026, 10, 20), "credit", 1_234_567.89)]
+
+
+def test_movement_fields(tmp_path):
+    ms = _flows(tmp_path).movements()
+    m = next(m for m in ms if m.date == date(2026, 10, 14))
+    assert (m.issuer, m.account, m.owner, m.doc_type, m.direction, m.amount) == (
+        "bca_tahapan", "SAV-1111", "tommy", "savings_statement", "debit", 4_000_000.0)
+    assert m.description == "TRSF E-BANKING DB 1410"
+    assert "Sari Contoh" in m.raw_description
+    assert isinstance(m.ref, int)
+
+
+def test_movements_window(tmp_path):
+    ms = _flows(tmp_path).movements(date(2026, 10, 1), date(2026, 10, 31))
+    assert ms and all(date(2026, 10, 1) <= m.date <= date(2026, 10, 31) for m in ms)
+    assert 101 not in {m.document_id for m in ms}
+
+
+def test_movements_without_a_transactions_table(tmp_path):
+    """The S32 fixture has no transactions table and trade documents with a zero closing."""
+    assert _db(tmp_path, "schema.sql", "seed.sql").movements() == []
+
+
+def test_ledgers_and_owner_map(tmp_path):
+    src = _flows(tmp_path)
+    led = {(x.issuer, x.account, x.statement_date): x for x in src.ledgers()}
+    sav = led[("bca_tahapan", "SAV-1111", date(2026, 10, 31))]
+    assert (sav.owner, sav.opening, sav.closing, sav.period_start) == (
+        "tommy", 11_000_000.0, 9_000_000.0, date(2026, 10, 1))
+    assert ("bca_rdn", "RDN-2222", date(2026, 10, 31)) in led
+    assert not any(x.doc_type == "trades" for x in led.values())
+    assert sum(1 for x in led.values() if x.account == "RDN-2222") == 1  # superseded skipped
+    assert ("bca_rdn", "RDN-9999", "priskila") in src.owner_map()
