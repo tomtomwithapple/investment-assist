@@ -48,7 +48,7 @@ uv run assist brief                   # print the brief for the current out/ (--
 uv run assist regime                  # layer 0 today: risk_on | neutral | risk_off, dollar direction
 uv run assist regime --check          # daily job: journal it, Telegram only if it changed
 uv run assist regime --check --no-send  # compare only; writes and sends nothing
-uv run assist paper                   # paper track vs the IDR 60/40 benchmark (--json [--marks])
+uv run assist paper                   # paper track vs the IDR 48/32/20 benchmark, 60/40 alongside (--json [--marks])
 uv run assist journal                 # decisions per model fingerprint, hash-chain check
 uv run assist flows                   # household transfers from financer → out/flows/<YYYY-MM>.json (for /flows)
 ```
@@ -69,7 +69,8 @@ The brief, top to bottom:
 2. **Data health**: the doctor, one line per missing, locked or stale source (or a table a
    stance needs that is absent);
 3. the regime, the stance table and the changes since the last run;
-4. **Paper track**: the 60/40 benchmark (60% JCI, 40% SBN leg) and one line per model
+4. **Paper track**: the benchmark (48% JCI, 32% SBN leg, 20% US stocks in IDR), the old 60/40
+   alongside (it still scores model segments from before S39), and one line per model
    fingerprint. It shows benchmark marks only until the journal has history, and a stale leg is
    counted as a stale week, never filled in;
 5. per-stance drivers, risks and flags, the watch list, stale inputs and sources.

@@ -89,8 +89,9 @@ geospacer (alternative data) is for theme research only and does not feed the fl
   improves the control is fitting noise.
 - Every decision is journalled with a fingerprint of the model that made it, so a rule change
   segments the record instead of averaging two regimes.
-- Paper-track stances against a fixed IDR 60/40 benchmark (60% JCI, 40% SBN index) before
-  acting with real money.
+- Paper-track stances against the IDR benchmark 48% JCI / 32% SBN / 20% US stocks in IDR
+  (unhedged, price index; `stance.BENCHMARK_PCT`), rebalanced weekly, before acting with real
+  money. Model segments journalled before S39 stay scored on the old 60/40 (60% JCI, 40% SBN).
 
 ### Coverage gaps, in priority order (as of 2026-10-23)
 
