@@ -192,8 +192,11 @@ def test_layout_has_nav_disclaimer_and_dark_mode():
     assert EVIL not in page and "<p>body</p>" in page
 
 
-@pytest.mark.parametrize("path, active", [("/", "/"), ("/status", "/status"),
-                                          ("/candidates/IDN", "/candidates"), ("/x", None)])
+@pytest.mark.parametrize("path, active", [
+    ("/", "/"), ("/status", "/status"), ("/candidates/IDN", "/candidates"), ("/x", None),
+    ("/regime", "/regime"), ("/signals", "/signals"), ("/signals/IDN", "/signals"),
+    ("/portfolio", "/portfolio"), ("/flows", "/flows"), ("/flows/2026-10", "/flows"),
+    ("/industries/banks", "/industries"), ("/stance/IDN/bonds", None)])
 def test_active_nav(path, active):
     assert web.active_nav(path) == active
 
@@ -224,9 +227,14 @@ def test_app_default_paper_uses_its_journal(tmp_path, monkeypatch):
     assert seen == {"root": tmp_path / "j", "until": date(2026, 10, 27)}
 
 
-def test_flows_is_served_over_http_without_a_nav_link(base):
+def test_flows_is_served_over_http_with_its_nav_link(base):
     url, _ = base  # the temp out/ has no flows/: a 200 page with a notice, never a 500
     r = _get(url + "/flows")
     assert r.status_code == 200 and "no flows in out/flows/ yet" in r.text
-    assert 'href="/flows"' not in r.text  # the nav link comes with F8
+    assert '<a href="/flows" class="active">Flows</a>' in r.text  # F8
     assert _get(url + "/flows/2026-10").status_code == 404
+
+
+def test_nav_order_reads_from_regime_to_status():
+    assert [h for h, _ in web.NAV] == ["/", "/regime", "/signals", "/candidates", "/industries",
+                                       "/portfolio", "/flows", "/paper", "/journal", "/status"]

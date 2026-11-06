@@ -138,3 +138,9 @@ def test_empty_out_says_run_assist_run(tmp_path):
         assert "<table" not in r.body
         data = json.loads(_get(out, "/.json").body)
         assert data["countries"] == [] and data["commodities"] == [] and data["as_of"] is None
+
+
+def test_banner_links_to_the_regime_page():
+    body = _get(FIXTURE).body
+    banner = re.search(r'<section class="card banner">(.*?)</section>', body, re.S).group(1)
+    assert 'href="/regime"' in banner

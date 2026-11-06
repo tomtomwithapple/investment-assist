@@ -8,7 +8,7 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-11-06 (S32 done, P53-portfolio-trades: layer 5 rolls each account forward through financer's loaded trade documents and splits the household by owner; live IDN stocks 96.90%, bonds 1.79%, cash 1.31% of Rp55.4 M, the second owner's 63 Stockbit lines Rp36.5 M at last trade prices). Earlier: 2026-10-29 (P48–P50 tiers). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against Stockbit's industry average and the sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S31 (top tier per industry) is built, P48–P50, but waits for a live run and replay verdict on a Mac with idx-method's `stockbiter.db`. S15 and S22 are open.
+**Last updated:** 2026-11-06 (**phase H done**, S37 F8-ui-layers: the nav adds Regime, Signals, Portfolio and Flows; the overview banner links `/regime`, a stance's Drivers card links `/signals/<SUBJECT>` (only when that layer file exists) and its Portfolio card `/portfolio`; every page and its `.json` twin is 200 live and in the e2e test). Earlier: 2026-11-06 (S32 done, P53-portfolio-trades: layer 5 rolls each account forward through financer's loaded trade documents and splits the household by owner; live IDN stocks 96.90%, bonds 1.79%, cash 1.31% of Rp55.4 M, the second owner's 63 Stockbit lines Rp36.5 M at last trade prices). Earlier: 2026-10-29 (P48–P50 tiers). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against Stockbit's industry average and the sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S31 (top tier per industry) is built, P48–P50, but waits for a live run and replay verdict on a Mac with idx-method's `stockbiter.db`. S15 and S22 are open.
 
 What `assist run` does:
 - It reads layers 0, 1 and 5 for every subject.
@@ -54,7 +54,7 @@ a record.
 | E. Layer 4 refinements (S31: top tier per industry) | S15, S31 | 0 / 2 |
 | F. Undervalued stocks, macro-weighted (IDN, then US, JP) | S16–S22 | 7 / 8 |
 | G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S30 | 8 / 8 |
-| H. Layer pages (regime, signals, portfolio) | S33–S37 | 4 / 5 |
+| H. Layer pages (regime, signals, portfolio) | S33–S37 | 5 / 5 |
 
 ### Open data gaps (fetcher side)
 
@@ -911,8 +911,10 @@ signals have series worth drawing.
   - *Done when:* `/flows/2026-10` shows Tommy → his RDN matched, Tommy → Priskila and her
     Stockbit settlements as unmatched with the reason, and the rest as above. When financer
     loads her RDN statement, those become matched transfers with no code change.
-- [ ] **S37 Fan-in** (F8-ui-layers). Nav and cross-links, README pages list, CLI help, e2e test
+- [x] **S37 Fan-in** (F8-ui-layers). Nav and cross-links, README pages list, CLI help, e2e test
   of every route and `.json` twin, live check on the real `out/`, screenshots light and dark.
+  (Done 2026-11-06, `docs/results/F8-ui-layers.md`. `assist run` does not yet write
+  `out/flows/`, so run `assist flows` for now.)
 
 ## Open questions
 
@@ -959,6 +961,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S34 /regime (P55-ui-regime) | done | 2026-11-06 | this commit | 19 view (1519 total) | `/regime` 200 16,604 B, `.json` 200 61,713 B on the S33 live file: neutral, dollar flat (broad dollar +1.64%/13w inside ±2%), points off 1 / on 0; 9 inputs (5 counted) with 52-week lines, e.g. VIX 16.61 (11-04), real yield 2.64 risk-off +1, STLFSI4 −0.52 risk-on −1 (candidate, not counted); none stale; history 2 regime records (10-29, 11-06, both neutral/flat); headless Chrome light and dark |
 | S35 /signals/<SUBJECT> (P56-ui-signals) | done | 2026-11-06 | this commit | 21 signals view (1521 total) | on the S33 files: `/signals/IDN` 200 (105 kB; 5 components, shifts stocks −5, bonds −4, currency +2, none capped; 5 signals, tally stocks −3, bonds +2; 6 SVG charts: net foreign 60 IDX days 08-12 → 11-05, USD bar missing on 49 days before JISDOR's first fixing 10-22; JISDOR 11 fixings, 0 carried forward; IGSYC 31 tenors 11-05 vs 10-08; SBN non-resident 914.8T, +4.5%/1y; JCI 5,030, −39.7%/1y), `.json` twin 200 (63 kB) = the file; `/signals/USA` 200 tables only (7 components, IDR 18,094.00 on 11-05), `/signals/EMU` 200; `/signals/NOPE`, `/signals/idn` 404; screenshots light and dark |
 | S36 /portfolio (P57-ui-portfolio) | done | 2026-11-06 | this commit | 19 view (1519 total) | `/portfolio` 200 (57,991 B), `.json` 200 (43,597 B): Rp55,415,423 as of 11-02; stocks 96.90% vs 111.90% summed targets, bonds 1.79% vs 26.80%; 18 of 49 stances with a weight, target or entry; priskila 65.94%, tommy 34.06%; 12 accounts masked, bnisek statement 98 d flagged, Ajaib check matches; unmapped 0; IDN 10 trims, no adds; screenshots light and dark |
+| S37 fan-in: nav and cross-links (F8-ui-layers) | done | 2026-11-06 | this commit | e2e +11 routes, 5 web, 2 stance, 1 overview (1571 total) | nav Overview, Regime, Signals, Candidates, Industries, Portfolio, Flows, Paper, Journal, Status; live on a copy of the S33 `out/` + `assist flows`: 20 pages and their twins 200 (`/signals/IDN` 105 kB, `/portfolio` 58 kB, `/flows/2026-10` 15.5 kB), unknown subject and month 404; IDN bonds links `/signals/IDN` and `/portfolio`, GOLD only `/portfolio`; `/industries` a notice (no `IDN.json` in the copy); screenshots light and dark |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

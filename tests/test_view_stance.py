@@ -186,3 +186,20 @@ def test_a_different_disclaimer_is_shown(out_copy):
     body = _get("/stance/IDN/bonds", out_copy).body
     assert body.count(web.DISCLAIMER) == 2
     assert '<p class="muted">Heuristic, not investment advice. &lt;script&gt;' in body
+
+
+def test_drivers_link_to_signals_only_when_the_subject_has_a_layer_file(out_copy):
+    """F8: no layer files → no signals link; IDN's file → a link on IDN only (no dead links)."""
+    assert "/signals/" not in _section(_get("/stance/IDN/bonds", out_copy).body, "drivers")
+    (out_copy / "layers").mkdir()
+    (out_copy / "layers" / "IDN.json").write_text("{}")
+    (out_copy / "layers" / "regime.json").write_text("{}")
+    drivers = _section(_get("/stance/IDN/bonds", out_copy).body, "drivers")
+    assert 'href="/signals/IDN"' in drivers
+    assert "/signals/" not in _section(_get("/stance/USA/bonds", out_copy).body, "drivers")
+    assert "/signals/" not in _section(_get("/stance/GOLD/commodities", out_copy).body,
+                                       "drivers")
+
+
+def test_portfolio_card_links_to_the_portfolio_page():
+    assert 'href="/portfolio"' in _section(_get("/stance/IDN/bonds").body, "portfolio")

@@ -26,9 +26,9 @@ from urllib.parse import unquote
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8790
 DISCLAIMER = "Heuristic, not investment advice."
-NAV = (("/", "Overview"), ("/candidates", "Candidates"), ("/industries", "Industries"),
-       ("/paper", "Paper"),
-       ("/journal", "Journal"), ("/status", "Status"))
+NAV = (("/", "Overview"), ("/regime", "Regime"), ("/signals", "Signals"),
+       ("/candidates", "Candidates"), ("/industries", "Industries"), ("/portfolio", "Portfolio"),
+       ("/flows", "Flows"), ("/paper", "Paper"), ("/journal", "Journal"), ("/status", "Status"))
 ALIASES = {"/json": "/status.json"}
 
 esc = html.escape
@@ -120,6 +120,7 @@ h2 {{ font-size:15px; margin:0; }}
 .card {{ background:var(--card); border:1px solid var(--line); border-radius:10px;
   padding:14px 16px; margin:12px 0; overflow-x:auto; }}
 .card header {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }}
+.card header a.more {{ margin-left:auto; color:var(--muted); font-size:12px; }}
 .muted {{ color:var(--muted); }}
 .notice {{ background:var(--warn-bg); color:var(--warn); border-radius:8px; padding:8px 12px; }}
 .chip {{ font-size:12px; padding:1px 8px; border-radius:999px; white-space:nowrap; }}
@@ -217,12 +218,12 @@ ROUTES: list[Route] = [(re.compile(r"^/$"), _overview),
                        (re.compile(r"^/candidates$"), _candidates),
                        (re.compile(r"^/candidates/([^/]+)$"), _market),
                        (re.compile(r"^/industries$"), _industries),
-                       (re.compile(r"^/flows$"), _flows),  # S38; the nav link comes with F8
+                       (re.compile(r"^/flows$"), _flows),
                        (re.compile(r"^/flows/([^/]+)$"), _flows_month),
-                       (re.compile(r"^/regime$"), _regime),  # S34; the nav link comes with F8
-                       (re.compile(r"^/signals$"), _signals),  # S35; nav link with F8
+                       (re.compile(r"^/regime$"), _regime),
+                       (re.compile(r"^/signals$"), _signals),
                        (re.compile(r"^/signals/([^/]+)$"), _signals_subject),
-                       (re.compile(r"^/portfolio$"), _portfolio),  # S36; nav link with F8
+                       (re.compile(r"^/portfolio$"), _portfolio),
                        (re.compile(r"^/paper$"), _paper),
                        (re.compile(r"^/journal$"), _journal)]
 

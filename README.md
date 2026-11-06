@@ -41,7 +41,7 @@ its sources.
 ```sh
 uv sync
 uv run assist doctor                  # every source: present / missing / locked / stale
-uv run assist status                  # (--host 0.0.0.0 for the LAN) local pages on http://127.0.0.1:8790/ (read-only, Ctrl-C stops): / stance grid, /stance/<SUBJECT>/<asset>, /candidates[/<MKT>], /paper, /journal, /status source health + launchd jobs; each has a .json twin
+uv run assist status                  # (--host 0.0.0.0 for the LAN) local pages on http://127.0.0.1:8790/ (read-only, Ctrl-C stops): / stance grid, /stance/<SUBJECT>/<asset>, /regime (layer 0 inputs and history), /signals[/<SUBJECT>] (layers 2-3), /candidates[/<MKT>], /industries[/<id>], /portfolio (layer 5), /flows[/<YYYY-MM>] (household transfers), /paper, /journal, /status source health + launchd jobs; each has a .json twin
 uv run assist run                     # stances → out/, journal/, data/briefs/<day>.md, Telegram once a day
 uv run assist run --no-send           # the same, without Telegram
 uv run assist brief                   # print the brief for the current out/ (--send: summary, once a day)
@@ -50,6 +50,7 @@ uv run assist regime --check          # daily job: journal it, Telegram only if 
 uv run assist regime --check --no-send  # compare only; writes and sends nothing
 uv run assist paper                   # paper track vs the IDR 60/40 benchmark (--json [--marks])
 uv run assist journal                 # decisions per model fingerprint, hash-chain check
+uv run assist flows                   # household transfers from financer → out/flows/<YYYY-MM>.json (for /flows)
 ```
 
 Run from a git worktree with `--siblings-root /path/to/Projects` (or `ASSIST_SIBLINGS_ROOT`),

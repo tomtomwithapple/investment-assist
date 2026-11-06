@@ -261,7 +261,8 @@ def test_index_lists_subjects(out):
     r = _get(out, "/signals")
     assert r.status == 200
     assert '<a href="/signals/IDN">IDN</a>' in r.body and '<a href="/signals/EMU">EMU</a>' in r.body
-    assert "regime" not in r.body and "portfolio" not in r.body.lower().replace("/portfolio", "")
+    main = r.body.split("</nav>", 1)[1]  # the nav links /regime and /portfolio since F8
+    assert "regime" not in main and "portfolio" not in main.lower()
     data = json.loads(_get(out, "/signals.json").body)["subjects"]
     assert [d["subject"] for d in data] == ["EMU", "IDN"]
     assert data[1]["shifts"] == {"stocks": -10.0, "bonds": -4.0, "currency": 2.0}

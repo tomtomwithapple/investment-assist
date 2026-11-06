@@ -1,12 +1,15 @@
 """End to end: `assist status` serves every UI page over HTTP. The CLI runs in a thread on an
 ephemeral port over a tmp repo built from tests/fixtures/ui (out/, out/candidates/,
-data/snapshots/, a tmp journal), with an empty siblings root, canned doctor results (no store is
-opened), no launchd scan and a canned paper report. Every route and its .json twin is a 200 with
-the nav and the disclaimer, a bad path is a 404, and nothing under the tmp repo changes."""
+data/snapshots/, a tmp journal) plus the phase H files (out/layers/ regime, IDN and portfolio,
+out/flows/ from the S38 financer fixture), with an empty siblings root, canned doctor results
+(no store is opened), no launchd scan and a canned paper report. Every route and its .json twin
+is a 200 with the nav and the disclaimer, a bad path or unknown subject is a 404, the
+cross-links point at pages that exist, and nothing under the tmp repo changes."""
 
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import threading
 from datetime import date
@@ -14,16 +17,21 @@ from pathlib import Path
 
 import httpx
 import pytest
+from test_flows import NAMES, _db
+from test_view_signals import IDN
 
-from assist import cli, doctor, journal, paper, pipeline, status, web
+from assist import cli, doctor, flows, journal, paper, pipeline, status, web
+from assist.sources.financer import FinancerSource
 
 UI = Path(__file__).parent / "fixtures" / "ui"
 FP = "sha256:" + "c" * 64
-HELP = "local pages: stances, candidates, paper, journal, source health"
+HELP = ("local pages: stances, regime, signals, candidates, industries, portfolio, flows, "
+        "paper, journal, source health")
 
 PAGES = ["/", "/stance/IDN/bonds", "/stance/IDN/stocks", "/stance/USA/bonds",
          "/stance/GOLD/commodities", "/candidates", "/candidates/IDN", "/candidates/USA",
-         "/candidates/AUS", "/paper", "/journal", "/status"]
+         "/candidates/AUS", "/industries", "/regime", "/signals", "/signals/IDN",
+         "/portfolio", "/flows", "/flows/2026-10", "/paper", "/journal", "/status"]
 
 
 def _report(until: date) -> paper.PaperReport:
@@ -45,6 +53,12 @@ def repo(tmp_path, monkeypatch):
     shutil.copytree(UI / "out", root / "out")
     shutil.copytree(UI / "candidates", root / "out" / "candidates")
     shutil.copytree(UI / "snapshots", root / "data" / "snapshots")
+    layers = root / "out" / "layers"
+    layers.mkdir()
+    shutil.copy(UI / "layers" / "regime.json", layers / "regime.json")
+    shutil.copy(UI / "portfolio" / "portfolio.json", layers / "portfolio.json")
+    (layers / "IDN.json").write_text(json.dumps(IDN))
+    flows.write(*flows.build_from(FinancerSource(_db(tmp_path)), NAMES), root / "out")
     j = journal.Journal(root / "journal")
     for d in ("2026-10-06", "2026-10-13"):
         j.record(kind="stance", fingerprint=FP, subject="IDN", asset="bonds", as_of=d,
@@ -113,7 +127,9 @@ def test_every_page_and_twin_over_http(repo, monkeypatch, capsys):
                 twin.json()
             assert c.get(base + "/json").json()["sources"]  # the status alias
             assert c.head(base + "/paper").status_code == 200
-            for bad in ("/nope", "/nope.json", "/stance/IDN/..%2Fx", "/candidates/XXX"):
+            for bad in ("/nope", "/nope.json", "/stance/IDN/..%2Fx", "/candidates/XXX",
+                        "/signals/XXX", "/signals/XXX.json", "/signals/regime",
+                        "/signals/..%2Fregime", "/flows/1999-01"):
                 r = c.get(base + bad)
                 assert r.status_code == 404, bad
                 assert web.DISCLAIMER in r.text
@@ -121,11 +137,18 @@ def test_every_page_and_twin_over_http(repo, monkeypatch, capsys):
             assert journal_page["chain_ok"] and journal_page["records"] == 2
             stance_page = c.get(base + "/stance/IDN/bonds").text
             assert stance_page.count(web.DISCLAIMER) == 1  # the footer only
+            # F8 cross-links: each points at a page served above, none at a 404
+            assert 'href="/regime"' in c.get(base + "/").text.split("</nav>", 1)[1]
+            assert 'href="/signals/IDN"' in stance_page and 'href="/portfolio"' in stance_page
+            for path in ("/stance/USA/bonds", "/stance/GOLD/commodities"):  # no layer file
+                assert 'href="/signals/' not in c.get(base + path).text, path
+            assert '<a href="/signals" class="active">' in c.get(base + "/signals/IDN").text
     finally:
         assert stop() == 0
     assert _tree(root) == before  # read-only: out/, snapshots and the journal unchanged
     printed = capsys.readouterr().out
-    for page in ("stances", "candidates", "paper", "journal", "status"):
+    for page in ("stances", "regime", "signals", "candidates", "portfolio", "flows", "paper",
+                 "journal", "status"):
         assert page in printed
 
 

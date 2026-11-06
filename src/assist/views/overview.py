@@ -2,9 +2,10 @@
 commodities below it, from `brief.load_out(app.out_dir)` (out/{SUBJECT}/*.json only).
 
 Regime and dollar are printed as the brief prints them (one value, or mixed and grouped by
-value). A country row is any subject with a non-commodities stance, in the brief's order (IDN
-first); a missing cell is "-". A cell with stale inputs carries a "stale" chip whose tooltip
-names them. Files that fail to load are a notice, never a 500. The .json twin is the rows used.
+value), with a link to `/regime`. A country row is any subject with a non-commodities stance,
+in the brief's order (IDN first); a missing cell is "-". A cell with stale inputs carries a
+"stale" chip whose tooltip names them. Files that fail to load are a notice, never a 500. The
+.json twin is the rows used.
 """
 
 from __future__ import annotations
@@ -90,6 +91,7 @@ def _banner(d: Mapping) -> str:
     counts = " · ".join(f"{n} {k}" for k, n in d["counts"].items() if n)
     return (f'<section class="card banner"><header><h2>As of {esc(d["as_of"])}</h2></header>'
             f'<p>{_grouped("Regime", d["regime"])}<br>{_grouped("Dollar", d["dollar"])}</p>'
+            f'<p><a href="/regime">Regime inputs and history →</a></p>'
             f'<p class="muted">{esc(counts)}</p></section>')
 
 

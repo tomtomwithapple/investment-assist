@@ -132,5 +132,5 @@ def test_every_value_is_escaped(out):
     assert r.status == 200 and EVIL not in r.body and "&lt;script&gt;" in r.body
 
 
-def test_flows_has_no_nav_link_yet():
-    assert all(href != "/flows" for href, _ in web.NAV)  # F8 adds it
+def test_flows_has_a_nav_link():
+    assert ("/flows", "Flows") in web.NAV  # F8

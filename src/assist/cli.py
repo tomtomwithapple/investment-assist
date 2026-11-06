@@ -15,7 +15,8 @@ import httpx
 from assist import brief, doctor, journal, notify, paper, pipeline, stance, status, web
 from assist.layers import regime as regime_layer
 
-STATUS_HELP = "local pages: stances, candidates, paper, journal, source health"
+STATUS_HELP = ("local pages: stances, regime, signals, candidates, industries, portfolio, flows, "
+               "paper, journal, source health")
 
 
 def _today(args: argparse.Namespace) -> date:

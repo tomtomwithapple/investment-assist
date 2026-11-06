@@ -5,15 +5,18 @@ The (subject, asset) pair from the URL is matched exactly (case sensitive) again
 `brief.load_out(app.out_dir)` loaded; it is never turned into a path, so an unknown pair or a
 decoded `..` is a 404. The previous stance comes from `brief.previous_snapshot(app.snapshots_dir,
 before=as_of)`, loaded the same way and matched on the same pair. The .json twin is the stance
-dict as written.
+dict as written. The Drivers card links to `/signals/<SUBJECT>` when out/layers/ holds that
+subject's file, the Portfolio card to `/portfolio`.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping, Sequence
+from urllib.parse import quote
 
 from assist import brief, web
+from assist.views import signals
 from assist.views.overview import TONE
 from assist.web import esc
 
@@ -47,9 +50,17 @@ def _pct(x: float | None) -> str:
     return "n/a" if x is None else f"{brief._num(x)}%"
 
 
-def _card(cls: str, title: str, inner: str) -> str:
-    return (f'<section class="card {cls}"><header><h2>{esc(title)}</h2></header>'
+def _card(cls: str, title: str, inner: str, link: tuple[str, str] | None = None) -> str:
+    """link: (href, text) shown in the card's header, both escaped."""
+    more = "" if link is None else f'<a class="more" href="{esc(link[0])}">{esc(link[1])}</a>'
+    return (f'<section class="card {cls}"><header><h2>{esc(title)}</h2>{more}</header>'
             f"{inner}</section>")
+
+
+def signals_href(app: web.App, subject: str) -> str | None:
+    """`/signals/<SUBJECT>` when out/layers/ holds that subject's file, else None (no dead link:
+    commodities and a run without layer files have none)."""
+    return f"/signals/{quote(subject)}" if subject in signals.subjects(app.out_dir) else None
 
 
 def _table(rows: Sequence[tuple[str, str]]) -> str:
@@ -113,16 +124,18 @@ def _flags(flags: Sequence[Mapping]) -> str:
         for f in flags) + "</table>"
 
 
-def body(s: Mapping, c: Mapping | None) -> str:
+def body(s: Mapping, c: Mapping | None, signals_link: str | None = None) -> str:
     return "".join([
         f'<h1>{esc(s["subject"])} {esc(s["asset"])}</h1>',
         _summary(s),
         _change(s, c),
-        _card("drivers", "Drivers", _list(s["drivers"])),
+        _card("drivers", "Drivers", _list(s["drivers"]),
+              (signals_link, "Layer 2-3 signals →") if signals_link else None),
         _card("risks", "Risks", _list(s["risks"])),
         _card("watch", "Watch", _list(s["watch"])),
         _card("entry", "Entry", _entry(s["entry"])),
-        _card("portfolio", "Portfolio", _portfolio(s["portfolio"])),
+        _card("portfolio", "Portfolio", _portfolio(s["portfolio"]),
+              ("/portfolio", "Whole portfolio →")),
         _card("flags", "Flags", _flags(s.get("flags") or [])),
         _card("stale", "Stale inputs", _list(s["stale_inputs"])),
         _card("sources", "Sources", _list(s["sources"])),
@@ -140,4 +153,5 @@ def page(app: web.App, m: re.Match[str]) -> web.View | None:
     s = find(brief.load_out(app.out_dir).stances, m.group(1), m.group(2))
     if s is None:
         return None
-    return web.View(f"Assist {s['subject']} {s['asset']}", body(s, change(app, s)), s)
+    html = body(s, change(app, s), signals_href(app, s["subject"]))
+    return web.View(f"Assist {s['subject']} {s['asset']}", html, s)
