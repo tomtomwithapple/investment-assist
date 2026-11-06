@@ -858,3 +858,53 @@ slices:
       statement (Priskila's Stockbit 4848825) starts empty. Changed lines are valued at the last
       trade price (no price feed here); negatives go to unmapped. owner falls back to 'tommy' when
       the column is absent. Her RDN cash waits for financer to load her RDN statement.
+  - id: P54-layer-out
+    title: "PLAN S33: assist run writes out/layers/regime.json, out/layers/<SUBJECT>.json (layers 2-3) and out/layers/portfolio.json with chart series"
+    depends_on: [F4-ops, P53-portfolio-trades]
+    owns: ["src/assist/layers_out.py", "src/assist/pipeline.py", "schema/layers/**", "tests/test_layers_out.py", "tests/fixtures/layers/**", "docs/results/P54-layer-out.md"]
+    accept: uv run pytest -q tests/test_layers_out.py tests/test_run_e2e.py tests/test_run_idn.py && uv run ruff check .
+    estimate: 1.5
+    notes: >-
+      Serialise what the run already builds (regime Inputs, IdnOverrides and foreign override
+      components, IdnSignals, Portfolio); no new reads except the chart windows from the same
+      adapters (layer-0 series 1y weekly, IDX net foreign IDR/USD and JISDOR 60d, JCI 1y daily,
+      IGSYC curve today and 4 weeks back, non-resident SBN 1y). Each file carries as_of,
+      schema_version, model fingerprint, sources, stale_inputs, disclaimer. A layer that raises
+      becomes a stale input in its file; the run never fails on it. Stances and brief unchanged.
+  - id: P55-ui-regime
+    title: "PLAN S34: /regime page: call, every layer-0 input with value, date, direction, vote and a 1y line, regime history from the journal"
+    depends_on: [P54-layer-out]
+    owns: ["src/assist/views/regime.py", "tests/test_view_regime.py", "docs/results/P55-ui-regime.md"]
+    accept: uv run pytest -q tests/test_view_regime.py tests/test_web.py && uv run ruff check .
+    estimate: 1
+    notes: >-
+      Stdlib HTML/SVG as the rest of views/. Missing regime.json is a notice, not a 500. Escape
+      every value; .json twin is the file plus the journal history used.
+  - id: P56-ui-signals
+    title: "PLAN S35: /signals/<SUBJECT> page: layer-2 components and layer-3 signals as tables; IDN charts (flows, JISDOR, IGSYC curve, SBN non-resident, JCI)"
+    depends_on: [P54-layer-out]
+    owns: ["src/assist/views/signals.py", "tests/test_view_signals.py", "docs/results/P56-ui-signals.md"]
+    accept: uv run pytest -q tests/test_view_signals.py tests/test_web.py && uv run ruff check .
+    estimate: 1.5
+    notes: >-
+      Subject matched exactly against the files loaded, never turned into a path (as /stance).
+      Foreign subjects: tables only. JISDOR carried-forward days and gaps marked, never filled.
+  - id: P57-ui-portfolio
+    title: "PLAN S36: /portfolio page: holdings per account and owner, weights vs stance targets, deltas, trims, unmapped value, statement age"
+    depends_on: [P54-layer-out, P53-portfolio-trades]
+    owns: ["src/assist/views/portfolio.py", "tests/test_view_portfolio.py", "docs/results/P57-ui-portfolio.md"]
+    accept: uv run pytest -q tests/test_view_portfolio.py tests/test_web.py && uv run ruff check .
+    estimate: 1
+    notes: >-
+      Local only (127.0.0.1), as every page; amounts in IDR. Trims read from out/candidates/.
+  - id: F8-ui-layers
+    kind: integration
+    title: "PLAN S37 fan-in: nav and cross-links to /regime, /signals, /portfolio; README, CLI help, e2e and live check"
+    depends_on: [P55-ui-regime, P56-ui-signals, P57-ui-portfolio]
+    owns: ["src/assist/web.py", "src/assist/views/overview.py", "src/assist/views/stance.py", "src/assist/cli.py", "README.md", "tests/test_ui_e2e.py", "PLAN.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+    notes: >-
+      Overview banner links /regime; stance Drivers card links /signals/<SUBJECT>, Portfolio card
+      links /portfolio. e2e: every route and .json twin 200 on fixtures, unknown subject 404.
+      Live check on the real out/ after a run; screenshots light and dark.

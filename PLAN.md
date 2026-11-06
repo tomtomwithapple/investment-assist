@@ -54,6 +54,7 @@ a record.
 | E. Layer 4 refinements (S31: top tier per industry) | S15, S31 | 0 / 2 |
 | F. Undervalued stocks, macro-weighted (IDN, then US, JP) | S16–S22 | 7 / 8 |
 | G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S30 | 8 / 8 |
+| H. Layer pages (regime, signals, portfolio) | S33–S37 | 0 / 5 |
 
 ### Open data gaps (fetcher side)
 
@@ -778,6 +779,56 @@ host, launchd for the server, changes to how stances or candidates are built.
   made-up fixture until a market has a budget (P43).
 
 ---
+
+### Phase H — layer pages (planned 2026-11-06)
+
+**Why.** Phase G serves the *output* of every layer, but only layer 4 and the stance itself
+have pages. Layer 0 shows as one word in the banner ("neutral, dollar flat"), layers 2 and 3
+as free-text lines in a stance's *Drivers* card, and layer 5 as one *Portfolio* card per
+stance. None of their numbers are in `out/`: the stance JSONs carry only the final fields and
+text drivers, so a page cannot show them without reading the stores, which the UI must never
+do. Phase H writes each layer's structured result to `out/layers/` during `assist run`, then
+gives each a page.
+
+**Done when** (each one covered by a slice's test):
+1. `assist run` writes `out/layers/regime.json`, `out/layers/<SUBJECT>.json` (layers 2–3 per
+   subject) and `out/layers/portfolio.json`, each with `as_of`, `schema_version`, the model
+   fingerprint, sources, stale inputs and the disclaimer, and a short history for every series
+   a page charts. A layer that fails is a stale input in the file, never a failed run (S33).
+2. `/regime` shows the regime and dollar call, every layer-0 input (VIX, HY OAS, EM OAS, curve,
+   net liquidity, NFCI, STLFSI, real yield, broad dollar, Brent, ...) with value, date,
+   direction and its vote, and a 1-year weekly line per input, plus the regime history from the
+   journal's regime records (S34).
+3. `/signals/<SUBJECT>` shows layer 2 as a table (component, value, change over its window,
+   direction, newest point, per-asset shift and cap) and layer 3 as a table (signal, value,
+   direction, source). For IDN it also charts net foreign flow (IDR and USD, 60 days), JISDOR
+   (60 days, carried-forward days marked), the IGSYC curve (today vs 4 weeks ago), non-resident
+   SBN holdings and JCI (1 year). Unknown subject → 404 (S35).
+4. `/portfolio` shows holdings per account and owner (financer, incl. P53's trade roll-forward),
+   weights per asset class against each stance's target, the deltas and tranches, trims from the
+   candidate lists, unmapped value and statement age (S36).
+5. Nav gains Regime, Signals and Portfolio; the Overview banner links to `/regime`, a stance's
+   Drivers and Portfolio cards link to `/signals/<SUBJECT>` and `/portfolio`. Every page has a
+   `.json` twin, escapes every value and stays read-only on 127.0.0.1. README and a live check
+   of every page close the phase (S37).
+
+**Not in scope:** new inputs, new rules or any change to a stance: the pages show what the run
+already computes. Foreign subjects get the layer-2/3 tables only (no charts) until their
+signals have series worth drawing.
+
+- [ ] **S33 Layer files in `out/layers/`** (P54-layer-out). `pipeline` keeps the `Regime`
+  inputs, `IdnOverrides`/foreign overrides components, `IdnSignals` and the `Portfolio` it
+  already builds, and `write_layers` serialises them, with chart series cut to fixed windows
+  (1y weekly for layer 0, 60 days daily for flows and JISDOR, 1y daily for JCI, two IGSYC
+  curves). JSON schemas in `schema/layers/`. The brief and stances are unchanged.
+- [ ] **S34 `/regime`** (P55-ui-regime). Inputs table and sparklines in stdlib HTML/SVG as the
+  rest of `views/`; regime history from journal records of kind `regime`.
+- [ ] **S35 `/signals/<SUBJECT>`** (P56-ui-signals). Layer-2 and layer-3 tables for every
+  subject; the IDN charts listed above.
+- [ ] **S36 `/portfolio`** (P57-ui-portfolio). After P53 (it owns `layers/portfolio.py` and the
+  stance view's portfolio card).
+- [ ] **S37 Fan-in** (F8-ui-layers). Nav and cross-links, README pages list, CLI help, e2e test
+  of every route and `.json` twin, live check on the real `out/`, screenshots light and dark.
 
 ## Open questions
 
