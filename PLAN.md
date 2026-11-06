@@ -827,6 +827,78 @@ signals have series worth drawing.
   subject; the IDN charts listed above.
 - [ ] **S36 `/portfolio`** (P57-ui-portfolio). After P53 (it owns `layers/portfolio.py` and the
   stance view's portfolio card).
+- [ ] **S38 `/flows`: where the household's money moved** (P58-flows, planned 2026-11-06).
+  Months of transfers between the household's own accounts, matched across financer's
+  statements, and the gaps where one side has no statement.
+  - **Why.** The user wants to see money move from Tommy's BCA savings (`bca_tahapan`, financer
+    slice 13) to Priskila's BCA RDN and on into her Stockbit trades. Layer 5 shows holdings;
+    nothing reads financer's `transactions`. financer leaves linking transfers to the parent
+    (*fetch and store only*).
+  - **Inputs.** A new adapter method, `FinancerSource.movements(start, end)`, reads only
+    `status = 'loaded'` documents of every doc type. It yields date, issuer, account, owner,
+    doc_type, document id, direction, amount (IDR), description and raw_description.
+    - A `trades` document (a Stockbit TC or an Ajaib daily) yields **one** movement, not its fee
+      rows: the settlement, an amount of minus `closing_minor`, dated on the trades'
+      `settle_date`. Its fee rows are parts of that one payment.
+    - Card purchases are kept, and they count as external spending.
+  - **Matching** (`assist/flows.py`, pure functions):
+    - **Internal transfer.** A debit in account A pairs with a credit in another household
+      account B when:
+      - the amounts are equal to the rupiah;
+      - the dates are within 3 days of each other;
+      - and the pair is one-to-one, chosen greedily by smallest gap, then by date, then by
+        document id.
+      This covers savings → RDN, savings → card payment, and RDN → broker settlement.
+    - **Named but unmatched.** A debit whose `raw_description` contains a name from the
+      **gitignored** `config/household.local.yaml` (`owners: {tommy: [...], priskila: [...]}`;
+      `config/household.example.yaml` is committed with invented names) and that has no matching
+      credit is listed as "to <owner>, receiving account has no statement in financer".
+    - **Broker settlement unmatched.** A trades document whose settlement has no matching
+      debit is listed as "paid from RDN (statement not loaded)".
+    - Everything else is external in or out, totalled per account.
+  - **Output.** A `assist flows` command writes `out/flows/<YYYY-MM>.json` for the last 12
+    months with data, plus `out/flows/index.json`. Each file has:
+    - `as_of`, `schema_version`, `sources`, `stale_inputs` and the disclaimer;
+    - accounts (issuer, account shown as its last 4 digits, owner, opening and closing for the
+      month where a statement gives them);
+    - matched transfers (from, to, date(s), amount, gap in days);
+    - unmatched named debits and unmatched settlements;
+    - external totals in and out per account and per owner.
+    `out/` is gitignored and the page is local only. Schema: `schema/flows.schema.json`.
+  - **Page.** `/flows` shows the latest month and `/flows/<YYYY-MM>` any month in the index.
+    The month comes from the index, never from a path built out of the URL. Unknown month → 404.
+    - A stdlib SVG diagram: accounts grouped by owner in columns, and an arrow per matched
+      transfer whose width follows the amount. Unmatched named debits are dashed arrows to a
+      "no statement" box.
+    - Tables of transfers, unmatched items and external totals.
+    - A `.json` twin, every value escaped, and a notice instead of a 500 when no files exist.
+    - The route is added in `web.py`; the nav link comes with F8.
+  - **Tests** (`tests/test_flows.py`, `tests/test_view_flows.py`, fixture
+    `tests/fixtures/financer/` with invented accounts and names):
+    - a savings → RDN transfer between owners matches;
+    - an RDN → trades settlement matches, using one movement per trades document and not its fee
+      rows;
+    - a savings → card payment matches;
+    - no match for a 1-rupiah difference, a 4-day gap, or the same account on both sides;
+    - two equal transfers pair one-to-one;
+    - a named debit with no receiving statement is listed;
+    - a settlement with no RDN statement is listed;
+    - superseded documents are ignored;
+    - no `household.local.yaml` means no named matches and no error;
+    - the page renders, the twin matches the file, an unknown month is 404, values are
+      escaped;
+    - a rerun gives byte-identical files.
+  - **Live** (expected, 2026-10):
+    - Tommy's BCA savings → his Ajaib RDN transfers match.
+    - The five debits naming Priskila (12, 14, 19, 23, 31 Oct) are unmatched-named, because her
+      RDN has no statement in financer yet.
+    - Her 8 Stockbit TC settlements are unmatched.
+    - Her Mandiri savings → Mandiri card payments match in months where both statements exist.
+    - Results go in `docs/results/P58-flows.md`, with no full account numbers and no names
+      beyond the owner keys.
+  - *Done when:* `/flows/2026-10` shows Tommy → his RDN matched, Tommy → Priskila and her
+    Stockbit settlements as unmatched with the reason, and the rest as above. When financer
+    loads her RDN statement, those become matched transfers with no code change.
 - [ ] **S37 Fan-in** (F8-ui-layers). Nav and cross-links, README pages list, CLI help, e2e test
   of every route and `.json` twin, live check on the real `out/`, screenshots light and dark.
 

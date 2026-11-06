@@ -900,11 +900,26 @@ slices:
   - id: F8-ui-layers
     kind: integration
     title: "PLAN S37 fan-in: nav and cross-links to /regime, /signals, /portfolio; README, CLI help, e2e and live check"
-    depends_on: [P55-ui-regime, P56-ui-signals, P57-ui-portfolio]
+    depends_on: [P55-ui-regime, P56-ui-signals, P57-ui-portfolio, P58-flows]
     owns: ["src/assist/web.py", "src/assist/views/overview.py", "src/assist/views/stance.py", "src/assist/cli.py", "README.md", "tests/test_ui_e2e.py", "PLAN.md"]
     accept: uv run pytest -q && uv run ruff check .
     estimate: 0.5
     notes: >-
       Overview banner links /regime; stance Drivers card links /signals/<SUBJECT>, Portfolio card
-      links /portfolio. e2e: every route and .json twin 200 on fixtures, unknown subject 404.
+      links /portfolio. Also: nav link to /flows (P58), and `assist run` calls flows.write
+      (never-fail, a failure is a stale input). e2e: every route and .json twin 200 on fixtures, unknown subject 404.
       Live check on the real out/ after a run; screenshots light and dark.
+
+  - id: P58-flows
+    title: "PLAN S38: /flows: household transfers matched across financer statements (savings to RDN, RDN to broker settlement, savings to card), unmatched named debits and settlements with the reason"
+    depends_on: [P53-portfolio-trades]
+    owns: ["src/assist/flows.py", "src/assist/views/flows.py", "schema/flows.schema.json", "config/household.example.yaml", ".gitignore", "tests/test_flows.py", "tests/test_view_flows.py", "tests/fixtures/flows/**", "docs/results/P58-flows.md"]
+    accept: uv run pytest -q tests/test_flows.py tests/test_view_flows.py tests/sources/test_financer.py tests/test_web.py && uv run ruff check .
+    estimate: 1.5
+    notes: >-
+      Also edits src/assist/sources/financer.py (movements(); P53 is done), src/assist/cli.py
+      (`assist flows`) and src/assist/web.py (the /flows route only); F8 depends on this slice and
+      adds the nav link and the run hook, so they never edit those files concurrently. Matching:
+      equal amount to the rupiah, within 3 days, one-to-one greedy by gap. A trades document is one
+      settlement movement (-closing on settle_date), never its fee rows. Names come only from the
+      gitignored config/household.local.yaml.
