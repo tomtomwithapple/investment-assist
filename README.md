@@ -109,7 +109,7 @@ How the daily check works:
 - If FRED cannot be read at all, the check compares nothing and sends nothing.
 
 Both jobs run `launchd/job.sh` from the main checkout
-(`/Users/tomtomtomtom/Projects/investment-assist`) with `uv run`. They share a `lockf` lock, so
+(`/Users/tommy/Projects/investment-assist`) with `uv run`. They share a `lockf` lock, so
 on Monday the two 07:00 jobs run one after the other instead of interleaving.
 
 ```sh
