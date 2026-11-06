@@ -1,6 +1,7 @@
-"""Portfolio, layer 5 (P4, PLAN S4): financer's latest statement per account → weights by
-country × asset class. IDX tickers → IDN stocks, SBN codes → IDN bonds, RDN/bank cash → IDN cash;
-anything else is listed as unmapped, never guessed.
+"""Portfolio, layer 5 (P4, PLAN S4; P53, PLAN S32): financer's latest statement per account,
+rolled forward through the trade documents after it → weights by country × asset class. IDX
+tickers → IDN stocks, SBN codes → IDN bonds, RDN/bank cash → IDN cash; anything else is listed
+as unmapped, never guessed.
 
 The adapter runs over a tiny SQLite store built from `tests/fixtures/financer/` (the real
 `documents` and `holdings` schema, made-up statements). Expected numbers are in `seed.sql`."""
@@ -38,8 +39,8 @@ def src(db: Path) -> FinancerSource:
     return FinancerSource(db)
 
 
-def _by_issuer(statements: list[Statement]) -> dict[str, Statement]:
-    return {s.issuer: s for s in statements}
+def _by_account(statements: list[Statement]) -> dict[str, Statement]:
+    return {s.account: s for s in statements}
 
 
 # ---------------- classify ----------------
@@ -87,19 +88,21 @@ def test_source_protocol(src):
 
 
 def test_latest_loaded_statement_per_account(src):
-    got = _by_issuer(src.statements())
-    assert set(got) == {"ajaib", "bca_rdn", "mandirisek", "stockbit", "bnisek"}  # no credit card
-    assert got["ajaib"].as_of == date(2026, 9, 30)
+    got = _by_account(src.statements())
+    # no credit card; SB-PRIS has trade documents only
+    assert set(got) == {"AJ-TEST", "AJ-TWO", "RDN-TEST", "MS-TEST", "SB-TEST", "BN-TEST",
+                        "SB-PRIS"}
+    assert got["AJ-TEST"].as_of == date(2026, 9, 30)
     # the superseded October statement is ignored
-    assert got["bca_rdn"].as_of == date(2026, 9, 30)
-    assert got["bca_rdn"].cash_idr == 300_000
+    assert got["RDN-TEST"].as_of == date(2026, 9, 30)
+    assert got["RDN-TEST"].cash_idr == 300_000
     # sold out: the latest statement holds nothing, so older holdings do not carry forward
-    assert got["mandirisek"].as_of == date(2026, 9, 30)
-    assert got["mandirisek"].holdings == ()
+    assert got["MS-TEST"].as_of == date(2026, 9, 30)
+    assert got["MS-TEST"].holdings == ()
 
 
 def test_money_is_minor_units_over_100(src):
-    aj = _by_issuer(src.statements())["ajaib"]
+    aj = _by_account(src.statements())["AJ-TEST"]
     assert aj.holdings[0] == Holding("BBCA", "BANK CENTRAL ASIA Tbk", "100", 600_000.0, "IDR")
     assert aj.stated_value_idr == 850_000
     assert aj.holdings_idr == 850_000
@@ -107,9 +110,9 @@ def test_money_is_minor_units_over_100(src):
 
 def test_broker_cash_is_not_counted_as_cash(src):
     """A broker statement's closing balance is the RDN, which the bank statement already counts."""
-    got = _by_issuer(src.statements())
-    assert got["ajaib"].cash_idr is None
-    assert got["ajaib"].broker_cash_idr == 300_000
+    got = _by_account(src.statements())
+    assert got["AJ-TEST"].cash_idr is None
+    assert got["AJ-TEST"].broker_cash_idr == 300_000
 
 
 def test_rows_are_tidy(src):
@@ -147,37 +150,37 @@ def test_reads_a_read_only_file_without_writing(db):
 
 def test_buckets_and_weights(src):
     p = build_portfolio(src.statements())
-    assert p.as_of == date(2026, 9, 30)
+    assert p.as_of == date(2026, 10, 20)  # the latest trade document
     assert p.buckets_idr == {
-        ("IDN", "stocks"): 700_000,
+        ("IDN", "stocks"): 1_960_000,
         ("IDN", "bonds"): 299_000,
         ("IDN", "cash"): 301_000,
     }
-    assert p.total_idr == 1_300_000
+    assert p.total_idr == 2_560_000
     w = p.weights()
     assert isinstance(w, Weights)
-    assert w.total_idr == 1_300_000
+    assert w.total_idr == 2_560_000
     assert sum(w.weights.values()) == pytest.approx(100)
-    assert w.pct("IDN", "stocks") == pytest.approx(700 / 13)
-    assert w.pct("IDN", "bonds") == pytest.approx(299 / 13)
-    assert w.pct("IDN", "cash") == pytest.approx(301 / 13)
+    assert w.pct("IDN", "stocks") == pytest.approx(1960 / 25.6)
+    assert w.pct("IDN", "bonds") == pytest.approx(299 / 25.6)
+    assert w.pct("IDN", "cash") == pytest.approx(301 / 25.6)
     assert w.pct("USA", "stocks") is None
 
 
 def test_unmapped_listed_not_counted(src):
     p = build_portfolio(src.statements())
-    assert p.unmapped_idr == 50_000
     w = p.weights()
-    assert len(w.unmapped) == 1
-    assert "REKSA DANA INDEKS BNI AM INDEKS IDX30" in w.unmapped[0]
-    assert "ajaib" in w.unmapped[0]
+    assert len(w.unmapped) == 2
+    fund = next(u for u in w.unmapped if "REKSA DANA" in u)
+    assert "REKSA DANA INDEKS BNI AM INDEKS IDX30" in fund and "ajaib" in fund
+    assert "(Rp50,000)" in fund
 
 
 def test_statement_totals_match_broker(src):
-    checks = {c.issuer: c for c in build_portfolio(src.statements()).checks}
-    assert checks["ajaib"].matches is True
-    assert checks["stockbit"].matches is True
-    assert checks["bnisek"].matches is None  # no stated total on the statement
+    checks = {c.account: c for c in build_portfolio(src.statements()).checks}
+    assert checks["AJ-TEST"].matches is True
+    assert checks["SB-TEST"].matches is True
+    assert checks["BN-TEST"].matches is None  # no stated total on the statement
 
 
 def test_stale_account_still_holding_is_flagged(src):
@@ -205,5 +208,83 @@ def test_current_weights_turns_missing_store_into_stale(tmp_path, src):
     w, stale = current_weights(FinancerSource(tmp_path / "nope.db"))
     assert w is None and stale == ["financer (missing)"]
     w, stale = current_weights(src)
-    assert w is not None and w.total_idr == 1_300_000
+    assert w is not None and w.total_idr == 2_560_000
     assert stale == ["financer bnisek (statement 2026-06-30)"]
+
+
+# ---------------- S32: trade documents and owners ----------------
+
+
+def test_by_owner_splits_the_household_and_adds_up(src):
+    p = build_portfolio(src.statements())
+    assert p.by_owner == {
+        "tommy": {("IDN", "stocks"): 1_120_000, ("IDN", "bonds"): 299_000,
+                  ("IDN", "cash"): 301_000},
+        "priskila": {("IDN", "stocks"): 840_000},
+    }
+    assert sum(sum(b.values()) for b in p.by_owner.values()) == pytest.approx(p.total_idr)
+
+
+def test_sold_out_line_is_gone_and_new_lines_count(src):
+    p = build_portfolio(src.statements())
+    assert not any("ARNA" in u for u in p.weights().unmapped)
+    held = {h.symbol for s in src.statements() for h in s.holdings}
+    assert "ARNA" not in held and {"UNVR", "BBRI"} <= held
+
+
+def test_negative_line_is_unmapped_never_subtracted(src):
+    p = build_portfolio(src.statements())
+    adro = [(label, v) for label, v in p.unmapped if label.startswith("ADRO")]
+    assert len(adro) == 1
+    label, value = adro[0]
+    assert value == -250_000 and "stockbit" in label and "-100" in label
+    assert p.buckets_idr[("IDN", "stocks")] == 1_960_000  # ADRO not subtracted
+
+
+def test_rolled_check_compares_the_statement_before_rolling(src):
+    checks = {c.account: c for c in build_portfolio(src.statements()).checks}
+    two = checks["AJ-TWO"]
+    assert two.as_of == date(2026, 9, 30)
+    assert two.holdings_idr == 700_000 and two.stated_idr == 700_000 and two.matches is True
+    assert "SB-PRIS" not in checks  # no statement, nothing to check
+
+
+def test_notes_name_lines_valued_at_trade_price(src):
+    p = build_portfolio(src.statements())
+    assert p.notes == (
+        "financer ajaib (tommy): valued at last trade price: 1 lines",
+        "financer stockbit (priskila): valued at last trade price: 1 lines",
+    )
+    w = p.weights()
+    assert w.notes == p.notes
+    assert not any("trade price" in x for x in w.stale_inputs)
+
+
+def test_statement_only_numbers_are_unchanged(src):
+    """Accounts with no trades after their statement give the same numbers as before S32."""
+    only = [s for s in src.statements() if s.trade_docs == 0]
+    p = build_portfolio(only)
+    assert p.buckets_idr == {("IDN", "stocks"): 700_000, ("IDN", "bonds"): 299_000,
+                             ("IDN", "cash"): 301_000}
+    assert p.notes == ()
+
+
+def test_schema8_store_falls_back_to_one_owner(tmp_path):
+    ddl = "".join((FIX / f).read_text() for f in ("schema.sql", "seed.sql", "schema8.sql"))
+    p = build_portfolio(FinancerSource(make_sqlite(tmp_path / "f8.db", ddl)).statements())
+    assert set(p.by_owner) == {"tommy"}
+    assert p.total_idr == 2_560_000
+
+
+def test_rerun_gives_byte_identical_stance_json(src):
+    from assist.layers.types import AssetScore
+    from assist.stance import build_stance, dumps
+
+    score = AssetScore(subject="IDN", asset="stocks", as_of=date(2026, 10, 20), score=55.0,
+                       confidence=0.9, source="worldbankscape")
+    texts = [dumps(build_stance(score=score, regime=None,
+                                weights=build_portfolio(src.statements()).weights(),
+                                fingerprint="sha256:" + "0" * 64))
+             for _ in range(2)]
+    assert texts[0] == texts[1]
+    assert "valued at last trade price" in texts[0]

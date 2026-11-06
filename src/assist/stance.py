@@ -273,6 +273,8 @@ def build_stance(
         "sources": sorted(sources),
         "disclaimer": DISCLAIMER,
     }
+    if weights is not None and weights.notes:
+        payload["portfolio"]["notes"] = list(weights.notes)
     if dollar is not None:
         payload["dollar"] = dollar
     return payload

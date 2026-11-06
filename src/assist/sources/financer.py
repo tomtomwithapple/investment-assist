@@ -15,9 +15,21 @@ holding belongs to the statement (`document_id`) that printed it.
   Credit-card statements are liabilities, not holdings, and are not read.
 - Money is integer minor units at scale 100 (financer `money.MINOR_SCALE`); values here are IDR.
 
+Since PLAN S32 (financer slices 12-13, schema 9) an account's holdings are **rolled forward**
+from its latest loaded broker statement through the loaded `trades` documents (Stockbit trade
+confirmations, Ajaib dailies) with a `statement_date` after that statement's; an account with
+trade documents and no statement starts from nothing. financer marks a `trades` document
+`superseded` once an SOA of the same account prints all its orders, so `status = 'loaded'`
+already leaves out every trade a statement states. A buy adds `quantity` (shares), a sell
+subtracts it; a changed or new line is valued at the last trade price of the symbol in those
+documents (there is no price feed here), an unchanged line keeps the statement's value. A line
+that reaches zero is dropped; one below zero (a sell of a position no statement shows) is kept
+apart in `unheld`, never in `holdings`. Each `Statement` carries the document's `owner`
+(`documents.owner`; `'tommy'` on a schema-8 store without the column).
+
 `rows()` gives the tidy view: `HOLDING.<symbol>` (market value of IDR lines, summed across
-accounts) and `CASH.IDR`, dated by the statement. Layer 5 (`assist.layers.portfolio`) uses
-`statements()`.
+accounts) and `CASH.IDR`, dated by the statement (or its latest trade document). Layer 5
+(`assist.layers.portfolio`) uses `statements()`.
 """
 
 from __future__ import annotations
@@ -26,32 +38,48 @@ import os
 from collections import defaultdict
 from collections.abc import Sequence
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import NamedTuple
 
 from assist.doctor import DEFAULT_CONFIG, load_sources
 from assist.sources.base import Row, sqlite_ro
 
-__all__ = ["BROKER_DOC_TYPES", "CASH_DOC_TYPES", "SOURCE", "FinancerSource", "Holding", "Statement"]
+__all__ = ["BROKER_DOC_TYPES", "CASH_DOC_TYPES", "DEFAULT_OWNER", "SOURCE", "TRADE_DOC_TYPE",
+           "FinancerSource", "Holding", "Statement"]
 
 SOURCE = "financer"
 MINOR_SCALE = 100
 BROKER_DOC_TYPES = ("portfolio", "broker_soa")
 CASH_DOC_TYPES = ("savings_statement",)
+TRADE_DOC_TYPE = "trades"
+DEFAULT_OWNER = "tommy"  # financer schema 8 has no documents.owner: every document is his
+UNKNOWN_OWNER = "unknown"  # owner NULL: financer could not tell (held for review there)
 
-_LATEST = f"""
+_LATEST = """
 with ranked as (
     select d.*, row_number() over (
         partition by d.issuer, coalesce(d.account_ref, '') order by d.statement_date desc, d.id desc
     ) as rn
     from documents d
     where d.status = 'loaded'
-      and d.doc_type in ({", ".join(f"'{t}'" for t in BROKER_DOC_TYPES + CASH_DOC_TYPES)})
+      and d.doc_type in ({types})
 )
 select id, issuer, coalesce(account_ref, ''), doc_type, statement_date, currency,
-       closing_minor, portfolio_value_minor
+       closing_minor, portfolio_value_minor, {owner}
 from ranked where rn = 1
 order by issuer, account_ref
+""".replace("{types}", ", ".join(f"'{t}'" for t in BROKER_DOC_TYPES + CASH_DOC_TYPES))
+
+_TRADE_DOCS = f"""
+select id, issuer, coalesce(account_ref, ''), statement_date, {{owner}}
+from documents where status = 'loaded' and doc_type = '{TRADE_DOC_TYPE}'
+order by issuer, coalesce(account_ref, ''), statement_date, id
+"""
+
+_TRADES = """
+select document_id, symbol, side, quantity, price_minor, currency
+from trades where document_id in ({marks}) order by trade_date, document_id, id
 """
 
 _HOLDINGS = """
@@ -71,8 +99,16 @@ class Holding(NamedTuple):
 
 
 class Statement(NamedTuple):
-    """An account's latest loaded statement. `cash_idr` is set for bank/RDN statements only;
-    `stated_value_idr` is the portfolio total the broker printed (None if it printed none)."""
+    """An account's latest loaded statement, rolled forward through its later trade documents.
+    `cash_idr` is set for bank/RDN statements only; `stated_value_idr` is the portfolio total the
+    broker printed (None if it printed none).
+
+    S32 fields: `owner` of the latest document read; `rolled_from` the date of the broker
+    statement the holdings start from when trades were applied (None when none were, or when the
+    account has no statement); `trade_docs` how many trade documents were applied;
+    `priced_at_trade` the symbols valued at a trade price; `unheld` the lines sold below zero
+    (never in `holdings`); `statement_holdings_idr` the statement's own lines before rolling
+    (None when nothing was rolled)."""
 
     issuer: str
     account: str
@@ -82,14 +118,70 @@ class Statement(NamedTuple):
     stated_value_idr: float | None
     broker_cash_idr: float | None
     holdings: tuple[Holding, ...]
+    owner: str = DEFAULT_OWNER
+    rolled_from: date | None = None
+    trade_docs: int = 0
+    priced_at_trade: tuple[str, ...] = ()
+    unheld: tuple[Holding, ...] = ()
+    statement_holdings_idr: float | None = None
 
     @property
     def holdings_idr(self) -> float:
         return sum(h.value for h in self.holdings if h.currency == "IDR")
 
 
+class Trade(NamedTuple):
+    symbol: str
+    side: str
+    quantity: Decimal
+    price: float
+    currency: str
+
+
 def _idr(minor: int | None) -> float | None:
     return None if minor is None else minor / MINOR_SCALE
+
+
+def _qty(text: str) -> Decimal:
+    q = Decimal(text)
+    return q.quantize(Decimal(1)) if q == q.to_integral_value() else q.normalize()
+
+
+def roll(base: Statement | None, issuer: str, account: str, owner: str, as_of: date,
+         trades: Sequence[Trade], docs: int) -> Statement:
+    """`base` (None: start from nothing) plus `trades` in order (PLAN S32). A symbol no trade
+    touches keeps its statement lines as printed."""
+    base_lines = base.holdings if base else ()
+    traded = list(dict.fromkeys(t.symbol for t in trades))
+    start = {s: sum((Decimal(h.quantity) for h in base_lines if h.symbol == s), Decimal(0))
+             for s in traded}
+    qty = dict(start)
+    last: dict[str, Trade] = {}
+    for t in trades:
+        qty[t.symbol] += t.quantity if t.side == "buy" else -t.quantity
+        last[t.symbol] = t
+    held = [h for h in base_lines if h.symbol not in qty or qty[h.symbol] == start[h.symbol]]
+    unheld, priced = [], []
+    for sym in traded:
+        q = qty[sym]
+        if q == start[sym] or q == 0:
+            continue  # unchanged (kept above) or sold to zero (dropped)
+        t = last[sym]
+        name = next((h.name for h in base_lines if h.symbol == sym), "")
+        h = Holding(sym, name, str(_qty(str(q))), float(q) * t.price, t.currency)
+        if q < 0:
+            unheld.append(h)
+        else:
+            held.append(h)
+            priced.append(sym)
+    if base is None:
+        return Statement(issuer, account, TRADE_DOC_TYPE, as_of, None, None, None, tuple(held),
+                         owner=owner, trade_docs=docs, priced_at_trade=tuple(sorted(priced)),
+                         unheld=tuple(unheld))
+    return base._replace(as_of=as_of, holdings=tuple(held), owner=owner,
+                         rolled_from=base.as_of, trade_docs=docs,
+                         priced_at_trade=tuple(sorted(priced)), unheld=tuple(unheld),
+                         statement_holdings_idr=base.holdings_idr)
 
 
 class FinancerSource:
@@ -108,33 +200,60 @@ class FinancerSource:
 
     def statements(self) -> list[Statement]:
         with sqlite_ro(self.path, self.name) as con:
-            docs = con.execute(_LATEST).fetchall()
+            cols = {r[1] for r in con.execute("pragma table_info(documents)")}
+            owner = (f"coalesce(owner, '{UNKNOWN_OWNER}')" if "owner" in cols
+                     else f"'{DEFAULT_OWNER}'")
+            docs = con.execute(_LATEST.replace("{owner}", owner)).fetchall()
             ids = [d[0] for d in docs]
             held: dict[int, list[Holding]] = defaultdict(list)
             if ids:
                 sql = _HOLDINGS.format(marks=", ".join("?" for _ in ids))
                 for doc_id, symbol, name, qty, value, ccy in con.execute(sql, ids):
                     held[doc_id].append(Holding(symbol, name, qty, value / MINOR_SCALE, ccy))
-        out = []
-        for doc_id, issuer, account, doc_type, as_of, ccy, closing, stated in docs:
+            has_trades = con.execute(
+                "select 1 from sqlite_master where type = 'table' and name = 'trades'").fetchone()
+            trade_docs = (con.execute(_TRADE_DOCS.replace("{owner}", owner)).fetchall()
+                          if has_trades else [])
+            trades: dict[int, list[Trade]] = defaultdict(list)
+            if trade_docs:
+                tids = [d[0] for d in trade_docs]
+                sql = _TRADES.format(marks=", ".join("?" for _ in tids))
+                for doc_id, symbol, side, qty, price, ccy in con.execute(sql, tids):
+                    trades[doc_id].append(Trade(symbol, side, Decimal(qty), price / MINOR_SCALE,
+                                                ccy))
+        out: dict[tuple[str, str], Statement] = {}
+        for doc_id, issuer, account, doc_type, as_of, ccy, closing, stated, own in docs:
             is_cash = doc_type in CASH_DOC_TYPES
             if is_cash and ccy != "IDR":
                 # foreign-currency cash: kept as a holding so layer 5 lists it as unmapped
                 held[doc_id].append(Holding(ccy, f"{issuer} cash", "1", _idr(closing), ccy))
                 closing = None
-            out.append(
-                Statement(
-                    issuer=issuer,
-                    account=account,
-                    doc_type=doc_type,
-                    as_of=date.fromisoformat(as_of),
-                    cash_idr=_idr(closing) if is_cash else None,
-                    stated_value_idr=_idr(stated),
-                    broker_cash_idr=None if is_cash else _idr(closing),
-                    holdings=tuple(held[doc_id]),
-                )
+            out[(issuer, account)] = Statement(
+                issuer=issuer,
+                account=account,
+                doc_type=doc_type,
+                as_of=date.fromisoformat(as_of),
+                cash_idr=_idr(closing) if is_cash else None,
+                stated_value_idr=_idr(stated),
+                broker_cash_idr=None if is_cash else _idr(closing),
+                holdings=tuple(held[doc_id]),
+                owner=own,
             )
-        return out
+        by_account: dict[tuple[str, str], list[tuple]] = defaultdict(list)
+        for d in trade_docs:
+            by_account[(d[1], d[2])].append(d)
+        for key, tdocs in by_account.items():
+            base = out.get(key)
+            if base is not None and base.doc_type in CASH_DOC_TYPES:
+                continue  # a bank account has no holdings to roll
+            after = [d for d in tdocs
+                     if base is None or date.fromisoformat(d[3]) > base.as_of]
+            if not after:
+                continue
+            flat = [t for d in after for t in trades[d[0]]]
+            out[key] = roll(base, key[0], key[1], after[-1][4],
+                            date.fromisoformat(after[-1][3]), flat, len(after))
+        return [out[k] for k in sorted(out)]
 
     def rows(
         self,

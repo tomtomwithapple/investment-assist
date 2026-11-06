@@ -44,7 +44,8 @@
       "properties": {
         "current_pct": {"type": ["number", "null"], "minimum": 0, "maximum": 100, "description": "null when holdings are unavailable (financer listed in stale_inputs)."},
         "target_pct": {"type": "number", "minimum": 0, "maximum": 100},
-        "delta": {"type": "string", "minLength": 1}
+        "delta": {"type": "string", "minLength": 1},
+        "notes": {"$ref": "#/$defs/texts", "description": "How layer 5 valued the holdings, e.g. lines valued at their last trade price (PLAN S32). Absent when there is nothing to say."}
       }
     },
     "flags": {"type": "array", "items": {"$ref": "https://github.com/tomtomtomdev/worldbankscape/schema/score.schema.json#/$defs/flag"}},

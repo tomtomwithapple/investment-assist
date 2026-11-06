@@ -97,8 +97,11 @@ def _entry(e: Mapping) -> str:
 
 
 def _portfolio(p: Mapping) -> str:
-    return _table([("Current", esc(_pct(p["current_pct"]))),
-                   ("Target", esc(_pct(p["target_pct"]))), ("Delta", esc(p["delta"]))])
+    rows = [("Current", esc(_pct(p["current_pct"]))),
+            ("Target", esc(_pct(p["target_pct"]))), ("Delta", esc(p["delta"]))]
+    if p.get("notes"):
+        rows.append(("Notes", "<br>".join(esc(n) for n in p["notes"])))
+    return _table(rows)
 
 
 def _flags(flags: Sequence[Mapping]) -> str:

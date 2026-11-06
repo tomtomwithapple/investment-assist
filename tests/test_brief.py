@@ -202,6 +202,17 @@ def test_small_score_moves_are_not_changes():
     assert brief.diff(current(), cur) == []
 
 
+def test_holdings_notes_listed_once_under_the_stance_table():
+    """PLAN S32: lines valued at a trade price are named in the brief, not in stale inputs."""
+    stances = copy.deepcopy(current())
+    note = "financer stockbit (priskila): valued at last trade price: 63 lines"
+    for s in stances:
+        s["portfolio"]["notes"] = [note]
+    body = section(brief.render(stances), "Stances")
+    assert body.count(note) == 1 and "Holdings: " in body
+    assert "Holdings: " not in section(brief.render(current()), "Stances")
+
+
 # ---------------- snapshots + whole brief ----------------
 
 def test_snapshot_roundtrip_and_previous_lookup(tmp_path):

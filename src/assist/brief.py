@@ -475,6 +475,9 @@ def render(current: Sequence[Mapping], previous: Sequence[Mapping] | None = None
                      _entry(s["entry"]), f"{_pct(pf['current_pct'])} → {_pct(pf['target_pct'])}",
                      pf["delta"]]
             out.append("| " + " | ".join(_cell(c) for c in cells) + " |")
+        notes = sorted({n for s in stances for n in s["portfolio"].get("notes", [])})
+        if notes:
+            out += ["", "Holdings: " + "; ".join(notes) + "."]
     else:
         out.append("No stances.")
     out.append("")

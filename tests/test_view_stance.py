@@ -73,6 +73,18 @@ def test_lists_entry_portfolio_and_sources():
     assert "none" in _section(body, "flags") and "none" in _section(body, "stale")
 
 
+def test_portfolio_notes_shown_and_escaped(out_copy):
+    """PLAN S32: layer 5's notes (lines valued at a trade price) in the portfolio block."""
+    f = out_copy / "IDN" / "bonds.json"
+    s = json.loads(f.read_text())
+    s["portfolio"]["notes"] = ["financer ajaib (tommy): valued at last trade price: 1 lines", EVIL]
+    f.write_text(json.dumps(s))
+    pf = _section(_get("/stance/IDN/bonds", out_dir=out_copy).body, "portfolio")
+    assert "Notes</th><td>financer ajaib (tommy): valued at last trade price: 1 lines" in pf
+    assert "<script>" not in pf
+    assert "Notes" not in _section(_get("/stance/IDN/bonds").body, "portfolio")
+
+
 def test_usa_bonds_flags_as_severity_chips_and_stale_inputs():
     body = _get("/stance/USA/bonds").body
     flags = _section(body, "flags")

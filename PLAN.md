@@ -8,7 +8,7 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-11-06 (planned S32: layer 5 reads financer's trade documents and owners, P53-portfolio-trades). Earlier: 2026-10-29 (P48–P50 tiers). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against Stockbit's industry average and the sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S31 (top tier per industry) is built, P48–P50, but waits for a live run and replay verdict on a Mac with idx-method's `stockbiter.db`. S15 and S22 are open.
+**Last updated:** 2026-11-06 (S32 done, P53-portfolio-trades: layer 5 rolls each account forward through financer's loaded trade documents and splits the household by owner; live IDN stocks 96.90%, bonds 1.79%, cash 1.31% of Rp55.4 M, the second owner's 63 Stockbit lines Rp36.5 M at last trade prices). Earlier: 2026-10-29 (P48–P50 tiers). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against Stockbit's industry average and the sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S31 (top tier per industry) is built, P48–P50, but waits for a live run and replay verdict on a Mac with idx-method's `stockbiter.db`. S15 and S22 are open.
 
 What `assist run` does:
 - It reads layers 0, 1 and 5 for every subject.
@@ -47,7 +47,7 @@ a record.
 
 | Phase | Slices | Done |
 |---|---|---|
-| A. Skeleton + base layers (0, 1, 5; S32: layer 5 reads trade documents) | S0–S6, S32 | 7 / 8 |
+| A. Skeleton + base layers (0, 1, 5; S32: layer 5 reads trade documents) | S0–S6, S32 | 8 / 8 |
 | B. Indonesia overrides and rules (2, 3, 4) | S7–S10 | 4 / 4 |
 | C. Foreign markets | S11–S12 | 2 / 2 |
 | D. Track record and ops | S13–S14 | 2 / 2 |
@@ -224,7 +224,8 @@ real stores → record numbers in the Progress table → commit. One slice per c
   stale inputs, disclaimer); Telegram summary; same never-fail and send-once rules as idx-method's former paper daemon.
   *Done when:* a live brief is sent and a second send the same day is skipped.
 
-- [ ] **S32 Layer 5 reads financer's trade documents (planned 2026-11-06).** Roll each account's
+- [x] **S32 Layer 5 reads financer's trade documents (planned 2026-11-06; done 2026-11-06,
+  P53).** Roll each account's
   holdings forward from its latest statement through the trade confirmations and dailies that
   came after it, and carry each document's owner.
   - **Why.** financer slice 13 (2026-11-06) loads Stockbit Trade Confirmations as documents with
@@ -267,6 +268,9 @@ real stores → record numbers in the Progress table → commit. One slice per c
     - `rolled_from`: the date of the broker statement the holdings start from, or None.
     - `trade_docs`: how many trade documents were applied.
     - `priced_at_trade`: the symbols valued at a trade price rather than a statement price.
+    - Added by P53: `unheld`, the lines sold below zero (kept out of `holdings`, so layer 4's
+      `holdings_from` never sees a negative), and `statement_holdings_idr`, the statement's own
+      lines before rolling (for `StatementCheck`, which also gains `account`).
   - **Layer 5 output.**
     - `build_portfolio` sums both owners into one household portfolio, which is the user's goal
       in financer's slice 12.
@@ -277,6 +281,11 @@ real stores → record numbers in the Progress table → commit. One slice per c
       For an account valued partly at trade prices, a `notes` line reads "valued at last trade
       price: N lines". It goes in the brief and the `/stance` portfolio block, not in
       `stale_inputs`.
+      **Amended by P53:** to get there the note travels `Weights.notes` → the stance payload's
+      optional `portfolio.notes` (`schema/stance.schema.json`, absent when empty, so outputs
+      without notes are unchanged) → `brief.py` (one "Holdings:" line under the stance table) and
+      `views/stance.py` (a Notes row). So P53 also touched `layers/types.py`, `stance.py`, the
+      schema, `tests/test_brief.py` and `tests/test_view_stance.py`, outside its `owns`.
   - **Known gap (not this slice).** Priskila's RDN `6622844750` has no statement in financer yet
     (her Gmail filter is pending). About 12.8M IDR of her cash is therefore invisible. It appears
     without a code change once financer loads that statement, because it is an ordinary
@@ -298,6 +307,10 @@ real stores → record numbers in the Progress table → commit. One slice per c
   - **Live:** read-only against `~/.financer/financer.db`, with the file's mtime unchanged.
     - Expect Priskila's 63 IDN stock lines, about 37.15M at trade prices. That is a little
       different from cost, which includes fees.
+      **Amended by P53 (2026-11-06):** 37.15M is her trades' gross flow (buys 37,992,900 − sells
+      838,500), not the rule's value. The rule values each line at its symbol's last trade
+      price, which gives **36,535,800**; the 0.62M difference is price moves between a symbol's
+      earlier fills and its last one.
     - Expect Ajaib's ARNA line gone, and `by_owner` showing both owners.
     - Results go in `docs/results/P53-portfolio-trades.md`, with no account numbers (as in P4).
   - *Done when:* layer 5 lists her Stockbit positions and Ajaib's post-statement sale, owners are
@@ -805,6 +818,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S31 top tier replay (P50-tier-replay) | done (S31 open: live verdict) | 2026-10-29 | `3d940e6` | 16 replay (1401 total) | fixtures: planted signal passes (t 19.78, p 0.001, perm_p 0.005, control t 0.15, 17 quarters), noise fails (t −0.25); live `run_live` returns `blocked` (no S30 membership: `stockbiter.db` absent) |
 | Gap 2b JCI from idxscape (P51-jci-idxscape) | done | 2026-11-06 | this commit | 8 index + stitch (1412 total) | `jci()` 7,314 closes 1996-10-02 → 2026-11-05 (1,224 from idxscape); paper: 0 → 1 week scored (2026-10-16, benchmark −9.4%, JCI −14.9%); IGSYC.10 ends 2026-10-21 here, so 3 weeks stale; JCI −11.6% on 2026-10-16 in IDX's own data |
 | Paper capture gaps (P52-paper-daily-gap) | done | 2026-11-06 | this commit | 2 paper (1414 total) | live: with PHEI resumed (IGSYC to 11-05) the old carry scored 3 weeks (10-23 and 10-30 on the 10-21 yield); now 1 scored (10-16, −9.4%), 3 stale, each naming the yield gap |
+| S32 layer 5 reads trade documents (P53-portfolio-trades) | done | 2026-11-06 | this commit | 9 adapter, 42 portfolio, 1 brief, 1 view (1432 total) | as of 2026-11-02: IDN stocks Rp53.70 M 96.90%, bonds Rp0.99 M 1.79%, cash Rp0.73 M 1.31%, total Rp55.42 M (statements only: Rp18.98 M); by owner tommy Rp18.88 M, priskila Rp36.54 M; her Stockbit 63 lines Rp36,535,800 at last trade prices (8 TCs, gross flow 37.15 M); Ajaib's ARNA (200 sh) gone after the 11-02 daily, its check still matches; 10 statement-only accounts identical to before; 0 unmapped, 0 stale; mtime unchanged |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

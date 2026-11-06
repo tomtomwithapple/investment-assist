@@ -138,6 +138,7 @@ class Weights:
     sources: tuple[str, ...] = ("financer",)
     stale_inputs: tuple[str, ...] = ()
     total_idr: float | None = field(default=None)
+    notes: tuple[str, ...] = ()  # e.g. lines valued at a trade price (PLAN S32)
 
     def __post_init__(self):
         total = sum(self.weights.values())

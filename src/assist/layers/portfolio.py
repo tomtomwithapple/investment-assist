@@ -1,7 +1,8 @@
 """Layer 5 (PLAN S4): what is held now, as % of the portfolio per country × asset class.
 
-Input is financer's latest loaded statement per account (`assist.sources.financer`). Each line is
-mapped by a fixed rule, never guessed:
+Input is financer's latest loaded statement per account, rolled forward through the trade
+documents after it (`assist.sources.financer`, PLAN S32). Each line is mapped by a fixed rule,
+never guessed:
 
 - `IDR` (a broker's cash line) and bank/RDN balances → (IDN, cash)
 - SBN codes: FR, VR, ORI, SR, SBR, ST, PBS, SPN, SPNS + digits (retail series may end `T<n>`)
@@ -9,6 +10,14 @@ mapped by a fixed rule, never guessed:
 - IDX tickers (four capitals), with `-R` (rights) or `-W` (warrants) → (IDN, stocks)
 - anything else (a fund printed without a code, a foreign-currency line) → listed in
   `unmapped` with its value and left out of the weights, which add up to 100 over what is mapped.
+
+A line sold below zero (no statement shows the position) is listed in `unmapped` with its
+(negative) value and never subtracted from a bucket.
+
+Both owners (financer's `documents.owner`) are summed into one household portfolio; `by_owner`
+splits the buckets per owner. An account valued partly at trade prices gets a `notes` line
+("valued at last trade price: N lines"), shown in the brief and the stance page, not in
+`stale_inputs`.
 
 Every account sits at an Indonesian broker or bank today, so all mapped lines are IDN. An account
 whose latest statement is more than `STALE_DAYS` older than the newest one, and still holds
@@ -53,13 +62,15 @@ def classify(symbol: str, currency: str = "IDR") -> tuple[str, str] | None:
 @dataclass(frozen=True)
 class StatementCheck:
     """Does the sum of a broker statement's lines equal the total the broker printed?
-    `matches` is None when the statement prints no total (or is a bank statement)."""
+    `matches` is None when the statement prints no total (or is a bank statement). For a rolled
+    account the statement's own lines are compared, before rolling."""
 
     issuer: str
     as_of: date
     holdings_idr: float
     stated_idr: float | None
     cash_idr: float | None
+    account: str = ""
 
     @property
     def matches(self) -> bool | None:
@@ -76,6 +87,8 @@ class Portfolio:
     checks: tuple[StatementCheck, ...] = ()
     stale_inputs: tuple[str, ...] = ()
     broker_cash_idr: float = field(default=0.0)
+    by_owner: dict[str, dict[tuple[str, str], float]] = field(default_factory=dict)
+    notes: tuple[str, ...] = ()
 
     @property
     def total_idr(self) -> float:
@@ -95,16 +108,23 @@ class Portfolio:
             sources=(SOURCE,),
             stale_inputs=self.stale_inputs,
             total_idr=total,
+            notes=self.notes,
         )
 
 
 def build_portfolio(statements: Iterable[Statement], stale_days: int = STALE_DAYS) -> Portfolio:
     statements = list(statements)
     buckets: dict[tuple[str, str], float] = defaultdict(float)
+    owners: dict[str, dict[tuple[str, str], float]] = defaultdict(lambda: defaultdict(float))
     unmapped: list[tuple[str, float]] = []
     for s in statements:
+        mine = owners[s.owner]
         if s.cash_idr is not None:
             buckets[("IDN", "cash")] += s.cash_idr
+            mine[("IDN", "cash")] += s.cash_idr
+        for h in s.unheld:
+            unmapped.append((f"{h.symbol} ({h.quantity} shares, sold below zero) at {s.issuer}",
+                             h.value))
         for h in s.holdings:
             key = classify(h.symbol, h.currency)
             if key is None:
@@ -115,6 +135,7 @@ def build_portfolio(statements: Iterable[Statement], stale_days: int = STALE_DAY
                 unmapped.append((f"{what}{ccy} at {s.issuer}", h.value))
             else:
                 buckets[key] += h.value
+                mine[key] += h.value
 
     newest = max((s.as_of for s in statements), default=None)
     stale = tuple(
@@ -125,8 +146,17 @@ def build_portfolio(statements: Iterable[Statement], stale_days: int = STALE_DAY
         and (s.holdings_idr or s.cash_idr)
     )
     checks = tuple(
-        StatementCheck(s.issuer, s.as_of, s.holdings_idr, s.stated_value_idr, s.cash_idr)
+        StatementCheck(s.issuer, s.rolled_from or s.as_of,
+                       s.holdings_idr if s.statement_holdings_idr is None
+                       else s.statement_holdings_idr,
+                       s.stated_value_idr, s.cash_idr, s.account)
         for s in statements
+        if not (s.trade_docs and s.rolled_from is None)  # trades only: no statement to check
+    )
+    notes = tuple(
+        f"{SOURCE} {s.issuer} ({s.owner}): valued at last trade price: "
+        f"{len(s.priced_at_trade)} lines"
+        for s in statements if s.priced_at_trade
     )
     return Portfolio(
         as_of=newest,
@@ -135,6 +165,8 @@ def build_portfolio(statements: Iterable[Statement], stale_days: int = STALE_DAY
         checks=checks,
         stale_inputs=stale,
         broker_cash_idr=sum(s.broker_cash_idr or 0.0 for s in statements),
+        by_owner={o: dict(b) for o, b in owners.items() if b},
+        notes=notes,
     )
 
 
