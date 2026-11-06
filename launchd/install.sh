@@ -15,7 +15,7 @@
 # local time zone, which is WIB.
 set -eu
 LABELS="com.tommy.investment-assist.weekly com.tommy.investment-assist.regime"
-REPO=${ASSIST_REPO:-/Users/tomtomtomtom/Projects/investment-assist}
+REPO=${ASSIST_REPO:-/Users/tommy/Projects/investment-assist}
 TEMPLATES=$(cd "$(dirname "$0")" && pwd)
 AGENTS=${ASSIST_LAUNCH_AGENTS:-$HOME/Library/LaunchAgents}
 DOMAIN=gui/$(id -u)

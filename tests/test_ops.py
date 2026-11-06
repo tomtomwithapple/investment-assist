@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LAUNCHD = ROOT / "launchd"
 WEEKLY = "com.tommy.investment-assist.weekly"
 REGIME = "com.tommy.investment-assist.regime"
-MAIN_CHECKOUT = "/Users/tomtomtomtom/Projects/investment-assist"
+MAIN_CHECKOUT = "/Users/tommy/Projects/investment-assist"
 
 
 # ---------------- fakes ----------------
