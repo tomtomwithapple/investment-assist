@@ -827,7 +827,8 @@ signals have series worth drawing.
   subject; the IDN charts listed above.
 - [ ] **S36 `/portfolio`** (P57-ui-portfolio). After P53 (it owns `layers/portfolio.py` and the
   stance view's portfolio card).
-- [ ] **S38 `/flows`: where the household's money moved** (P58-flows, planned 2026-11-06).
+- [x] **S38 `/flows`: where the household's money moved** (P58-flows, planned 2026-11-06; done
+  2026-11-06, `docs/results/P58-flows.md`).
   Months of transfers between the household's own accounts, matched across financer's
   statements, and the gaps where one side has no statement.
   - **Why.** The user wants to see money move from Tommy's BCA savings (`bca_tahapan`, financer
@@ -896,6 +897,15 @@ signals have series worth drawing.
     - Her Mandiri savings → Mandiri card payments match in months where both statements exist.
     - Results go in `docs/results/P58-flows.md`, with no full account numbers and no names
       beyond the owner keys.
+    **Amended by P58 (2026-11-06):** the matched October transfers between his savings and
+    his Ajaib RDN run RDN → savings (3, 8.36M); savings → RDN happened in March and April. There
+    are six named debits, not five: the sixth is his own BCA card payment (10-23, 12.29M), whose
+    credit is on the card statement of 11-16, not loaded yet. Her 8 TCs settle 6 in October and 2
+    in November (37,223,485.62 together). Mandiri savings → card match in every month 2025-12 to
+    2026-09. Also added: `ledgers()` and `owner_map()` on the adapter (balances, and mapped
+    accounts with no statement as stale inputs); a card's debits are spending, never a transfer
+    candidate; a settlement is a credit to the broker for a buy. Fixtures in
+    `tests/fixtures/flows/`. `/flows` opens on 2026-11, the latest (partial) month.
   - *Done when:* `/flows/2026-10` shows Tommy → his RDN matched, Tommy → Priskila and her
     Stockbit settlements as unmatched with the reason, and the rest as above. When financer
     loads her RDN statement, those become matched transfers with no code change.
@@ -942,6 +952,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | Gap 2b JCI from idxscape (P51-jci-idxscape) | done | 2026-11-06 | this commit | 8 index + stitch (1412 total) | `jci()` 7,314 closes 1996-10-02 → 2026-11-05 (1,224 from idxscape); paper: 0 → 1 week scored (2026-10-16, benchmark −9.4%, JCI −14.9%); IGSYC.10 ends 2026-10-21 here, so 3 weeks stale; JCI −11.6% on 2026-10-16 in IDX's own data |
 | Paper capture gaps (P52-paper-daily-gap) | done | 2026-11-06 | this commit | 2 paper (1414 total) | live: with PHEI resumed (IGSYC to 11-05) the old carry scored 3 weeks (10-23 and 10-30 on the 10-21 yield); now 1 scored (10-16, −9.4%), 3 stale, each naming the yield gap |
 | S32 layer 5 reads trade documents (P53-portfolio-trades) | done | 2026-11-06 | this commit | 9 adapter, 42 portfolio, 1 brief, 1 view (1432 total) | as of 2026-11-02: IDN stocks Rp53.70 M 96.90%, bonds Rp0.99 M 1.79%, cash Rp0.73 M 1.31%, total Rp55.42 M (statements only: Rp18.98 M); by owner tommy Rp18.88 M, priskila Rp36.54 M; her Stockbit 63 lines Rp36,535,800 at last trade prices (8 TCs, gross flow 37.15 M); Ajaib's ARNA (200 sh) gone after the 11-02 daily, its check still matches; 10 statement-only accounts identical to before; 0 unmapped, 0 stale; mtime unchanged |
+| S38 /flows household transfers (P58-flows) | done | 2026-11-06 | this commit | 27 flows, 17 view, 6 adapter, 1 web (1483 total) | 2026-10: 10 matched (IDR 13,066,567: Ajaib RDN ↔ dailies 7 settlements, RDN → Tahapan 3), 6 named unmatched from Tahapan (5 to priskila 12/14/19/23/31 Oct, 70.0 M; 1 his card payment 12.29 M, card statement not loaded), 6 TC settlements unmatched (34.15 M; with 2 in 2026-11, 37,223,485.62 = her payment due); Mandiri savings → card matched every month 2025-12..2026-09; `/flows`, `/flows/2026-10`, twin 200, unknown month 404; screenshots light and dark; mtime unchanged |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

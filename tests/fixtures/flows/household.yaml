@@ -1,0 +1,4 @@
+# Invented names for the flows tests (the real file is the gitignored config/household.local.yaml).
+owners:
+  tommy: ["ANDI CONTOH"]
+  priskila: ["SARI CONTOH"]

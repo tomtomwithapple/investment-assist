@@ -1,4 +1,5 @@
-"""`assist` command line: doctor | status | run | brief | regime | paper | journal | industries."""
+"""`assist` command line: doctor | status | run | brief | regime | paper | journal | industries |
+flows."""
 
 from __future__ import annotations
 
@@ -280,6 +281,32 @@ def _industries(args: argparse.Namespace) -> int:
     return 0
 
 
+def _flows(args: argparse.Namespace) -> int:
+    """S38: write out/flows/<YYYY-MM>.json and index.json from financer, read-only."""
+    from assist import flows
+    from assist.sources.base import SourceUnavailable
+    from assist.sources.financer import FinancerSource
+
+    out = Path(args.out) if args.out else pipeline.Paths.default().out
+    names = flows.load_household(Path(args.household) if args.household else flows.HOUSEHOLD)
+    try:
+        index, months = flows.build_from(FinancerSource.from_config(), names, args.months)
+    except SourceUnavailable as e:
+        print(f"flows: nothing written: {e}", file=sys.stderr)
+        return 1
+    flows.write(index, months, out)
+    print(f"{out / flows.OUT_DIR}: {len(months)} month(s), latest {index['latest']}, "
+          f"as of {index['as_of']}; household names for {len(names)} owner(s)")
+    for k, p in sorted(months.items()):
+        t = p["totals"]
+        print(f"  {k}: {t['transfers']['n']} matched (IDR {t['transfers']['amount']:,.2f}), "
+              f"{t['unmatched_named']['n']} named unmatched, "
+              f"{t['unmatched_settlements']['n']} settlement(s) unmatched")
+    for line in index["stale_inputs"]:
+        print(f"  stale: {line}")
+    return 0
+
+
 def _utf8_stdio() -> None:
     """Write UTF-8 even where the stream defaults to a legacy code page (Windows pipes, files and
     scheduled-job logs are cp1252, and the first → would be a UnicodeEncodeError)."""
@@ -352,6 +379,12 @@ def main(argv: list[str] | None = None) -> int:
                          help="peer comparison per industry → out/industries/IDN.json")
     ind.add_argument("--today", help="YYYY-MM-DD build date (default today)")
     ind.set_defaults(func=_industries)
+
+    fl = sub.add_parser("flows", help="household money flows → out/flows/<YYYY-MM>.json")
+    fl.add_argument("--out", help="out/ directory to write flows/ into (default the repo's out/)")
+    fl.add_argument("--household", help="owner names file (default config/household.local.yaml)")
+    fl.add_argument("--months", type=int, default=12, help="latest months with data (default 12)")
+    fl.set_defaults(func=_flows)
 
     args = parser.parse_args(argv)
     if args.siblings_root:

@@ -27,6 +27,14 @@ that reaches zero is dropped; one below zero (a sell of a position no statement 
 apart in `unheld`, never in `holdings`. Each `Statement` carries the document's `owner`
 (`documents.owner`; `'tommy'` on a schema-8 store without the column).
 
+Since PLAN S38 (`assist.flows`) `movements()` reads the money that moved: every row of
+`transactions` of a loaded document of any type, except that a `trades` document (a Stockbit TC,
+an Ajaib daily) yields **one** movement, its settlement: minus `closing_minor` (a buy's payment
+due is a credit to the broker account, a sale's proceeds a debit) dated on its trades'
+`settle_date`; its fee rows are parts of that payment. `ledgers()` gives each loaded statement's
+opening and closing, and `owner_map()` financer's `account_owners`. An account is
+`coalesce(nullif(account_ref, ''), card_last4, '')`, so a card with no account ref is its last 4.
+
 `rows()` gives the tidy view: `HOLDING.<symbol>` (market value of IDR lines, summed across
 accounts) and `CASH.IDR`, dated by the statement (or its latest trade document). Layer 5
 (`assist.layers.portfolio`) uses `statements()`.
@@ -45,14 +53,15 @@ from typing import NamedTuple
 from assist.doctor import DEFAULT_CONFIG, load_sources
 from assist.sources.base import Row, sqlite_ro
 
-__all__ = ["BROKER_DOC_TYPES", "CASH_DOC_TYPES", "DEFAULT_OWNER", "SOURCE", "TRADE_DOC_TYPE",
-           "FinancerSource", "Holding", "Statement"]
+__all__ = ["BROKER_DOC_TYPES", "CARD_DOC_TYPE", "CASH_DOC_TYPES", "DEFAULT_OWNER", "SOURCE",
+           "TRADE_DOC_TYPE", "FinancerSource", "Holding", "Ledger", "Movement", "Statement"]
 
 SOURCE = "financer"
 MINOR_SCALE = 100
 BROKER_DOC_TYPES = ("portfolio", "broker_soa")
 CASH_DOC_TYPES = ("savings_statement",)
 TRADE_DOC_TYPE = "trades"
+CARD_DOC_TYPE = "credit_card_statement"
 DEFAULT_OWNER = "tommy"  # financer schema 8 has no documents.owner: every document is his
 UNKNOWN_OWNER = "unknown"  # owner NULL: financer could not tell (held for review there)
 
@@ -86,6 +95,67 @@ _HOLDINGS = """
 select document_id, symbol, name, quantity, market_value_minor, currency
 from holdings where document_id in ({marks}) order by document_id, line_no
 """
+
+
+_ACCOUNT = "coalesce(nullif(d.account_ref, ''), d.card_last4, '')"
+
+_MOVEMENTS = f"""
+select t.txn_date, d.issuer, {_ACCOUNT}, {{owner}}, d.doc_type, d.id, t.direction,
+       t.amount_minor, t.description, t.raw_description, t.id
+from transactions t join documents d on d.id = t.document_id
+where d.status = 'loaded' and d.doc_type <> '{TRADE_DOC_TYPE}' and t.amount_minor <> 0
+"""
+
+_SETTLEMENTS = f"""
+select coalesce((select max(coalesce(tr.settle_date, tr.trade_date)) from trades tr
+                 where tr.document_id = d.id), d.statement_date),
+       d.issuer, {_ACCOUNT}, {{owner}}, d.doc_type, d.id, d.closing_minor
+from documents d
+where d.status = 'loaded' and d.doc_type = '{TRADE_DOC_TYPE}' and d.closing_minor <> 0
+"""
+
+_LEDGERS = f"""
+select d.issuer, {_ACCOUNT}, {{owner}}, d.doc_type, d.statement_date, d.period_start,
+       d.opening_minor, d.closing_minor, d.id
+from documents d
+where d.status = 'loaded' and d.doc_type <> '{TRADE_DOC_TYPE}'
+order by d.issuer, 2, d.statement_date, d.id
+"""
+
+
+class Movement(NamedTuple):
+    """Money that moved in or out of one account (PLAN S38). `amount_minor` is positive, in minor
+    units (scale 100); `direction` is `debit` (out) or `credit` (in). `ref` is the transactions
+    row id, None for a trades document's settlement."""
+
+    date: date
+    issuer: str
+    account: str
+    owner: str
+    doc_type: str
+    document_id: int
+    direction: str
+    amount_minor: int
+    description: str
+    raw_description: str
+    ref: int | None
+
+    @property
+    def amount(self) -> float:
+        return self.amount_minor / MINOR_SCALE
+
+
+class Ledger(NamedTuple):
+    """One loaded statement's balances (not a trades document): `opening` and `closing` in IDR."""
+
+    issuer: str
+    account: str
+    owner: str
+    doc_type: str
+    statement_date: date
+    period_start: date | None
+    opening: float
+    closing: float
 
 
 class Holding(NamedTuple):
@@ -184,6 +254,17 @@ def roll(base: Statement | None, issuer: str, account: str, owner: str, as_of: d
                          statement_holdings_idr=base.holdings_idr)
 
 
+def _tables(con) -> set[str]:
+    return {r[0] for r in con.execute("select name from sqlite_master where type = 'table'")}
+
+
+def _owner_expr(con) -> str:
+    """`documents.owner` (NULL read as unknown), or 'tommy' on a schema-8 store without it."""
+    cols = {r[1] for r in con.execute("pragma table_info(documents)")}
+    return (f"coalesce(d.owner, '{UNKNOWN_OWNER}')" if "owner" in cols
+            else f"'{DEFAULT_OWNER}'")
+
+
 class FinancerSource:
     """financer's SQLite store, opened read-only."""
 
@@ -198,11 +279,47 @@ class FinancerSource:
         src = next(s for s in load_sources(config, env=env) if s.name == SOURCE)
         return cls(src.location)
 
+    def movements(self, start: date | None = None, end: date | None = None) -> list[Movement]:
+        """Every movement of a loaded document dated in [start, end], ordered by date, document
+        and row (PLAN S38)."""
+        with sqlite_ro(self.path, self.name) as con:
+            owner = _owner_expr(con)
+            tables = _tables(con)
+            raw = (con.execute(_MOVEMENTS.replace("{owner}", owner)).fetchall()
+                   if "transactions" in tables else [])
+            settled = (con.execute(_SETTLEMENTS.replace("{owner}", owner)).fetchall()
+                       if "trades" in tables else [])
+        out = [Movement(date.fromisoformat(d), iss, acct, own, dt, doc, direction, amt, desc,
+                        rawd, ref)
+               for d, iss, acct, own, dt, doc, direction, amt, desc, rawd, ref in raw]
+        out += [Movement(date.fromisoformat(d), iss, acct, own, dt, doc,
+                         "credit" if closing < 0 else "debit", abs(closing), "settlement",
+                         "settlement", None)
+                for d, iss, acct, own, dt, doc, closing in settled]
+        out = [m for m in out if (start is None or m.date >= start)
+               and (end is None or m.date <= end)]
+        return sorted(out, key=lambda m: (m.date, m.document_id, m.ref or 0))
+
+    def ledgers(self) -> list[Ledger]:
+        """Opening and closing of every loaded statement, trades documents left out."""
+        with sqlite_ro(self.path, self.name) as con:
+            rows = con.execute(_LEDGERS.replace("{owner}", _owner_expr(con))).fetchall()
+        return [Ledger(iss, acct, own, dt, date.fromisoformat(sd),
+                       date.fromisoformat(ps) if ps else None, op / MINOR_SCALE,
+                       cl / MINOR_SCALE)
+                for iss, acct, own, dt, sd, ps, op, cl, _ in rows]
+
+    def owner_map(self) -> list[tuple[str, str, str]]:
+        """financer's `account_owners` as (issuer, account_ref, owner); empty before schema 9."""
+        with sqlite_ro(self.path, self.name) as con:
+            if "account_owners" not in _tables(con):
+                return []
+            return [tuple(r) for r in con.execute(
+                "select issuer, account_ref, owner from account_owners order by 1, 2")]
+
     def statements(self) -> list[Statement]:
         with sqlite_ro(self.path, self.name) as con:
-            cols = {r[1] for r in con.execute("pragma table_info(documents)")}
-            owner = (f"coalesce(owner, '{UNKNOWN_OWNER}')" if "owner" in cols
-                     else f"'{DEFAULT_OWNER}'")
+            owner = _owner_expr(con).replace("d.owner", "owner")
             docs = con.execute(_LATEST.replace("{owner}", owner)).fetchall()
             ids = [d[0] for d in docs]
             held: dict[int, list[Holding]] = defaultdict(list)

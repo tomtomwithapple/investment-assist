@@ -10,3 +10,5 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 .claude/worktrees/
+# real household names for `assist flows` (S38); only household.example.yaml is committed
+/config/household.local.yaml
