@@ -54,7 +54,7 @@ a record.
 | E. Layer 4 refinements (S31: top tier per industry) | S15, S31 | 0 / 2 |
 | F. Undervalued stocks, macro-weighted (IDN, then US, JP) | S16–S22 | 7 / 8 |
 | G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S30 | 8 / 8 |
-| H. Layer pages (regime, signals, portfolio) | S33–S37 | 1 / 5 |
+| H. Layer pages (regime, signals, portfolio) | S33–S37 | 2 / 5 |
 
 ### Open data gaps (fetcher side)
 
@@ -825,8 +825,8 @@ signals have series worth drawing.
   rest of `views/`; regime history from journal records of kind `regime`.
 - [ ] **S35 `/signals/<SUBJECT>`** (P56-ui-signals). Layer-2 and layer-3 tables for every
   subject; the IDN charts listed above.
-- [ ] **S36 `/portfolio`** (P57-ui-portfolio). After P53 (it owns `layers/portfolio.py` and the
-  stance view's portfolio card).
+- [x] **S36 `/portfolio`** (P57-ui-portfolio). After P53 (it owns `layers/portfolio.py` and the
+  stance view's portfolio card). Done 2026-11-06, `docs/results/P57-ui-portfolio.md`.
 - [x] **S38 `/flows`: where the household's money moved** (P58-flows, planned 2026-11-06; done
   2026-11-06, `docs/results/P58-flows.md`).
   Months of transfers between the household's own accounts, matched across financer's
@@ -954,6 +954,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S32 layer 5 reads trade documents (P53-portfolio-trades) | done | 2026-11-06 | this commit | 9 adapter, 42 portfolio, 1 brief, 1 view (1432 total) | as of 2026-11-02: IDN stocks Rp53.70 M 96.90%, bonds Rp0.99 M 1.79%, cash Rp0.73 M 1.31%, total Rp55.42 M (statements only: Rp18.98 M); by owner tommy Rp18.88 M, priskila Rp36.54 M; her Stockbit 63 lines Rp36,535,800 at last trade prices (8 TCs, gross flow 37.15 M); Ajaib's ARNA (200 sh) gone after the 11-02 daily, its check still matches; 10 statement-only accounts identical to before; 0 unmapped, 0 stale; mtime unchanged |
 | S38 /flows household transfers (P58-flows) | done | 2026-11-06 | this commit | 27 flows, 17 view, 6 adapter, 1 web (1483 total) | 2026-10: 10 matched (IDR 13,066,567: Ajaib RDN ↔ dailies 7 settlements, RDN → Tahapan 3), 6 named unmatched from Tahapan (5 to priskila 12/14/19/23/31 Oct, 70.0 M; 1 his card payment 12.29 M, card statement not loaded), 6 TC settlements unmatched (34.15 M; with 2 in 2026-11, 37,223,485.62 = her payment due); Mandiri savings → card matched every month 2025-12..2026-09; `/flows`, `/flows/2026-10`, twin 200, unknown month 404; screenshots light and dark; mtime unchanged |
 | S33 layer files in `out/layers/` (P54-layer-out) | done | 2026-11-06 | this commit | 17 layers out (1449 total) | 8 files, all schema-valid: regime neutral, dollar flat (off 1: real yield 2.64%), 9 inputs × 52 weekly points; IDN 5 components (stocks −5, bonds −4, currency +2), 5 signals, flows 60 IDX days 08-12 → 11-05 (USD null before JISDOR's first fixing 10-22), JISDOR 11 fixings, JCI 239 closes, SBN 239 days, IGSYC 11-05 vs 10-08; USA, JPN, EMU, AUS, SGP files; portfolio Rp55.42 M as of 11-02, 12 accounts, 49 stance targets |
+| S36 /portfolio (P57-ui-portfolio) | done | 2026-11-06 | this commit | 19 view (1519 total) | `/portfolio` 200 (57,991 B), `.json` 200 (43,597 B): Rp55,415,423 as of 11-02; stocks 96.90% vs 111.90% summed targets, bonds 1.79% vs 26.80%; 18 of 49 stances with a weight, target or entry; priskila 65.94%, tommy 34.06%; 12 accounts masked, bnisek statement 98 d flagged, Ajaib check matches; unmapped 0; IDN 10 trims, no adds; screenshots light and dark |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

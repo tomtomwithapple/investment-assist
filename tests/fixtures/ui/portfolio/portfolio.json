@@ -1,0 +1,59 @@
+{
+ "accounts": [
+  {"account": "…6FXF", "as_of": "2026-11-02", "broker_cash_idr": 2909617.0, "cash_idr": null, "doc_type": "portfolio", "holdings_idr": 4100000.0, "issuer": "ajaib", "owner": "tommy", "priced_at_trade": [], "rolled_from": "2026-10-31", "stated_value_idr": 4200000.0, "trade_docs": 1,
+   "holdings": [
+    {"bucket": "IDN/stocks", "currency": "IDR", "name": "ASTRA INTERNATIONAL Tbk", "quantity": "500", "symbol": "ASII", "value": 2400000.0},
+    {"bucket": "IDN/stocks", "currency": "IDR", "name": "SUMBER ALFARIA TRIJAYA Tbk", "quantity": "1400", "symbol": "AMRT", "value": 1700000.0}
+   ],
+   "unheld": [
+    {"bucket": "IDN/stocks", "currency": "IDR", "name": "ARNA", "quantity": "-100", "symbol": "ARNA", "value": -50000.0}
+   ]},
+  {"account": "…5654", "as_of": "2026-10-31", "broker_cash_idr": null, "cash_idr": 600000.0, "doc_type": "savings_statement", "holdings_idr": 0, "issuer": "bca_tahapan", "owner": "tommy", "priced_at_trade": [], "rolled_from": null, "stated_value_idr": null, "trade_docs": 0, "holdings": [], "unheld": []},
+  {"account": "…0752", "as_of": "2026-07-31", "broker_cash_idr": 0.0, "cash_idr": null, "doc_type": "broker_soa", "holdings_idr": 1000000.0, "issuer": "bnisek", "owner": "tommy", "priced_at_trade": [], "rolled_from": null, "stated_value_idr": 1100000.0, "trade_docs": 0,
+   "holdings": [
+    {"bucket": "IDN/bonds", "currency": "IDR", "name": "ORI025", "quantity": "1000000", "symbol": "ORI025", "value": 900000.0},
+    {"bucket": null, "currency": "USD", "name": "Mystery fund", "quantity": "3", "symbol": "MYST", "value": 100000.0}
+   ],
+   "unheld": []},
+  {"account": "…8825", "as_of": "2026-10-30", "broker_cash_idr": null, "cash_idr": null, "doc_type": "trades", "holdings_idr": 5000000.0, "issuer": "stockbit", "owner": "priskila", "priced_at_trade": ["BBRI", "BMRI"], "rolled_from": null, "stated_value_idr": null, "trade_docs": 8,
+   "holdings": [
+    {"bucket": "IDN/stocks", "currency": "IDR", "name": "", "quantity": "500", "symbol": "BBRI", "value": 2000000.0},
+    {"bucket": "IDN/stocks", "currency": "IDR", "name": "", "quantity": "600", "symbol": "BMRI", "value": 3000000.0}
+   ],
+   "unheld": []}
+ ],
+ "as_of": "2026-11-06",
+ "broker_cash_idr": 2909617.0,
+ "buckets": [
+  {"asset": "bonds", "idr": 900000.0, "pct": 8.910891, "subject": "IDN"},
+  {"asset": "cash", "idr": 600000.0, "pct": 5.940594, "subject": "IDN"},
+  {"asset": "stocks", "idr": 8600000.0, "pct": 85.148515, "subject": "IDN"}
+ ],
+ "by_owner": [
+  {"buckets": [{"asset": "stocks", "idr": 5000000.0, "subject": "IDN"}], "owner": "priskila", "total_idr": 5000000.0},
+  {"buckets": [{"asset": "bonds", "idr": 900000.0, "subject": "IDN"}, {"asset": "cash", "idr": 600000.0, "subject": "IDN"}, {"asset": "stocks", "idr": 3600000.0, "subject": "IDN"}], "owner": "tommy", "total_idr": 5100000.0}
+ ],
+ "checks": [
+  {"account": "…6FXF", "as_of": "2026-10-31", "cash_idr": null, "holdings_idr": 4200000.0, "issuer": "ajaib", "matches": true, "stated_idr": 4200000.0},
+  {"account": "…0752", "as_of": "2026-07-31", "cash_idr": null, "holdings_idr": 1000000.0, "issuer": "bnisek", "matches": false, "stated_idr": 1100000.0},
+  {"account": "…5654", "as_of": "2026-10-31", "cash_idr": 600000.0, "holdings_idr": 0, "issuer": "bca_tahapan", "matches": null, "stated_idr": null}
+ ],
+ "currency": "IDR",
+ "disclaimer": "Heuristic, not investment advice.",
+ "kind": "portfolio",
+ "model_fingerprint": "sha256:074bfad11c662cf7fed82f3e913b384729ff404c0c695371db1a0a1d4c1803de",
+ "notes": ["financer stockbit (priskila): valued at last trade price: 2 lines"],
+ "schema_version": "1.0.0",
+ "sources": ["financer"],
+ "stale_inputs": [],
+ "stances": [
+  {"asset": "bonds", "current_pct": 8.9, "delta": "+6.1pt over 3 tranches", "entry": {"spacing_days": 10, "style": "ladder", "tranches": 3}, "score": 68.0, "stance": "overweight", "subject": "IDN", "target_pct": 15.0},
+  {"asset": "stocks", "current_pct": 85.1, "delta": "0.0pt hold", "entry": {"spacing_days": 0, "style": "none", "tranches": 0}, "score": 48.5, "stance": "neutral", "subject": "IDN", "target_pct": 85.1},
+  {"asset": "stocks", "current_pct": 0.0, "delta": "+5.0pt lump", "entry": {"spacing_days": 0, "style": "lump", "tranches": 1}, "score": 62.2, "stance": "overweight", "subject": "USA", "target_pct": 5.0},
+  {"asset": "commodities", "current_pct": 0.0, "delta": "0.0pt hold", "entry": {"spacing_days": 0, "style": "none", "tranches": 0}, "score": 18.5, "stance": "avoid", "subject": "GOLD", "target_pct": 0.0}
+ ],
+ "statement_as_of": "2026-11-02",
+ "total_idr": 10100000.0,
+ "unmapped": [{"idr": 100000.0, "label": "bnisek MYST (USD)"}],
+ "unmapped_idr": 100000.0
+}
