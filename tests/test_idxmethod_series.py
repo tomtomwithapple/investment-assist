@@ -230,3 +230,78 @@ def test_store_opened_read_only(src, tmp_path):
     src.quarterly()
     src.dividends()
     assert sorted(p.name for p in (tmp_path / DB).parent.iterdir()) == before
+
+
+# ---------------- P66: the factor_series EY provider (FactorSnapshots' interface) ----------------
+
+EY_FIX = FIXTURES / "history" / "factor_ey.sql"
+
+
+@pytest.fixture
+def ey(tmp_path):
+    from assist.sources.idxmethod_series import FactorSeriesEY
+
+    db = tmp_path / DB
+    db.parent.mkdir(parents=True)
+    make_sqlite(db, EY_FIX.read_text())
+    return FactorSeriesEY(tmp_path)
+
+
+def test_ey_provider_has_the_snapshot_interface(ey):
+    assert ey.name == "idx-method"
+    on, factors = ey.factors_on(D("2026-10-30"))
+    assert on == D("2026-10-30")
+    assert factors["AAA"] == {"mktcap": 3000.0, "pe": 10.0, "earnings_yield": 10.0}
+    assert factors["BBB"]["earnings_yield"] == pytest.approx(-20.0)  # loss maker kept
+    assert factors["ZZZ"]["earnings_yield"] is None  # PE 0: no earnings yield
+
+
+def test_ey_cap_weighted_counts_loss_makers(ey):
+    from assist.layers.rules import market_earnings_yield
+
+    _, factors = ey.factors_on(D("2026-10-30"))
+    value, n, cap = market_earnings_yield(factors)
+    assert n == 2 and cap == 4000.0
+    assert value == pytest.approx((3000 * 10 - 1000 * 20) / 4000)
+
+
+def test_ey_weekend_carries_the_last_trading_day(ey):
+    assert ey.factors_on(D("2026-11-01"))[0] == D("2026-10-30")  # Sunday
+
+
+def test_ey_steps_on_the_filing_day_without_extra_lag(ey):
+    assert ey.factors_on(D("2026-10-30"))[1]["AAA"]["pe"] == 10.0
+    assert ey.factors_on(D("2026-11-02"))[1]["AAA"]["pe"] == 20.0
+
+
+def test_ey_never_reads_after_as_of(ey):
+    on, factors = ey.factors_on(D("2026-11-06"))
+    assert on == D("2026-11-02")
+    assert factors["AAA"]["pe"] == 20.0  # the 2026-11-09 row is not known yet
+
+
+def test_ey_drops_a_pull_date_echo_and_quiet_names(ey):
+    on, factors = ey.factors_on(D("2026-11-03"))
+    assert "OLD" not in factors  # delisted 2023, echoed on the pull date
+    assert "QUIET" not in factors  # no row within the window
+    assert on == D("2026-11-02")
+
+
+def test_ey_before_the_series_is_unavailable(ey):
+    with pytest.raises(SourceUnavailable) as e:
+        ey.factors_on(D("2016-01-01"))
+    assert e.value.reason == "missing" and e.value.source == "idx-method"
+
+
+def test_ey_history_on_dates(ey):
+    hist = ey.history([D("2026-10-30"), D("2026-11-02"), D("2016-01-01")])
+    assert [d for d, _ in hist] == [D("2026-10-30"), D("2026-11-02")]
+    assert hist[1][1] == pytest.approx((3000 * 5 - 1000 * 20) / 4000)
+
+
+def test_ey_missing_store(tmp_path):
+    from assist.sources.idxmethod_series import FactorSeriesEY
+
+    with pytest.raises(SourceUnavailable) as e:
+        FactorSeriesEY(tmp_path).factors_on(D("2026-10-30"))
+    assert e.value.reason == "missing"
