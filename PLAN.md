@@ -1086,6 +1086,9 @@ before +14.5% and +13.9% rebounds), so a home regime is tested before it may shi
 - The global regime stays as it is (inputs, thresholds, `REGIME_SHIFT`).
 
 **Decided by the user (2026-11-07): all ten recommended defaults, as bracketed below.**
+These numbers are fixed: they change only through an agent review (user, 2026-11-07). A slice that
+finds one wrong reports the evidence and leaves it; a separate review agent judges it and the
+user decides.
 1. Historical window and stride. [Month-end as-of dates from the first month with every
    required input to the last with a full 3-month forward return; horizon 3 months, stride 3,
    block 3, as the live gate.]
