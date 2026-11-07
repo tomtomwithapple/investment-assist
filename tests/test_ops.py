@@ -8,6 +8,7 @@ Every store is a fake or a fixture and Telegram is a mock transport. The launchd
 
 from __future__ import annotations
 
+import json
 import plistlib
 import shutil
 import subprocess
@@ -527,3 +528,39 @@ def test_job_passes_the_exit_code_and_rejects_unknown_jobs(repo):
 def test_launchd_logs_are_gitignored():
     ignore = (LAUNCHD / ".gitignore").read_text().split()
     assert "*.log" in ignore
+
+
+# ---------------- assist rules (P67) ----------------
+
+
+def test_cli_rules_writes_out_rules_and_diagnostics(tmp_path, monkeypatch, capsys):
+    from test_run_idn import FakeBuild, missing_idn
+
+    from assist.eval import gate
+
+    paths = pipeline.Paths.under(tmp_path / "repo")
+    build = FakeBuild()
+    monkeypatch.setattr(pipeline.Paths, "default", classmethod(lambda cls: paths))
+    monkeypatch.setattr(pipeline.IdnSources, "default",
+                        classmethod(lambda cls: missing_idn(tmp_path)))
+    monkeypatch.setattr(gate, "live_build", build)
+    assert cli.main(["rules", "--today", DAY.isoformat()]) == 0
+    out = capsys.readouterr().out
+    assert "IDN bonds rule gate: insufficient" in out
+    assert "IDN stocks rule gate: insufficient" in out
+    assert "historical windows: on 0 / off 0 / no_call 0 vs MIN_N 10 (short on 10, off 10)" in out
+    assert "no_call months by missing input" not in out  # every FakeBuild month is a hold
+    assert DISCLAIMER in out
+    for a in gate.ASSETS:
+        gate.validator().validate(json.loads((paths.out / "rules" / f"IDN-{a}.json").read_text()))
+    assert build.calls == [119]
+
+    assert cli.main(["rules", "--today", DAY.isoformat(), "--horizon", "1"]) == 0
+    out = capsys.readouterr().out
+    assert build.calls == [119]  # same month end: nothing rebuilt
+    assert "diagnostic IDN stocks horizon 1 (never gates)" in out
+    diag = json.loads((paths.out / "rules" / "diagnostics" / "IDN-stocks-h1.json").read_text())
+    assert diag["gates"] is False and diag["horizon"] == 1
+
+    assert cli.main(["rules", "--today", DAY.isoformat(), "--rebuild"]) == 0
+    assert build.calls == [119, 119]

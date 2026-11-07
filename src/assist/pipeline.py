@@ -19,10 +19,14 @@ Phase B (F2) adds Indonesia's layers 2–4 when `Sources.idn` is set (`Sources.d
     idx-method screens + costs + entry levels → candidates (4) ┴→ RuleView → build_stance
 
 The overrides shift every IDN score (`Layers.overrides`). Each rule's proposed stance goes
-through its `gated_stance` with a placebo verdict built from the rule's own journalled calls
-(`journalled_verdict`: calls recorded before the run day against the forward return that
-followed), so a rule earns the right to move a stance only on calls it made in the open. Every
-rule outcome, its verdict and the candidate list (with each screen's verdict) are journalled.
+through its `gated_stance` with the effective verdict of its gate (`eval.gate`, P67): the placebo
+verdict on the rule's point-in-time history (P66) with its journalled calls as the live monitor,
+read from `out/rules/IDN-<asset>.json` and rebuilt there when missing, for another rule
+fingerprint, or behind the newest month end (only the new month ends are rerun). The stocks rule's
+macro input is layer 1 held at 50 plus P17's override, live as in its history (open question 4),
+so the rule that is gated is the rule that runs; layer 1 still sets the band stance. Every rule
+outcome, its gate (state, rule fingerprint) and the candidate list (with each screen's verdict)
+are journalled.
 The bonds rule's USD/IDR is `IdnSources.usdidr` (P65): JISDOR spliced on the MAS cross, the seam
 and the overlap check in its drivers; the signals still read idxscape.
 
@@ -88,13 +92,13 @@ from typing import Any
 from assist import brief, journal, layers_out, notify, stance
 from assist.candidates import peers as peer_cmp
 from assist.candidates import tiers_replay
+from assist.eval import gate as rule_gate
 from assist.eval.placebo import Verdict
 from assist.fx import FxEdge, fx_edge
 from assist.layers import candidates_foreign as cf
 from assist.layers import portfolio, regime, undervalued
 from assist.layers.bonds import IdnBonds, idn_bonds
 from assist.layers.bonds import gated_stance as bonds_gate
-from assist.layers.bonds import rule_verdict as bonds_verdict
 from assist.layers.bonds.idn import PROXY_10Y
 from assist.layers.candidates import IdnCandidates, idn_candidates
 from assist.layers.candidates_foreign import ForeignCandidates, IndexValuation, foreign_candidates
@@ -102,7 +106,6 @@ from assist.layers.overrides import IdnOverrides, idn_overrides
 from assist.layers.overrides_foreign import EMU_MEMBERS, ForeignOverrides, foreign_overrides
 from assist.layers.rules import IdnStocks, idn_stocks, month_end_closes
 from assist.layers.rules import gated_stance as stocks_gate
-from assist.layers.rules import rule_verdict as stocks_verdict
 from assist.layers.signals import IdnSignals, idn_signals
 from assist.layers.types import (
     ASSETS,
@@ -144,8 +147,8 @@ __all__ = [
     "gather_idn",
     "idr_edges_from",
     "in_scope",
-    "journalled_calls",
-    "journalled_verdict",
+    "rule_gates",
+    "rule_prices",
     "last_regime",
     "live_doctor",
     "live_paper",
@@ -168,7 +171,7 @@ COUNTRIES = ("IDN", "USA", "JPN", "DEU", "FRA", "ITA", "ESP", "NLD", "SGP", "AUS
 # `business` and `property` classes have no stance. Every commodity subject is in scope.
 
 _SUBJECT_DIR = re.compile(r"^[A-Z0-9_]+$")
-RULE_HORIZON = 3  # months: the forward window a rule's journalled calls are judged on
+RULE_HORIZON = rule_gate.HORIZON  # months: the forward window a rule's calls are judged on
 RULE_ASSETS = ("bonds", "stocks")  # IDN assets with a rule; currency has overrides only
 FOREIGN = tuple(c for c in COUNTRIES if c != HOME)
 FOREIGN_ASSETS = ("stocks", "bonds", "currency")
@@ -272,7 +275,9 @@ class Sources:
     `peers(day)` gives the S30 peer comparison (`out/industries/IDN.json`); None skips it.
     `tier_replay(day, out_dir)` gives the S31 replay verdict (`out/industries/IDN.replay.json`,
     P50); None skips it. `layers_out` writes each layer's result to `out/layers/` (S33, from
-    `fred` and `idn` for the chart windows); False skips it."""
+    `fred` and `idn` for the chart windows); False skips it. `rule_history(dates, day)` reruns
+    the IDN rules on month ends (`history.build`, P66) when `out/rules/` needs it (P67); None
+    never rebuilds (a missing or foreign-fingerprint file is then no verdict)."""
 
     worldbankscape: Any
     fred: Any
@@ -286,6 +291,7 @@ class Sources:
     peers: Callable[[date], dict] | None = None
     tier_replay: Callable[[date, Path], dict] | None = None
     layers_out: bool = False
+    rule_history: rule_gate.Build | None = None
 
     @classmethod
     def default(cls) -> Sources:
@@ -298,7 +304,8 @@ class Sources:
                    foreign=ForeignSources.default(), doctor=live_doctor, paper=live_paper,
                    undervalued=undervalued.gather_live,
                    undervalued_us=undervalued.gather_live_usa, peers=peer_cmp.gather_live,
-                   tier_replay=tiers_replay.run_live, layers_out=True)
+                   tier_replay=tiers_replay.run_live, layers_out=True,
+                   rule_history=rule_gate.live_build)
 
 
 def live_doctor(day: date) -> list[Any]:
@@ -331,13 +338,15 @@ class IdnLayers:
     stocks: IdnStocks
     candidates: IdnCandidates
     verdicts: dict[str, Verdict | None] = field(default_factory=dict)
+    gates: dict[str, rule_gate.Gate] = field(default_factory=dict)
 
     def rule(self, asset: str) -> IdnBonds | IdnStocks:
         return self.bonds if asset == "bonds" else self.stocks
 
     @property
     def stale_inputs(self) -> list[str]:
-        parts = (self.overrides, self.signals, self.bonds, self.stocks, self.candidates)
+        parts = (self.overrides, self.signals, self.bonds, self.stocks, self.candidates,
+                 *self.gates.values())
         return [s for p in parts for s in p.stale_inputs]
 
 
@@ -409,10 +418,12 @@ def in_scope(s: AssetScore) -> bool:
     return s.asset in ASSETS and (s.asset == "commodities" or s.subject in COUNTRIES)
 
 
-def gather(day: date, sources: Sources, history: Sequence[Mapping] = ()) -> Layers:
+def gather(day: date, sources: Sources, history: Sequence[Mapping] = (),
+           rules_dir: Path | None = None) -> Layers:
     """Read layers 0, 1 and 5 as of `day`, plus Indonesia's layers 2–4 when `sources.idn` is
-    set and the foreign layers when `sources.foreign` is; `history` is the journal so far (for
-    the rules' verdicts). Never raises for a missing or locked store."""
+    set and the foreign layers when `sources.foreign` is; `history` is the journal so far (the
+    rules' live monitor), `rules_dir` the rule gates' `out/rules/` (None: in memory, no
+    history). Never raises for a missing or locked store."""
     stale: list[str] = []
     try:
         layer1 = sources.worldbankscape.load()
@@ -430,7 +441,8 @@ def gather(day: date, sources: Sources, history: Sequence[Mapping] = ()) -> Laye
     if sources.idn is not None and layer1 is not None:
         scores = {(s.subject, s.asset): s for s in layer1.scores}
         idn = gather_idn(day, reg, sources.idn, score=scores.get((HOME, "stocks")),
-                         worldbankscape=sources.worldbankscape, history=history)
+                         worldbankscape=sources.worldbankscape, history=history,
+                         rules_dir=rules_dir, rule_history=sources.rule_history)
         overrides = idn.overrides.overrides
         stale += idn.stale_inputs
     foreign = None
@@ -457,9 +469,15 @@ def _portfolio(source: Any) -> tuple[portfolio.Portfolio | None, tuple[Any, ...]
 
 
 def gather_idn(day: date, reg: Regime, src: IdnSources, *, score: AssetScore | None = None,
-               worldbankscape: Any = None, history: Sequence[Mapping] = ()) -> IdnLayers:
+               worldbankscape: Any = None, history: Sequence[Mapping] = (),
+               rules_dir: Path | None = None,
+               rule_history: rule_gate.Build | None = None) -> IdnLayers:
     """Indonesia's layers 2–4 on `day` (P17 overrides, P18 signals, P31 bonds rule, P22 stocks
-    rule, layer-4 candidates) and each rule's verdict from its journalled calls."""
+    rule, layer-4 candidates) and each rule's gate (`rule_gates`). The stocks rule's macro input
+    is `history.held_score` (layer 1 held at 50, open question 4), as in the history its gate is
+    judged on; `score` and `worldbankscape` are kept for callers and no longer read by it."""
+    from assist.history import held_score
+
     ov = idn_overrides(day, bps=src.bps, bisfetcher=src.bisfetcher, dbnomics=src.dbnomics,
                        satudatascape=src.satudatascape)
     sig = idn_signals(day, idxscape=src.idxscape, kseistat=src.kseistat, tic=src.tic)
@@ -467,15 +485,12 @@ def gather_idn(day: date, reg: Regime, src: IdnSources, *, score: AssetScore | N
                       idxscape=src.usdidr or src.idxscape)
     if src.usdidr is not None:
         bonds = _with_fx_seam(bonds, src.usdidr)
-    stocks = idn_stocks(day, reg, ov, sig, score, phei=src.phei, dbnomics=src.dbnomics,
-                        bps=src.bps, idxmethod=src.idxmethod, snapshots=src.snapshots,
-                        worldbankscape=worldbankscape)
+    stocks = idn_stocks(day, reg, ov, sig, held_score(day), phei=src.phei, dbnomics=src.dbnomics,
+                        bps=src.bps, idxmethod=src.idxmethod, snapshots=src.snapshots)
     cands = idn_candidates(day, stocks=src.stocks)
-    verdicts: dict[str, Verdict | None] = {
-        "bonds": journalled_verdict(history, "bonds", _ten_year_months(src, day), day),
-        "stocks": journalled_verdict(history, "stocks", _jci_months(src, day), day),
-    }
-    return IdnLayers(ov, sig, bonds, stocks, cands, verdicts)
+    gates = rule_gates(day, history, rule_prices(src, day), rules_dir, rule_history)
+    verdicts = {a: g.verdict for a, g in gates.items()}
+    return IdnLayers(ov, sig, bonds, stocks, cands, verdicts, gates)
 
 
 def _with_fx_seam(bonds: IdnBonds, fx: Any) -> IdnBonds:
@@ -610,33 +625,27 @@ def _ten_year_months(src: IdnSources, day: date) -> list[tuple[date, float]]:
     return [out[k] for k in sorted(out)]
 
 
-def journalled_calls(history: Sequence[Mapping], asset: str,
-                     before: date) -> dict[tuple[int, int], str]:
-    """{(year, month): call} of the IDN `asset` rule from journal `rule` records dated before
-    `before`; the last call in a month stands for the month."""
-    calls: dict[tuple[int, int], str] = {}
-    for rec in history:
-        if (rec.get("kind") != "rule" or rec.get("subject") != HOME
-                or rec.get("asset") != asset or not rec.get("as_of")):
-            continue
-        d = date.fromisoformat(rec["as_of"])
-        if d < before:
-            calls[_month(d)] = rec["outputs"]["call"]
-    return calls
+def rule_prices(src: IdnSources, day: date) -> dict[str, list[tuple[date, float]]]:
+    """Month-end prices each rule's calls are judged on, as known on `day`: the 10Y (bonds) and
+    the JCI close (stocks)."""
+    return {"bonds": _ten_year_months(src, day), "stocks": _jci_months(src, day)}
 
 
-def journalled_verdict(history: Sequence[Mapping], asset: str,
-                       prices: Sequence[tuple[date, float]], day: date,
-                       horizon: int = RULE_HORIZON) -> Verdict:
-    """Placebo verdict on the IDN `asset` rule's journalled calls made before `day`: does an
-    enter precede a better forward return over `horizon` months (JCI for stocks, the 10Y return
-    proxy for bonds) than a hold or reduce? Only calls made in the open count, so there is no
-    look-ahead, and a same-day rerun sees the same calls. Until enough months have a forward
-    return the verdict is an insufficient sample."""
-    calls = journalled_calls(history, asset, day)
-    keyed = {d: calls[_month(d)] for d, _ in prices if _month(d) in calls}
-    fn = bonds_verdict if asset == "bonds" else stocks_verdict
-    return fn(keyed, prices, horizon=horizon)
+def rule_gates(day: date, history: Sequence[Mapping],
+               prices: Mapping[str, Sequence[tuple[date, float]]], rules_dir: Path | None,
+               build: rule_gate.Build | None = None, *,
+               rebuild: bool = False) -> dict[str, rule_gate.Gate]:
+    """Both IDN rule gates (`eval.gate.refresh`) on `day`. Never raises: a gate that cannot be
+    read, built or written is computed in memory from the journal alone and says why."""
+    try:
+        return rule_gate.refresh(day, rules_dir, records=history, prices=prices, build=build,
+                                 rebuild=rebuild)
+    except Exception as e:  # noqa: BLE001 - a run never fails on its gate
+        first = str(e).splitlines()[0][:200] if str(e) else ""
+        gates = rule_gate.refresh(day, None, records=history, prices=prices, build=None)
+        line = f"rule gate failed: {type(e).__name__}: {first}"
+        return {a: dataclasses.replace(g, stale_inputs=(*g.stale_inputs, line))
+                for a, g in gates.items()}
 
 
 # ---------------- combine ----------------
@@ -712,8 +721,10 @@ def _idn_view(score: AssetScore, layers: Layers) -> stance.RuleView | None:
     rule, verdict = idn.rule(score.asset), idn.verdicts.get(score.asset)
     gate = bonds_gate if score.asset == "bonds" else stocks_gate
     gated, note = gate(stance.base_stance(score, layers.regime), rule, verdict)
+    g = idn.gates.get(score.asset)
     if rule.proposed_stance is not None:
-        note += f" (verdict on its journalled calls: {_verdict_text(verdict)})"
+        note += (f" (rule gate {g.line()})" if g is not None
+                 else f" (verdict: {_verdict_text(verdict)})")
     applied = rule.proposed_stance is not None and verdict is not None and verdict.passed
     drivers, watch = list(rule.drivers), []
     stale, sources = list(rule.stale_inputs), list(rule.sources)
@@ -849,11 +860,14 @@ def _journal_idn(j: journal.Journal, layers: Layers, stances: Mapping, fp: str,
     idn = layers.idn
     for asset in RULE_ASSETS:
         rule, verdict = idn.rule(asset), idn.verdicts.get(asset)
+        g = idn.gates.get(asset)
         p = stances.get((HOME, asset))
         j.record(kind="rule", fingerprint=fp, subject=HOME, asset=asset, as_of=layers.day,
                  run_id=run_id, inputs=rule,
                  outputs={"call": rule.call, "proposed_stance": rule.proposed_stance,
                           "stance": p["stance"] if p else None,
+                          "rule_fingerprint": g.fingerprint if g else None,
+                          "gate": g.journal() if g else None,
                           "verdict": None if verdict is None else
                           {k: v for k, v in verdict.to_dict().items() if k != "control_ts"}})
     j.record(kind="candidates", fingerprint=fp, subject=HOME, asset="stocks", as_of=layers.day,
@@ -1097,7 +1111,7 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
     paths = paths or Paths.default()
     sources = sources or Sources.default()
     j = journal.Journal(paths.journal)
-    layers = gather(day, sources, history=list(j.read()))
+    layers = gather(day, sources, history=list(j.read()), rules_dir=paths.out / "rules")
     res = RunResult(ok=False, day=day, regime=layers.regime, stale_inputs=layers.stale_inputs,
                     problems=dict(layers.layer1.problems) if layers.layer1 else {},
                     idn=layers.idn, foreign=layers.foreign)
