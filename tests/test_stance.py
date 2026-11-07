@@ -103,7 +103,8 @@ def test_overweight_adds_tilt_to_the_benchmark_and_lumps_when_not_risk_off():
     bench = st.BENCHMARK_PCT[("IDN", "bonds")]
     assert out["portfolio"] == {"current_pct": 8.0, "target_pct": bench + tilt,
                                 "benchmark_pct": bench,
-                                "delta": f"+{bench + tilt - 8.0:.1f}pt lump"}
+                                "delta": f"+{bench + tilt - 8.0:.1f}pt lump",
+                                "rebalance_pt": bench - 8.0, "tilt_pt": tilt}  # S42
     assert out["entry"] == {"style": "lump", "tranches": 1, "spacing_days": 0}
     assert f"benchmark {bench:g}%, tilt +{tilt:g}pt (overweight)" in out["drivers"]
 
@@ -395,3 +396,105 @@ def test_targets_never_sum_past_100_for_any_mix():
                 assert p["portfolio"]["delta"].endswith("over 3 tranches")
             else:
                 assert (p["entry"]["style"] == "none") == (gap <= 0), p["portfolio"]
+
+
+# ---------------- rebalance vs tilt (S42) ----------------
+
+
+def _split_sums(p: dict) -> None:
+    pf = p["portfolio"]
+    gap = round(pf["target_pct"] - pf["current_pct"], 1)
+    assert round(pf["rebalance_pt"] + pf["tilt_pt"], 1) == gap, pf
+
+
+def test_split_of_a_mandate_leg_unscaled():
+    """No pro-rata scaling: rebalance = benchmark − current, tilt = the stance's tilt."""
+    calls = {("IDN", "stocks"): "underweight", ("IDN", "bonds"): "neutral",
+             ("USA", "stocks"): "neutral"}
+    out = _stances(calls, {("IDN", "stocks"): 96.9, ("IDN", "bonds"): 3.1})
+    st.apply_limits(out)
+    idn = valid(_by(out, "IDN", "stocks"))["portfolio"]
+    assert idn["rebalance_pt"] == -48.9 and idn["tilt_pt"] == -5.0
+    bonds = _by(out, "IDN", "bonds")["portfolio"]
+    assert bonds["rebalance_pt"] == 28.9 and bonds["tilt_pt"] == 0.0
+    usa = _by(out, "USA", "stocks")["portfolio"]
+    assert usa["rebalance_pt"] == 20.0 and usa["tilt_pt"] == 0.0
+    for p in out:
+        _split_sums(p)
+
+
+def test_split_under_pro_rata_scaling_uses_the_scaled_benchmark():
+    """IDN stocks and bonds neutral, USA overweight: 48 + 32 + 25 = 105 → ×100/105. A neutral
+    leg's whole move is a rebalance (tilt 0); the USA tilt is its +5 scaled, 4.8."""
+    calls = {("IDN", "stocks"): "neutral", ("IDN", "bonds"): "neutral",
+             ("USA", "stocks"): "overweight"}
+    out = _stances(calls, {("IDN", "stocks"): 96.9, ("IDN", "bonds"): 3.1})
+    st.apply_limits(out)
+    idn = valid(_by(out, "IDN", "stocks"))["portfolio"]
+    assert idn["target_pct"] == 45.7 and idn["delta"] == "-51.2pt trim over 3 tranches"
+    assert idn["rebalance_pt"] == -51.2 and idn["tilt_pt"] == 0.0
+    bonds = _by(out, "IDN", "bonds")["portfolio"]
+    assert bonds["tilt_pt"] == 0.0 and bonds["rebalance_pt"] == round(bonds["target_pct"] - 3.1, 1)
+    usa = _by(out, "USA", "stocks")["portfolio"]
+    assert usa["target_pct"] == 23.8
+    assert usa["rebalance_pt"] == 19.0 and usa["tilt_pt"] == 4.8  # 20 and 5, × 100/105
+    for p in out:
+        _split_sums(p)
+
+
+def test_split_outside_the_mandate_is_all_rebalance():
+    out = _stances({("JPN", "stocks"): "overweight"}, {("JPN", "stocks"): 40.0})
+    st.apply_limits(out)
+    pf = valid(out[0])["portfolio"]
+    assert pf["rebalance_pt"] == -40.0 and pf["tilt_pt"] == 0.0
+
+
+def test_split_is_null_without_holdings():
+    p = valid(build(weights=None))
+    assert p["portfolio"]["rebalance_pt"] is None and p["portfolio"]["tilt_pt"] is None
+
+
+def test_split_leaves_targets_delta_and_entry_unchanged():
+    out = _stances({k: "overweight" for k in LEGS}, {("IDN", "stocks"): 96.9})
+    st.apply_limits(out)
+    idn = _by(out, "IDN", "stocks")
+    assert idn["portfolio"]["target_pct"] == 46.1
+    assert idn["portfolio"]["delta"] == "-50.8pt trim over 3 tranches"
+    assert idn["entry"]["style"] == "ladder"
+    assert idn["portfolio"]["tilt_pt"] == 4.3  # +5 × 100/115
+    for p in out:
+        _split_sums(p)
+
+
+def test_split_sums_to_the_gap_for_any_mix():
+    rng = random.Random(42)
+    outside = [("JPN", "stocks"), ("IDN", "currency")]
+    for _ in range(300):
+        calls = {k: rng.choice(tuple(SCORE_FOR)) for k in (*LEGS, *outside)}
+        held = {k: rng.choice((0.0, 3.3, 12.7, 19.9)) for k in (*LEGS, *outside)}
+        out = _stances(calls, held, rng.choice(("risk_on", "neutral", "risk_off")))
+        st.apply_limits(out)
+        for p in out:
+            valid(p)
+            _split_sums(p)
+            key = (p["subject"], p["asset"])
+            if key not in LEGS or calls[key] == "neutral":
+                assert p["portfolio"]["tilt_pt"] == 0.0, (key, p["portfolio"])
+
+
+def test_schema_takes_old_payloads_without_the_split():
+    p = build()
+    for k in ("rebalance_pt", "tilt_pt", "benchmark_pct"):
+        p["portfolio"].pop(k)
+    p["schema_version"] = "1.0.0"
+    valid(p)
+    assert st.SCHEMA_VERSION == "1.1.0" and build()["schema_version"] == "1.1.0"
+
+
+def test_split_text():
+    pf = {"current_pct": 96.9, "target_pct": 45.7, "rebalance_pt": -48.9, "tilt_pt": -2.3}
+    assert st.split_text(pf) == "-51.2pt = -48.9pt rebalance to benchmark, -2.3pt tilt"
+    usa = {"current_pct": 0.0, "target_pct": 23.8, "rebalance_pt": 19.0, "tilt_pt": 4.8}
+    assert st.split_text(usa) == "+23.8pt = +19.0pt rebalance to benchmark, +4.8pt tilt"
+    assert st.split_text({"rebalance_pt": None, "tilt_pt": None}) is None
+    assert st.split_text({"current_pct": 1.0, "target_pct": 1.0}) is None

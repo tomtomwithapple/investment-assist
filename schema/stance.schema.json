@@ -11,7 +11,7 @@
     "entry", "portfolio", "stale_inputs", "sources", "disclaimer"
   ],
   "properties": {
-    "schema_version": {"$ref": "https://github.com/tomtomtomdev/worldbankscape/schema/score.schema.json#/$defs/semver", "description": "Version of this contract (1.0.0 frozen by slice S1-contracts)."},
+    "schema_version": {"$ref": "https://github.com/tomtomtomdev/worldbankscape/schema/score.schema.json#/$defs/semver", "description": "Version of this contract (1.0.0 frozen by slice S1-contracts; 1.1.0 adds the optional portfolio.rebalance_pt and portfolio.tilt_pt, S42)."},
     "subject": {"type": "string", "pattern": "^[A-Z0-9_]+$", "description": "ISO3 code (country) or worldbankscape commodity code."},
     "subject_type": {"enum": ["country", "commodity"]},
     "asset": {"enum": ["stocks", "bonds", "currency", "commodities"]},
@@ -46,6 +46,8 @@
         "target_pct": {"type": "number", "minimum": 0, "maximum": 100, "description": "Benchmark + tilt, scaled pro rata with the other mandate legs to a sum of at most 100 (PLAN S39); 0 outside the mandate."},
         "benchmark_pct": {"type": "number", "minimum": 0, "maximum": 100, "description": "The whole-portfolio benchmark weight of this (subject, asset); 0 outside the 80/20 mandate (PLAN S39). Absent in payloads before model 0.4.0."},
         "delta": {"type": "string", "minLength": 1},
+        "rebalance_pt": {"type": ["number", "null"], "description": "Schema 1.1 (PLAN S42): the part of the gap (target_pct - current_pct) that moves to the benchmark, not a model call: the gap less tilt_pt, i.e. the benchmark share after the pro-rata cap minus current_pct, to within 0.1 pt. Outside the mandate (benchmark 0) it is -current_pct. null when holdings are unavailable. Absent in payloads before 1.1.0."},
+        "tilt_pt": {"type": ["number", "null"], "description": "Schema 1.1 (PLAN S42): the model's own part of the gap: the stance tilt (target - benchmark before the cap) times the cap's scale, rounded to 0.1 pt; rebalance_pt + tilt_pt = target_pct - current_pct exactly. 0 outside the mandate and for a neutral leg. null when holdings are unavailable. Absent before 1.1.0."},
         "notes": {"$ref": "#/$defs/texts", "description": "How layer 5 valued the holdings, e.g. lines valued at their last trade price (PLAN S32). Absent when there is nothing to say."}
       }
     },

@@ -380,7 +380,8 @@ def _stance_row(p: Mapping) -> dict:
     return {"subject": p["subject"], "asset": p["asset"], "stance": p["stance"],
             "score": p["score"], "current_pct": pf.get("current_pct"),
             "target_pct": pf.get("target_pct"), "benchmark_pct": pf.get("benchmark_pct"),
-            "delta": pf.get("delta"), "entry": dict(p["entry"])}
+            "delta": pf.get("delta"), "rebalance_pt": pf.get("rebalance_pt"),
+            "tilt_pt": pf.get("tilt_pt"), "entry": dict(p["entry"])}
 
 
 def portfolio_payload(day: date, fingerprint: str, portfolio: Portfolio | None,

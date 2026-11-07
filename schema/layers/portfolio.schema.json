@@ -102,6 +102,8 @@
         "target_pct": {"$ref": "#/$defs/number"},
         "benchmark_pct": {"$ref": "#/$defs/number", "description": "Benchmark weight, 0 outside the 80/20 mandate (PLAN S39)."},
         "delta": {"type": ["string", "null"]},
+        "rebalance_pt": {"type": ["number", "null"], "description": "As in the stance schema 1.1 (PLAN S42): the gap's move to the benchmark; null when holdings are unavailable."},
+        "tilt_pt": {"type": ["number", "null"], "description": "As in the stance schema 1.1 (PLAN S42): the model's tilt part of the gap; rebalance_pt + tilt_pt = target_pct - current_pct."},
         "entry": {
           "type": "object",
           "additionalProperties": false,

@@ -16,6 +16,10 @@ locked or stale source; `health_lines`) right under the disclaimer, and *Paper t
 48/32/20 benchmark, the legacy 60/40 and each model segment; `paper_lines`) before the details.
 Without them the brief is exactly as before.
 
+Rebalance vs tilt (PLAN S42): a payload carrying `portfolio.rebalance_pt` / `tilt_pt` gets its
+delta cell suffixed with the split, and a line under the stance table names the mandate legs'
+rebalance part a move to the benchmark, not a model call. Older payloads render as before.
+
 *Undervalued candidates* (PLAN S20) is rendered from `out/candidates/*.json`
 (`schema/candidates.schema.json`) when that directory holds any valid file, so `assist brief`
 reprints it too: per market (IDN, then USA from F6) the hurdle and its drivers (for the US, which
@@ -42,7 +46,7 @@ from typing import Any
 from assist.candidates import tiers_replay
 from assist.layers.types import DISCLAIMER, stance_validator
 from assist.layers.undervalued import load_out as load_candidates
-from assist.stance import mandate_summary
+from assist.stance import BENCHMARK_PCT, BENCHMARK_TEXT, mandate_summary, split_text
 
 __all__ = [
     "ASSET_ORDER",
@@ -59,6 +63,7 @@ __all__ = [
     "previous_snapshot",
     "render",
     "save_snapshot",
+    "split_line",
     "targets_line",
 ]
 
@@ -397,6 +402,26 @@ def targets_line(stances: Sequence[Mapping]) -> str:
             "mandate and targets 0%.")
 
 
+def _delta_cell(pf: Mapping) -> str:
+    split = split_text(pf)
+    return pf["delta"] if split is None else f"{pf['delta']}; {split}"
+
+
+def split_line(stances: Sequence[Mapping]) -> str | None:
+    """S42: each mandate leg's gap as rebalance + tilt, or None when no leg carries the split."""
+    parts = []
+    for s in stances:
+        pf = s.get("portfolio") or {}
+        if (s.get("subject"), s.get("asset")) in BENCHMARK_PCT and split_text(pf):
+            parts.append(f"{s['subject']} {s['asset']} {pf['rebalance_pt']:+.1f}pt rebalance, "
+                         f"{pf['tilt_pt']:+.1f}pt tilt")
+    if not parts:
+        return None
+    return (f"Rebalance vs tilt: {'; '.join(parts)}. The rebalance part is a move to the "
+            f"{BENCHMARK_TEXT} benchmark, not a model call; only the tilt comes from the stance. "
+            "Paper only, not an order.")
+
+
 def _entry(e: Mapping) -> str:
     if e["style"] == "ladder":
         return f"ladder {e['tranches']}×{e['spacing_days']}d"
@@ -515,12 +540,15 @@ def render(current: Sequence[Mapping], previous: Sequence[Mapping] | None = None
             cells = [s["subject"], s["asset"], s["stance"], _num(s["score"]),
                      _num(s.get("layer1_score")), f"{float(s['confidence']):.2f}",
                      _entry(s["entry"]), f"{_pct(pf['current_pct'])} → {_pct(pf['target_pct'])}",
-                     pf["delta"]]
+                     _delta_cell(pf)]
             out.append("| " + " | ".join(_cell(c) for c in cells) + " |")
         notes = sorted({n for s in stances for n in s["portfolio"].get("notes", [])})
         if notes:
             out += ["", "Holdings: " + "; ".join(notes) + "."]
         out += ["", targets_line(stances)]
+        split = split_line(stances)
+        if split:
+            out += ["", split]
     else:
         out.append("No stances.")
     out.append("")

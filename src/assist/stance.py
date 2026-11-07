@@ -31,6 +31,15 @@ drivers, risks) but targets 0%, so a holding there shows as a trim; a currency s
 on the currency, not an allocation, and targets 0% the same way (the cash rest is IDR). Every
 target is thus a share of one plan that sums to at most 100%.
 
+Phase J (S42): `portfolio.rebalance_pt` and `portfolio.tilt_pt` split the gap (target − current)
+into the move to the benchmark and the model's own call, so a trim that only follows the new
+benchmark is not shown as a model decision. `tilt_pt` is the stance's tilt (target − benchmark
+before the pro-rata cap) times the cap's scale, rounded to 0.1 pt; `rebalance_pt` is the gap
+less that tilt, i.e. the scaled benchmark share − current to within 0.1 pt. The rounding residue
+of the cap thus sits in the rebalance, so a neutral leg always shows a 0 tilt and the two parts
+add up to the gap exactly. Outside the mandate the benchmark is 0: rebalance = −current, tilt 0.
+Holdings unknown: both null. Targets, deltas and entries are unchanged by the split.
+
 Every number below is hand-set and stays so until a rule using it beats its placebo control.
 TODO(PLAN.md, Open questions): the ±5 pt tilt (`TILT_PT`) is still a placeholder until phase I
 has run; the benchmark itself is the user's choice, not fitted.
@@ -56,6 +65,7 @@ from assist.layers.types import (
 
 __all__ = [
     "BENCHMARK_PCT",
+    "BENCHMARK_TEXT",
     "DISCLAIMER",
     "LADDER_SPACING_DAYS",
     "LADDER_TRANCHES",
@@ -75,10 +85,11 @@ __all__ = [
     "dumps",
     "mandate_summary",
     "model_fingerprint",
+    "split_text",
     "stance_for",
 ]
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"  # 1.1: portfolio.rebalance_pt / tilt_pt (S42)
 MODEL_VERSION = "0.4.0"  # 0.2: phase B (F2), IDN rules and layer 4; 0.3: phase C (F3) foreign;
 # 0.4: phase I (S39), benchmark 48/32/20 and the 100% rule
 
@@ -93,6 +104,7 @@ TILT_PT = {"overweight": 5.0, "neutral": 0.0, "underweight": -5.0}  # "avoid" ta
 # The user's benchmark (2026-11-06): 80% Indonesia (48 stocks / 32 SBN), 20% US stocks.
 BENCHMARK_PCT: dict[tuple[str, str], float] = {
     ("IDN", "stocks"): 48.0, ("IDN", "bonds"): 32.0, ("USA", "stocks"): 20.0}
+BENCHMARK_TEXT = "/".join(f"{v:g}" for v in BENCHMARK_PCT.values())  # "48/32/20"
 MANDATE = frozenset(BENCHMARK_PCT)  # every other (subject, asset) targets 0%
 MANDATE_CAP_PCT = 100.0  # the mandate's targets are scaled down pro rata above this; rest is cash
 OUTSIDE_NOTE = "outside the 80/20 mandate: target 0%"
@@ -285,6 +297,7 @@ def build_stance(
         else:
             entry = dict(_NONE)
         delta_text = _delta_text(gap, entry)
+    tilt = None if current is None else _r(target - (bench or 0.0))
 
     dates = [d for d in (score.as_of, regime and regime.as_of, weights and weights.as_of) if d]
     payload = {
@@ -310,6 +323,7 @@ def build_stance(
         "sources": sorted(sources),
         "disclaimer": DISCLAIMER,
     }
+    _split(payload["portfolio"], tilt)
     if weights is not None and weights.notes:
         payload["portfolio"]["notes"] = list(weights.notes)
     if dollar is not None:
@@ -318,6 +332,30 @@ def build_stance(
 
 
 _NONE = {"style": "none", "tranches": 0, "spacing_days": 0}
+
+
+def _split(pf: dict, tilt: float | None) -> None:
+    """Set `rebalance_pt` (gap less the tilt) and `tilt_pt` on a portfolio block (S42)."""
+    if pf["current_pct"] is None or tilt is None:
+        pf["rebalance_pt"] = pf["tilt_pt"] = None
+        return
+    gap = _r(pf["target_pct"] - pf["current_pct"])
+    pf["tilt_pt"] = _r(tilt) + 0.0  # + 0.0: never a -0.0
+    pf["rebalance_pt"] = _r(gap - pf["tilt_pt"]) + 0.0
+
+
+def _pt(x: float) -> str:
+    return f"{x:+.1f}pt"
+
+
+def split_text(pf: Mapping) -> str | None:
+    """"-51.2pt = -48.9pt rebalance to benchmark, -2.3pt tilt" for a portfolio block or layer
+    row carrying the S42 split; None when it has none (older payloads, unknown holdings)."""
+    reb, tilt = pf.get("rebalance_pt"), pf.get("tilt_pt")
+    if not isinstance(reb, (int, float)) or not isinstance(tilt, (int, float)):
+        return None
+    gap = _r(reb + tilt) + 0.0
+    return f"{_pt(gap)} = {_pt(reb)} rebalance to benchmark, {_pt(tilt)} tilt"
 
 
 def _delta_text(gap: float, entry: Mapping) -> str:
@@ -377,6 +415,7 @@ def apply_limits(stances: Sequence[dict],
             pf = p["portfolio"]
             before = pf["target_pct"]
             pf["target_pct"] = _r(u / 10)
+            _split(pf, (before - pf["benchmark_pct"]) * scale)
             p["drivers"].append(f"mandate targets sum {raw:.1f}%: scaled ×{scale:.3f} pro rata "
                                 f"to {MANDATE_CAP_PCT:g}% ({before:.1f}% → "
                                 f"{pf['target_pct']:.1f}%)")
