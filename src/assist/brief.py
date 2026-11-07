@@ -195,8 +195,12 @@ def _pct_text(pct: Mapping) -> str:
 def _bench_line(name: str, pct: Mapping, summary: Mapping, start: Any) -> str:
     line = f"{name} {_pct_text(pct)}: "
     if summary.get("weeks"):
+        n = summary.get("annualize_min_weeks")  # paper.MIN_ANNUALISE_WEEKS (S41)
+        ann = (f"annualised after {n} scored weeks"
+               if n and summary["annualized"] is None and summary["weeks"] < n
+               else f"annualised {_signed(summary['annualized'])}")
         line += (f"{summary['weeks']} week(s) scored from {start}, cumulative "
-                 f"{_signed(summary['cumulative'])}, annualised {_signed(summary['annualized'])}")
+                 f"{_signed(summary['cumulative'])}, {ann}")
     else:
         line += "no week scored"
     if summary.get("stale_weeks"):

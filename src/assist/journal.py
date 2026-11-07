@@ -5,11 +5,17 @@ inputs, its outputs and the fingerprint of the model that made it, so a rule cha
 record instead of averaging two regimes. Lines are never rewritten: each carries a running `seq`,
 the hash of the line before it (`prev`) and its own hash, and `verify()` checks the chain.
 
-The fingerprint is sha256 over the canonical JSON of three things:
+The fingerprint is sha256 over the canonical JSON of four things:
 - `config`: the hand-set weights, bands and tilts (`stance.MODEL_CONFIG` by default);
-- `rules`: sha256 of each rule module's bytes (stance, layers, candidates, placebo eval);
-- `config_files`: sha256 of each model config file under `config/` (not `sources.yaml`, which
-  only says where stores live).
+- `rules`: sha256 of each rule module's normalised AST (stance, layers, candidates, placebo
+  eval): the module is parsed with `ast`, the module, class and function docstrings are dropped,
+  and `ast.dump(tree, include_attributes=False)` is hashed. Comments, docstrings, blank lines,
+  formatting and line numbers therefore leave the fingerprint unchanged, while any change to code
+  (a constant, an expression, a name, a signature, a string that is not a docstring) changes it
+  (S41; before it the raw bytes were hashed, so the switch segmented the record once);
+- `config_files`: sha256 of each model config file's bytes under `config/` (not `sources.yaml`,
+  which only says where stores live);
+- `rules_method`: `RULES_METHOD`, so a change of hashing method shows in the stored inputs.
 Paths are kept relative, so the same code checked out elsewhere has the same fingerprint. The full
 inputs behind each fingerprint are kept once in `journal/models/<hex>.json`, so two segments can be
 diffed later.
@@ -17,6 +23,7 @@ diffed later.
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 import hashlib
 import json
@@ -58,8 +65,10 @@ else:
 __all__ = [
     "DECISIONS",
     "FINGERPRINT_RE",
+    "RULES_METHOD",
     "Journal",
     "canonical",
+    "code_digest",
     "fingerprint",
     "fingerprint_inputs",
     "jsonable",
@@ -79,6 +88,7 @@ FINGERPRINT_RE = re.compile(r"sha256:[0-9a-f]{64}")
 # doctor move data around and do not change a decision, so they stay out of the fingerprint.
 RULE_GLOBS = ("stance.py", "layers/*.py", "candidates/*.py", "eval/*.py")
 PLUMBING_CONFIG = frozenset({"sources.yaml"})
+RULES_METHOD = "sha256 of ast.dump(include_attributes=False), docstrings removed"
 
 
 # ---------------- canonical JSON ----------------
@@ -136,16 +146,40 @@ def default_config_files() -> list[Path]:
                   and p.name not in PLUMBING_CONFIG)
 
 
+_DOC_OWNERS = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def code_digest(source: str | bytes, filename: str = "<rule>") -> str:
+    """sha256 of the module's AST without docstrings or positions (SyntaxError if it does not
+    parse). Only a body's first statement, when it is a bare string, is a docstring; a body left
+    empty keeps a `pass` so the tree stays valid."""
+    tree = ast.parse(source, filename=filename)
+    for node in ast.walk(tree):
+        if not isinstance(node, _DOC_OWNERS):
+            continue
+        body = node.body
+        if (body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)):
+            node.body = body[1:] or [ast.Pass()]
+    return _sha(ast.dump(tree, include_attributes=False))
+
+
+def _rel(p: Path, root: Path) -> str:
+    try:
+        return p.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return p.name
+
+
 def _file_hashes(paths: Iterable[Path], root: Path) -> dict[str, str]:
-    out = {}
-    for p in paths:
-        p = Path(p)
-        try:
-            rel = p.resolve().relative_to(root.resolve()).as_posix()
-        except ValueError:
-            rel = p.name
-        out[rel] = _sha(p.read_bytes())  # FileNotFoundError on a missing rule: never skip it
-    return dict(sorted(out.items()))
+    """sha256 of each file's bytes (config files)."""
+    return dict(sorted((_rel(Path(p), root), _sha(Path(p).read_bytes())) for p in paths))
+
+
+def _rule_hashes(paths: Iterable[Path], root: Path) -> dict[str, str]:
+    """`code_digest` of each rule module; FileNotFoundError on a missing rule: never skip it."""
+    return dict(sorted((_rel(Path(p), root), code_digest(Path(p).read_bytes(), str(p)))
+                       for p in paths))
 
 
 def fingerprint_inputs(
@@ -164,8 +198,9 @@ def fingerprint_inputs(
     cfgs = default_config_files() if config_files is None else config_files
     return {
         "config": jsonable(stance.MODEL_CONFIG if config is None else config),
-        "rules": _file_hashes(rules, rule_root),
+        "rules": _rule_hashes(rules, rule_root),
         "config_files": _file_hashes(cfgs, cfg_root),
+        "rules_method": RULES_METHOD,
     }
 
 

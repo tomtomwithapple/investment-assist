@@ -195,3 +195,84 @@ def test_unjsonable_input_fails_before_writing(tmp_path):
 def test_empty_journal_reads_empty(tmp_path):
     j = jr.Journal(tmp_path / "none")
     assert list(j.read()) == [] and j.segments() == {} and j.verify() == 0
+
+
+# ---------------- fingerprint scope (S41): AST without docstrings ----------------
+
+RULE = '''"""Module docstring."""
+
+TILT = 10  # pt
+
+
+class Band:
+    """Class docstring."""
+
+    def width(self, x):
+        """Method docstring."""
+        return x * 2
+
+
+def score(a, b=1):
+    """Function docstring."""
+    return a + b + TILT
+'''
+
+
+def _fp(tmp_path, rules):
+    return jr.fingerprint(_model(tmp_path, rules=rules))
+
+
+def test_fingerprint_ignores_docstrings_comments_and_blank_lines(tmp_path):
+    base = _fp(tmp_path, RULE)
+    edited = (RULE.replace('"""Module docstring."""', '"""Reworded module docstring,\n\nlonger."""')
+              .replace('"""Class docstring."""', '"""Another class docstring."""')
+              .replace('"""Method docstring."""', "# a comment instead")
+              .replace('"""Function docstring."""', '"""New."""\n    # and a comment')
+              .replace("TILT = 10  # pt", "\n\n# the tilt\nTILT = 10"))
+    assert _fp(tmp_path, edited) == base
+    assert _fp(tmp_path, "X = 1\n") == _fp(tmp_path, '"""Doc."""\n\n# c\nX = (1)\n')
+
+
+def test_fingerprint_changes_with_any_code_change(tmp_path):
+    base = _fp(tmp_path, RULE)
+    for old, new in [("TILT = 10", "TILT = 11"),          # constant
+                     ("x * 2", "x * 3"),                  # expression
+                     ("a + b + TILT", "a - b + TILT"),    # operator
+                     ("def score(a, b=1)", "def score(a, b=2)"),  # signature default
+                     ("def score(a, b=1)", "def rank(a, b=1)"),   # name
+                     ("TILT = 10", "TILT = '10'")]:       # a string constant is code
+        assert _fp(tmp_path, RULE.replace(old, new)) != base, (old, new)
+
+
+def test_fingerprint_keeps_a_non_docstring_string_statement_and_config_bytes(tmp_path):
+    # only the first statement of a module/class/function body is a docstring
+    base = _fp(tmp_path, "X = 1\n")
+    assert _fp(tmp_path, 'X = 1\n"""not a docstring"""\n') != base
+    # config files stay hashed by bytes: a comment there still changes the fingerprint
+    assert (jr.fingerprint(_model(tmp_path, cfg="w: 1  # note\n"))
+            != jr.fingerprint(_model(tmp_path, cfg="w: 1\n")))
+
+
+def test_fingerprint_inputs_record_the_method(tmp_path):
+    inputs = _model(tmp_path)
+    assert inputs["rules_method"] == jr.RULES_METHOD
+    assert "ast" in jr.RULES_METHOD and "docstring" in jr.RULES_METHOD
+
+
+def test_rule_file_that_does_not_parse_raises(tmp_path):
+    with pytest.raises(SyntaxError):
+        _model(tmp_path, rules="def broken(:\n")
+
+
+def test_real_tree_fingerprint_survives_a_docstring_edit(tmp_path):
+    import shutil
+    pkg = tmp_path / "assist"
+    shutil.copytree(jr.PACKAGE_DIR, pkg, ignore=shutil.ignore_patterns("__pycache__"))
+    files = lambda: sorted({p for g in jr.RULE_GLOBS for p in pkg.glob(g)})  # noqa: E731
+    base = jr.fingerprint(jr.fingerprint_inputs(rule_files=files(), config_files=[],
+                                                root=tmp_path))
+    s = pkg / "stance.py"
+    s.write_text('"""Rewritten docstring."""\n# comment\n' + s.read_text().split('"""', 2)[2])
+    after = jr.fingerprint(jr.fingerprint_inputs(rule_files=files(), config_files=[],
+                                                 root=tmp_path))
+    assert after == base

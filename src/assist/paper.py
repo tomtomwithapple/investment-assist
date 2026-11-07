@@ -102,6 +102,7 @@ TILT_PT = {"overweight": 10.0, "neutral": 0.0, "underweight": -10.0}  # "avoid" 
 DBN_LONG_RATE = "idn.rate.long"
 TENOR_Y = 10
 WEEKS_PER_YEAR = 52
+MIN_ANNUALISE_WEEKS = 12  # below this many scored weeks a summary shows cumulative only (S41)
 EPS = 1e-12
 
 
@@ -594,13 +595,26 @@ def _cum(rs: Iterable[float]) -> float:
 
 
 def summarize(returns: Sequence[float | None]) -> dict[str, Any]:
-    """Cumulative and annualised return over the non-stale weeks; stale weeks are counted."""
+    """Cumulative return over the non-stale weeks, and the annualised one only from
+    `MIN_ANNUALISE_WEEKS` scored weeks (None below: one week compounded 52 times is noise, S41);
+    stale weeks are counted."""
     ok = [r for r in returns if r is not None]
     cum = _cum(ok) if ok else None
-    ann = (1 + cum) ** (WEEKS_PER_YEAR / len(ok)) - 1 if ok and cum > -1 else None
+    ann = ((1 + cum) ** (WEEKS_PER_YEAR / len(ok)) - 1
+           if len(ok) >= MIN_ANNUALISE_WEEKS and cum > -1 else None)
     vol = statistics.stdev(ok) * math.sqrt(WEEKS_PER_YEAR) if len(ok) > 1 else None
     return {"weeks": len(ok), "stale_weeks": len(returns) - len(ok), "cumulative": cum,
-            "annualized": ann, "volatility": vol}
+            "annualized": ann, "volatility": vol, "annualize_min_weeks": MIN_ANNUALISE_WEEKS}
+
+
+def annualized_note(summary: Mapping[str, Any] | None) -> str | None:
+    """"annualised after N scored weeks" while a summary is below its minimum, else None."""
+    if not summary:
+        return None
+    n = summary.get("annualize_min_weeks")
+    if n and summary.get("annualized") is None and (summary.get("weeks") or 0) < n:
+        return f"annualised after {n} scored weeks"
+    return None
 
 
 @dataclass
