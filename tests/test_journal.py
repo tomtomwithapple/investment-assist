@@ -75,6 +75,7 @@ def test_default_model_fingerprint_covers_stance_config_and_rule_modules():
     assert any(k.startswith("assist/layers/") for k in inputs["rules"])
     assert not any(k.startswith("assist/sources/") for k in inputs["rules"])  # plumbing
     assert "config/sources.yaml" not in inputs["config_files"]  # plumbing, not model
+    assert not any("household" in k for k in inputs["config_files"])  # /flows names only
     assert jr.model_fingerprint() == jr.model_fingerprint() == jr.fingerprint(inputs)
 
 

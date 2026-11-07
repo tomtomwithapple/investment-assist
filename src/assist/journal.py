@@ -87,7 +87,8 @@ FINGERPRINT_RE = re.compile(r"sha256:[0-9a-f]{64}")
 # Modules whose code decides a stance or names a candidate. Adapters (sources/), the CLI and
 # doctor move data around and do not change a decision, so they stay out of the fingerprint.
 RULE_GLOBS = ("stance.py", "layers/*.py", "candidates/*.py", "eval/*.py")
-PLUMBING_CONFIG = frozenset({"sources.yaml"})
+# sources.yaml says where stores live; household*.yaml only names people for /flows matching.
+PLUMBING_CONFIG = frozenset({"sources.yaml", "household.example.yaml", "household.local.yaml"})
 RULES_METHOD = "sha256 of ast.dump(include_attributes=False), docstrings removed"
 
 
