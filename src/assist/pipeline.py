@@ -23,6 +23,8 @@ through its `gated_stance` with a placebo verdict built from the rule's own jour
 (`journalled_verdict`: calls recorded before the run day against the forward return that
 followed), so a rule earns the right to move a stance only on calls it made in the open. Every
 rule outcome, its verdict and the candidate list (with each screen's verdict) are journalled.
+The bonds rule's USD/IDR is `IdnSources.usdidr` (P65): JISDOR spliced on the MAS cross, the seam
+and the overlap check in its drivers; the signals still read idxscape.
 
 Phase C (F3) adds the foreign subjects when `Sources.foreign` is set (`Sources.default` sets it):
 
@@ -213,6 +215,8 @@ class IdnSources:
     idxmethod: Any  # JCI: idxscape index_daily, idx-method CSV before 2021-10 (JciSource)
     snapshots: Any  # idx-method dated screener cross-sections (JCI earnings yield)
     stocks: Any  # idx-method stock files (screens, costs, entry levels)
+    # USD/IDR for the bonds rule (P65): JISDOR spliced on the MAS cross; None → idxscape JISDOR
+    usdidr: Any = None
 
     @classmethod
     def default(cls) -> IdnSources:
@@ -226,15 +230,19 @@ class IdnSources:
         from assist.sources.idxscape_phei import PheiSource
         from assist.sources.kseistat import KseistatSource
         from assist.sources.satudatascape import SatudatascapeSource
+        from assist.sources.singstat import SingstatSource
+        from assist.sources.usdidr import UsdIdrSource
         from assist.sources.usfin_tic import TicSource
 
+        idx = IdxscapeSource.from_config()
         return cls(bps=BpsLookerSource.from_config(), bisfetcher=BisfetcherSource.from_config(),
                    dbnomics=DbnomicsSource.from_config(),
                    satudatascape=SatudatascapeSource.from_config(),
-                   idxscape=IdxscapeSource.from_config(), kseistat=KseistatSource.from_config(),
+                   idxscape=idx, kseistat=KseistatSource.from_config(),
                    tic=TicSource(), phei=PheiSource.from_config(),
                    idxmethod=JciSource.from_config(),
-                   snapshots=FactorSnapshots.from_config(), stocks=IdxMethodStocks.from_config())
+                   snapshots=FactorSnapshots.from_config(), stocks=IdxMethodStocks.from_config(),
+                   usdidr=UsdIdrSource(idx, SingstatSource.from_config()))
 
 
 @dataclass
@@ -456,7 +464,9 @@ def gather_idn(day: date, reg: Regime, src: IdnSources, *, score: AssetScore | N
                        satudatascape=src.satudatascape)
     sig = idn_signals(day, idxscape=src.idxscape, kseistat=src.kseistat, tic=src.tic)
     bonds = idn_bonds(day, reg, ov, sig, phei=src.phei, dbnomics=src.dbnomics, bps=src.bps,
-                      idxscape=src.idxscape)
+                      idxscape=src.usdidr or src.idxscape)
+    if src.usdidr is not None:
+        bonds = _with_fx_seam(bonds, src.usdidr)
     stocks = idn_stocks(day, reg, ov, sig, score, phei=src.phei, dbnomics=src.dbnomics,
                         bps=src.bps, idxmethod=src.idxmethod, snapshots=src.snapshots,
                         worldbankscape=worldbankscape)
@@ -466,6 +476,17 @@ def gather_idn(day: date, reg: Regime, src: IdnSources, *, score: AssetScore | N
         "stocks": journalled_verdict(history, "stocks", _jci_months(src, day), day),
     }
     return IdnLayers(ov, sig, bonds, stocks, cands, verdicts)
+
+
+def _with_fx_seam(bonds: IdnBonds, fx: Any) -> IdnBonds:
+    """The bonds rule read the spliced USD/IDR (P65): add the seam line to its drivers, the
+    legs' stale inputs to its own, and attribute the legs' stores instead of the splice."""
+    drivers = [*bonds.drivers, fx.seam_line()]
+    sources = [s for s in bonds.sources if s != fx.name] + fx.sources
+    return dataclasses.replace(
+        bonds, drivers=tuple(dict.fromkeys(drivers)),
+        stale_inputs=tuple(dict.fromkeys([*bonds.stale_inputs, *fx.stale_inputs])),
+        sources=tuple(dict.fromkeys(sources)))
 
 
 def gather_foreign(day: date, src: ForeignSources) -> ForeignLayers:
