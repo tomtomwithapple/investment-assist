@@ -277,3 +277,59 @@ def test_real_tree_fingerprint_survives_a_docstring_edit(tmp_path):
     after = jr.fingerprint(jr.fingerprint_inputs(rule_files=files(), config_files=[],
                                                  root=tmp_path))
     assert after == base
+
+
+# ---------------- S45: nested rule modules are hashed ----------------
+
+NESTED_RULES = ("assist/layers/bonds/idn.py", "assist/layers/rules/idn_stocks.py")
+
+
+def test_default_fingerprint_hashes_nested_rule_modules():
+    rules = jr.fingerprint_inputs()["rules"]
+    for mod in NESTED_RULES:
+        assert mod in rules, mod
+    # every module under the decision packages is hashed, at any depth
+    for sub in ("layers", "candidates", "eval"):
+        on_disk = {p.relative_to(jr.SRC_DIR).as_posix()
+                   for p in (jr.PACKAGE_DIR / sub).rglob("*.py")}
+        assert on_disk <= set(rules), on_disk - set(rules)
+    # plumbing stays out
+    for k in rules:
+        assert not k.startswith(("assist/sources/", "assist/views/")), k
+        assert k not in ("assist/cli.py", "assist/doctor.py", "assist/pipeline.py"), k
+
+
+def _copy_tree(tmp_path):
+    import shutil
+    pkg = tmp_path / "assist"
+    shutil.copytree(jr.PACKAGE_DIR, pkg, ignore=shutil.ignore_patterns("__pycache__"))
+    return pkg
+
+
+def _tree_fp(pkg, tmp_path):
+    files = sorted({p for g in jr.RULE_GLOBS for p in pkg.glob(g) if p.is_file()})
+    return jr.fingerprint(jr.fingerprint_inputs(rule_files=files, config_files=[], root=tmp_path))
+
+
+@pytest.mark.parametrize("mod, old, new", [
+    ("layers/bonds/idn.py", "MIN_FX_DAYS = 60\n", "MIN_FX_DAYS = 59\n"),
+    ("layers/rules/idn_stocks.py", "ERP_BAND = 1.0 ", "ERP_BAND = 1.5 "),
+])
+def test_constant_change_in_nested_rule_changes_fingerprint(tmp_path, mod, old, new):
+    pkg = _copy_tree(tmp_path)
+    base = _tree_fp(pkg, tmp_path)
+    f = pkg / mod
+    text = f.read_text()
+    assert old in text
+    f.write_text(text.replace(old, new, 1))
+    assert _tree_fp(pkg, tmp_path) != base
+
+
+@pytest.mark.parametrize("mod", ["layers/bonds/idn.py", "layers/rules/idn_stocks.py"])
+def test_comment_or_docstring_edit_in_nested_rule_keeps_fingerprint(tmp_path, mod):
+    pkg = _copy_tree(tmp_path)
+    base = _tree_fp(pkg, tmp_path)
+    f = pkg / mod
+    body = f.read_text().split('"""', 2)[2]
+    f.write_text('"""Rewritten module docstring."""\n# a comment\n\n' + body + "\n# trailing\n")
+    assert _tree_fp(pkg, tmp_path) == base
