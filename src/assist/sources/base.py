@@ -200,11 +200,20 @@ def http_csv(
 ) -> list[dict[str, str]]:
     """GET `url?format=csv` from a localhost server → one dict per CSV row.
 
-    Server down → missing; 503 (busy, e.g. dbnomics refresh holding the lock) → locked; other
-    5xx → error. A 4xx is a wrong path or id, so it raises."""
+    Server down (refused, or no connection within `timeout`) → missing; no answer within
+    `timeout` from a server that accepted the request → locked, like a 503 (busy, e.g. dbnomics
+    refresh holding the lock): the server is up and holds its store while it works, so a file
+    fallback would meet that lock (P63). Other 5xx → error. A 4xx is a wrong path or id, so it
+    raises."""
     check_local_url(url)
     try:
         r = client.get(url, params={**(params or {}), "format": "csv"}, timeout=timeout)
+    except httpx.TimeoutException as e:
+        if isinstance(e, httpx.ConnectTimeout):
+            raise SourceUnavailable(source, "missing", f"{url}: {type(e).__name__}") from e
+        raise SourceUnavailable(
+            source, "locked", f"{url}: {type(e).__name__}, timed out after {timeout:g} s"
+        ) from e
     except httpx.TransportError as e:
         raise SourceUnavailable(source, "missing", f"{url}: {type(e).__name__}") from e
     if r.status_code >= 500:

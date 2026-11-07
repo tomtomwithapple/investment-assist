@@ -12,6 +12,13 @@ Read through `Usfin` (usfin.py): `usfin serve` CSV when it answers, a read-only 
   to the newest version of each `alpaca_bar` for its volume. Never the whole
   `alpaca_bar_adjusted` view. `split_factor` and `tr_factor` back-adjust: adjusted = close ×
   factor, so a dividend is where `tr_factor / split_factor` steps (us_stocks.dividends_from_bars).
+- **Bars of many symbols** (P63, `bars_many`): one query over the ATTACH, the whole
+  `alpaca_bar_adjusted` view joined to `alpaca_security_symbol` (the security each symbol names
+  today, as the lookup picks it), so each symbol gets the rows `bars(symbol)` gives (equal to
+  the last bit of the factors, checked live 2026-11-07). `usfin serve` has no bulk route and
+  `/prices` takes ~11 s a symbol (6 000 names: ~18 h); the bulk query reads 7 177 symbols in
+  ~34 s. `min_value` / `min_sessions` drop, in SQL, symbols with fewer sessions of close ×
+  volume ≥ `min_value` than `min_sessions` (us_stocks.liquid_floor).
 - **Facts** per CIK: `xbrl_as_of(d)` (filed on or before `d`) for the few tags the engines need.
   `usfin serve` has no point-in-time facts route (`/screen` and `/edgar/<cik>` pick by `frame`,
   which SEC moves to the newest filing), so facts come only from the ATTACH, which is `locked`
@@ -23,12 +30,13 @@ web/app.py `prices_page`, `prices_universe_page`.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date
+from itertools import groupby
 from typing import NamedTuple
 
 from assist.sources.base import SourceUnavailable
-from assist.sources.usfin import SOURCE, Usfin
+from assist.sources.usfin import SOURCE, US_HTTP_TIMEOUT, Usfin
 
 __all__ = ["FACT_TAGS", "Fact", "Listing", "UsBar", "UsStocks"]
 
@@ -110,6 +118,32 @@ _BARS_SQL = """
     order by a.date
 """
 
+# `_BARS_SQL` for many symbols at once, `want` the symbol asked for; then the liquidity floor.
+_BARS_MANY_SQL = """
+    with want as (
+        select symbol as want, security_key from alpaca_security_symbol
+        where symbol in (select unnest(?::varchar[]))
+    ),
+    adj as (select w.want, a.* from alpaca_bar_adjusted a join want w using (security_key)),
+    latest as (
+        select symbol, date, volume from alpaca_bar
+        where symbol in (select distinct symbol from adj)
+        qualify row_number() over (
+            partition by symbol, date order by first_seen_at desc, raw_id desc
+        ) = 1
+    ),
+    j as (
+        select a.want, a.date, a.symbol, a.close, b.volume, a.adj_close, a.split_factor,
+               a.tr_factor
+        from adj a join latest b using (symbol, date)
+    )
+    select * from j
+    where want in (select want from j group by want
+                   having count(*) filter (where close * volume >= ?) >= ?)
+    order by want, date
+"""
+_FETCH_ROWS = 200_000
+
 _FACTS_SQL = f"""
     select tag, unit, accn, period_start, period_end, value, form, filed
     from xbrl_as_of(cast(? as date))
@@ -120,12 +154,17 @@ _FACTS_SQL = f"""
 
 
 class UsStocks:
-    """US listed stocks from sec-edgar. Every call reads one symbol or one CIK."""
+    """US listed stocks from sec-edgar. Every call reads one symbol or one CIK, but
+    `facts_many` and `bars_many`. Built from the config, it reads `usfin serve` with the long
+    timeout (`US_HTTP_TIMEOUT`): the universe route takes ~22 s."""
 
     name = SOURCE
 
     def __init__(self, usfin: Usfin | None = None):
-        self.usfin = usfin or Usfin.from_config()
+        if usfin is None:
+            usfin = Usfin.from_config()
+            usfin.timeout = US_HTTP_TIMEOUT
+        self.usfin = usfin
 
     # ---------------- universe ----------------
 
@@ -160,6 +199,46 @@ class UsStocks:
             found = con.execute(_BARS_SQL, [symbol]).fetchall()
         return [UsBar(_d(d), s, float(c), _f(v), float(a), float(sf), float(tr))
                 for d, s, c, v, a, sf, tr in found]
+
+    def bars_many(self, symbols: Sequence[str], *, min_value: float = 0.0,
+                  min_sessions: int = 0,
+                  each: Callable[[str, list[UsBar]], None] | None = None,
+                  ) -> dict[str, list[UsBar]]:
+        """`bars` of several symbols over one ATTACH, without the symbols that have fewer than
+        `min_sessions` sessions of close × volume ≥ `min_value` (and those with no bars). With
+        `each`, every symbol's bars go to `each(symbol, bars)` as they stream in, and the
+        result is empty (so ~10 M rows are never held at once)."""
+        return self.usfin.fetch(
+            lambda: self.bars_many_http(symbols),
+            lambda: self.bars_many_duckdb(symbols, min_value=min_value,
+                                          min_sessions=min_sessions, each=each))
+
+    def bars_many_http(self, symbols: Sequence[str]) -> dict[str, list[UsBar]]:
+        raise SourceUnavailable(self.name, "missing",
+                                "usfin serve has no bulk bars route (/prices is one symbol)")
+
+    def bars_many_duckdb(self, symbols: Sequence[str], *, min_value: float = 0.0,
+                         min_sessions: int = 0,
+                         each: Callable[[str, list[UsBar]], None] | None = None,
+                         ) -> dict[str, list[UsBar]]:
+        out: dict[str, list[UsBar]] = {}
+        keep = each or out.__setitem__
+        if not symbols:
+            return out
+        with self.usfin.attached() as con:
+            cur = con.execute(_BARS_MANY_SQL, [sorted(set(symbols)), min_value, min_sessions])
+            want, bars = None, []
+            while chunk := cur.fetchmany(_FETCH_ROWS):
+                for w, rows in groupby(chunk, key=lambda r: r[0]):
+                    if w != want:
+                        if want is not None:
+                            keep(want, bars)
+                        want, bars = w, []
+                    bars += [UsBar(_d(d), s, float(c), _f(v), float(a), float(sf), float(tr))
+                             for _, d, s, c, v, a, sf, tr in rows]
+            if want is not None:
+                keep(want, bars)
+        return out
 
     # ---------------- facts ----------------
 

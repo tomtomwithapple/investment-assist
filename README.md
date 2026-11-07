@@ -166,5 +166,4 @@ sources present, 1 stale (jquantster), 2 missing (satudatascape, openkrx).
   about 4 of which are usable for drawdowns. P21's entry levels for
   momentum names at fresh 3-year highs are wrong (for example BSML: entry 21 against a price
   of 575). Do not use `entry_typical` for those names.
-- **The USA undervalued list has no names** (pool 0 in the 2026-11-06 run).
 - **satudatascape has no store yet.**

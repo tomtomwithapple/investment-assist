@@ -468,9 +468,13 @@ def test_load_with_the_store_locked_is_stale_not_a_crash(store):
     assert data.quarters == {} or all(not v for v in data.quarters.values())
 
 
+# The fixture has 4 AAPL sessions: a 3-session median keeps the liquidity floor at 1 session.
+LOOSE = {**us.CONFIG, "med_sessions": 3}
+
+
 def test_load_reads_the_fixture_store(store):
     src = UsStocks(Usfin(url=None, path=store))
-    data = us.load(src, as_of=D("2026-02-01"))
+    data = us.load(src, as_of=D("2026-02-01"), cfg=LOOSE)
     assert set(data.listings) == {"AAPL", "BRK.B", "META"}
     assert len(data.bars["AAPL"]) == 4
     assert data.quarters["AAPL"][0].ni_ttm == 112010000000
@@ -484,3 +488,80 @@ def test_load_with_an_empty_universe_says_so(tmp_path, store):
     data = us.load(UsStocks(Usfin(url=None, path=store)), as_of=D("2026-02-01"))
     assert data.listings == {}
     assert any("universe empty" in s for s in data.stale)
+
+
+# ---------------- P63: long timeout, one bulk bar read ----------------
+
+
+def test_default_source_reads_sec_edgar_with_the_long_timeout(monkeypatch, store):
+    """The USA candidate step (load without a source, as undervalued.gather_live_usa calls it)
+    asks `usfin serve` with paper's long timeout, not the 5 s probe timeout."""
+    from assist.sources import usfin as usfin_mod
+
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.url.path, request.extensions["timeout"]["read"]))
+        return fake_serve(store)._transport.handle_request(request)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(usfin_mod.Usfin, "from_config",
+                        classmethod(lambda cls, *a, **k: cls(url=URL, path=store, client=client)))
+    us.load(as_of=D("2026-02-01"))
+    assert seen and seen[0] == ("/prices/universe", usfin_mod.US_HTTP_TIMEOUT)
+
+
+def test_bars_many_equal_bars_per_symbol(store):
+    src = UsStocks(Usfin(url=None, path=store))
+    got = src.bars_many(["AAPL", "META", "NOPE"])
+    assert got == {"AAPL": src.bars("AAPL"), "META": src.bars("META")}
+
+
+def test_bars_many_skip_names_never_liquid_enough(store):
+    """AAPL trades over US$10bn on each of its 4 fixture days, META ~US$4.6bn on 1 and
+    ~US$3.5bn on the other: a floor of 2 sessions at US$4bn keeps AAPL only."""
+    src = UsStocks(Usfin(url=None, path=store))
+    got = src.bars_many(["AAPL", "META"], min_value=4e9, min_sessions=2)
+    assert set(got) == {"AAPL"}
+    assert set(src.bars_many(["AAPL", "META"], min_value=4e9, min_sessions=1)) == {"AAPL", "META"}
+
+
+def test_bars_many_go_to_the_file_since_serve_has_no_bulk_route(store):
+    src = UsStocks(Usfin(url=URL, path=store, client=fake_serve(store)))
+    assert set(src.bars_many(["AAPL"])) == {"AAPL"}
+    assert src.usfin.via == "duckdb"
+
+
+def test_liquid_floor_is_a_necessary_condition_of_the_median_value_gate():
+    value, sessions = us.liquid_floor(us.CONFIG)
+    assert value == us.CONFIG["min_med_value"]
+    n = max(1, us.CONFIG["med_sessions"] // 3)
+    assert sessions == -(-n // 2)  # 10: half the shortest window median_value judges
+    # a window of the shortest length with one session fewer than the floor fails the gate
+    d0 = D("2024-01-01")
+    vals = [(d0 + timedelta(days=i), 2 * value if i < sessions - 1 else 1.0) for i in range(n)]
+    assert us.median_value(vals, vals[-1][0], us.CONFIG["med_sessions"]) < value
+    vals[sessions - 1] = (vals[sessions - 1][0], 2 * value)
+    assert us.median_value(vals, vals[-1][0], us.CONFIG["med_sessions"]) >= value
+
+
+def test_load_reads_bars_in_one_bulk_query_not_per_symbol(store):
+    calls = []
+    client = fake_serve(store)
+    inner = client._transport
+
+    def handler(request):
+        calls.append(request.url.path)
+        return inner.handle_request(request)
+
+    src = UsStocks(Usfin(url=URL, path=store, client=httpx.Client(
+        transport=httpx.MockTransport(handler))))
+    data = us.load(src, as_of=D("2026-02-01"), cfg=LOOSE)
+    assert "/prices" not in calls  # bars come from one ATTACH, not one GET a symbol
+    assert len(data.bars["AAPL"]) == 4
+
+
+def test_load_skips_bars_of_names_below_the_liquidity_floor(store):
+    """With the live floor (10 sessions of US$20m) the 4-session fixture names are not read."""
+    data = us.load(UsStocks(Usfin(url=None, path=store)), as_of=D("2026-02-01"))
+    assert data.bars == {} and set(data.listings) == {"AAPL", "BRK.B", "META"}

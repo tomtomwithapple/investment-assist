@@ -56,6 +56,7 @@ from assist import stance as _stance
 from assist.journal import Journal, jsonable
 from assist.layers.types import DISCLAIMER
 from assist.sources.base import Row, Source, SourceUnavailable
+from assist.sources.usfin import US_HTTP_TIMEOUT  # `usfin serve`: ~12 s for SPY's ten years
 
 __all__ = [
     "BENCHMARK_PCT",
@@ -94,7 +95,6 @@ BENCHMARK_PCT = {LEG_KEYS[k]: float(v) for k, v in _stance.BENCHMARK_PCT.items()
 BENCHMARK_PCT = {k: BENCHMARK_PCT[k] for k in LEGS}
 LEGACY_BENCHMARK_PCT = {"stocks": 60.0, "bonds": 40.0}  # segments journalled before S39
 US_SYMBOL = "SPY"
-US_HTTP_TIMEOUT = 60.0  # `usfin serve` takes ~12 s for SPY's ten years of bars
 US_MAX_LAG_DAYS = 1  # Friday's US close, or Thursday's when Friday is a US holiday
 FX_MAX_LAG_DAYS = 1  # ... and the same for USD/IDR, unless IDX was shut longer (Lebaran)
 # TODO(PLAN.md, Open questions): the legacy paper tilt per stance in points of the IDN sleeve.

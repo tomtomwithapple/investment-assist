@@ -2,7 +2,8 @@
 -- alpaca_universe is a view over alpaca_asset_history and alpaca_corp_action_latest upstream
 -- (024); here it is a table with its two columns. alpaca_bar_adjusted_lookup(sym) (027 + 028)
 -- is a stand-in over fixture_adjusted: every bar of the security the symbol names, with the
--- same columns (security_key, date, symbol, close, adj_close, split_factor, tr_factor).
+-- same columns (security_key, date, symbol, close, adj_close, split_factor, tr_factor);
+-- alpaca_bar_adjusted (028) and alpaca_security_symbol (027) are stand-ins over it too (P63).
 CREATE TABLE edgar_company (
     cik         BIGINT NOT NULL,
     ticker      VARCHAR NOT NULL,
@@ -55,3 +56,6 @@ CREATE MACRO alpaca_bar_adjusted_lookup(sym) AS TABLE
 SELECT * FROM fixture_adjusted
 WHERE security_key IN (SELECT security_key FROM fixture_adjusted WHERE symbol = upper(sym)
                        ORDER BY date DESC LIMIT 1);
+CREATE VIEW alpaca_bar_adjusted AS SELECT * FROM fixture_adjusted;
+CREATE VIEW alpaca_security_symbol AS
+SELECT symbol, arg_max(security_key, date) AS security_key FROM fixture_adjusted GROUP BY symbol;

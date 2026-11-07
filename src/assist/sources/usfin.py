@@ -34,6 +34,7 @@ __all__ = [
     "NET_LIQUIDITY",
     "NET_LIQUIDITY_INPUTS",
     "SOURCE",
+    "US_HTTP_TIMEOUT",
     "FredSource",
     "Usfin",
     "net_liquidity",
@@ -42,6 +43,9 @@ __all__ = [
 SOURCE = "sec-edgar"
 DEFAULT_URL = "http://127.0.0.1:8660"
 ALIAS = "usfin"
+# For long reads (P63): `/prices/universe` takes ~22 s, SPY's ten years of bars ~12 s. Shared by
+# the US candidates (usfin_stocks.UsStocks) and paper's SPY leg.
+US_HTTP_TIMEOUT = 60.0
 
 # Layer 0 in CLAUDE.md (25 series); config/fred.yaml in sec-edgar holds these plus layer-2 macro.
 LAYER0_SERIES = (
@@ -62,8 +66,8 @@ class Usfin:
     """sec-edgar's store seen through `usfin serve` (HTTP CSV) or a read-only ATTACH.
 
     `fetch(http_fn, db_fn)` tries HTTP and falls back to the file only when the server is down
-    (a busy server, 503, is `locked`: the file would be locked too). `via` records the path
-    the last fetch took."""
+    (a busy server, 503 or a read timeout, is `locked`: the file would be locked too). `via`
+    records the path the last fetch took."""
 
     def __init__(
         self,

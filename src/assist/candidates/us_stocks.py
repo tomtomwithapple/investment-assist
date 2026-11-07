@@ -68,6 +68,7 @@ __all__ = [
     "engine_bars",
     "idr_margins",
     "is_bank",
+    "liquid_floor",
     "load",
     "median_value",
     "quarters_from_facts",
@@ -266,6 +267,15 @@ class UsData:
     stale: list[str] = field(default_factory=list)
 
 
+def _add_bars(data: UsData, sym: str, bars: Sequence[UsBar], fs: Sequence[Fact]) -> None:
+    if not bars:
+        return
+    data.bars[sym] = engine_bars(bars, fs)
+    data.values[sym] = values(bars)
+    data.dividends[sym] = dividends_from_bars(bars)
+    data.quarters[sym] = quarters_from_facts(fs)
+
+
 def build(listings: Iterable[Listing], raw_bars: Mapping[str, Sequence[UsBar]],
           facts: Mapping[int, Sequence[Fact]]) -> UsData:
     data = UsData()
@@ -274,21 +284,26 @@ def build(listings: Iterable[Listing], raw_bars: Mapping[str, Sequence[UsBar]],
         fs = facts.get(lst.cik, ())
         if is_bank(fs):
             data.banks.add(lst.symbol)
-        bars = raw_bars.get(lst.symbol) or []
-        if not bars:
-            continue
-        data.bars[lst.symbol] = engine_bars(bars, fs)
-        data.values[lst.symbol] = values(bars)
-        data.dividends[lst.symbol] = dividends_from_bars(bars)
-        data.quarters[lst.symbol] = quarters_from_facts(fs)
+        _add_bars(data, lst.symbol, raw_bars.get(lst.symbol) or [], fs)
     return data
 
 
+def liquid_floor(cfg: Mapping = CONFIG) -> tuple[float, int]:
+    """(value, sessions): a name with fewer than `sessions` sessions of close × volume ≥ `value`
+    can pass the median-value gate on no date, live or in the replay. `median_value` judges a
+    window of at least `med_sessions // 3` sessions, and its median is ≥ `value` only if half of
+    the window is. So skipping those names' bars (P63) changes no ranking or verdict."""
+    shortest = max(1, cfg["med_sessions"] // 3)
+    return cfg["min_med_value"], -(-shortest // 2)
+
+
 def load(src: UsStocks | None = None, *, as_of: date | None = None,
-         symbols: Iterable[str] | None = None, limit: int | None = None) -> UsData:
+         symbols: Iterable[str] | None = None, limit: int | None = None,
+         cfg: Mapping = CONFIG) -> UsData:
     """Universe, facts (point in time, filed by `as_of`) and bars from sec-edgar, read-only.
-    Bars are read only for names with net income facts. A missing or locked store is a stale
-    input and an empty result, never a crash."""
+    Bars are read in one query (`bars_many`), only for names with net income facts that clear
+    `liquid_floor(cfg)`. A missing or locked store is a stale input and an empty result, never a
+    crash. Built without `src`, the reads use the long HTTP timeout (UsStocks)."""
     src = src or UsStocks()
     stale: list[str] = []
     try:
@@ -310,16 +325,21 @@ def load(src: UsStocks | None = None, *, as_of: date | None = None,
         data.stale = [f"{e.stale_input}: XBRL facts ({e.detail})",
                       "no fundamentals: bars not read, no name judged"]
         return data
-    raw: dict[str, list[UsBar]] = {}
-    for x in listings:
-        if not _first(facts.get(x.cik, ()), "net_income"):
-            continue  # not an operating company with earnings on file
-        try:
-            raw[x.symbol] = [b for b in src.bars(x.symbol) if as_of is None or b.date <= as_of]
-        except SourceUnavailable as e:
-            stale.append(f"{e.stale_input}: bars")
-            break
-    data = build(listings, raw, facts)
+    data = build(listings, {}, facts)
+    by_symbol = {x.symbol: x for x in listings}
+    # not an operating company with earnings on file: no bars read
+    earners = [x.symbol for x in listings if _first(facts.get(x.cik, ()), "net_income")]
+    min_value, min_sessions = liquid_floor(cfg)
+
+    def each(sym: str, bars: list[UsBar]) -> None:
+        if sym in by_symbol:
+            _add_bars(data, sym, [b for b in bars if as_of is None or b.date <= as_of],
+                      facts.get(by_symbol[sym].cik, ()))
+
+    try:
+        src.bars_many(earners, min_value=min_value, min_sessions=min_sessions, each=each)
+    except SourceUnavailable as e:
+        stale.append(f"{e.stale_input}: bars")
     data.stale = list(dict.fromkeys(stale))
     return data
 
