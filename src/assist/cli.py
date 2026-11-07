@@ -181,7 +181,8 @@ def _brief(args: argparse.Namespace) -> int:
         return 1
     day = date.fromisoformat(max(s["as_of"] for s in loaded.stances))
     msg = pipeline.message(day=day, brief_path=paths.briefs / f"{day}.md",
-                           undervalued=undervalued.load_out(paths.out))
+                           undervalued=undervalued.load_out(paths.out),
+                           stances=loaded.stances)
     result = notify.send(msg, kind="brief", day=day, state_dir=paths.notify)
     print(notify.describe(result), file=sys.stderr)
     return 0

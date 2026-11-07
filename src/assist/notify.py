@@ -19,6 +19,10 @@ token never enters a log line, a verdict or a repr.
 
 Text goes out as HTML (`parse_mode=HTML`), wrapped in `<pre>` by default so an aligned table stays
 aligned on a phone, split on line boundaries under Telegram's 4096-character cap.
+
+The brief message (PLAN S42) opens with `header`: the title, the disclaimer, then `PAPER_LINE`,
+so a phone preview says first that every size is paper and mostly a rebalance to the benchmark.
+`leg_line` labels each market's sized list with its stocks leg's rebalance vs tilt split.
 """
 
 from __future__ import annotations
@@ -37,17 +41,23 @@ from typing import Any
 
 import httpx
 
+from assist.layers.types import DISCLAIMER
+from assist.stance import BENCHMARK_TEXT, split_text
+
 __all__ = [
     "API",
     "KEYCHAIN_SERVICE",
     "LEGACY_KEYCHAIN_SERVICE",
     "LIMIT",
+    "PAPER_LINE",
     "Credentials",
     "already_sent",
     "chunks",
     "credentials",
     "describe",
     "esc",
+    "header",
+    "leg_line",
     "send",
     "state_dir",
     "status",
@@ -66,6 +76,8 @@ ENV_STATE = "ASSIST_NOTIFY_STATE"
 LIMIT = 3900
 TIMEOUT = 20.0
 REPO = Path(__file__).resolve().parents[2]
+PAPER_LINE = (f"Paper only, not an order. Sizes rebalance to the {BENCHMARK_TEXT} benchmark plus "
+              "the model tilt; read the brief.")
 KIND_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 Security = Callable[[list[str]], subprocess.CompletedProcess]
@@ -300,6 +312,23 @@ def describe(result: Mapping) -> str:
 
 
 # ---------------- message text ----------------
+
+
+def header(day: date) -> list[str]:
+    """The first lines of the brief message: title, disclaimer, then the paper-only line."""
+    return [f"investment-assist {day.isoformat()}", DISCLAIMER, PAPER_LINE, ""]
+
+
+def leg_line(stances: Iterable[Mapping], market: str, asset: str = "stocks") -> str | None:
+    """The label over a market's sized list: its leg's gap as rebalance + tilt (S42), or None
+    when no stance for (market, asset) was given."""
+    s = next((s for s in stances if (s.get("subject"), s.get("asset")) == (market, asset)), None)
+    if s is None:
+        return None
+    pf = s.get("portfolio") or {}
+    split = split_text(pf) or ("rebalance vs tilt n/a" + (
+        " (holdings unavailable)" if pf.get("current_pct") is None else ""))
+    return f"{market} {asset} leg (paper): {split}"
 
 
 def summary(stances: Iterable[Mapping], *, regime: str | None, day: date) -> str:

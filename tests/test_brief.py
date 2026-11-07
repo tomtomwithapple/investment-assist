@@ -213,6 +213,31 @@ def test_holdings_notes_listed_once_under_the_stance_table():
     assert "Holdings: " not in section(brief.render(current()), "Stances")
 
 
+def test_stance_table_splits_rebalance_and_tilt():
+    """PLAN S42: the delta cell names the benchmark part a rebalance, the rest a tilt, and a
+    line under the table says the move to the benchmark is not a model call."""
+    stances = copy.deepcopy(current())
+    for s in stances:
+        if (s["subject"], s["asset"]) == ("IDN", "stocks"):
+            s["portfolio"].update(current_pct=96.9, target_pct=45.7, benchmark_pct=48.0,
+                                  delta="-51.2pt trim over 3 tranches",
+                                  rebalance_pt=-51.2, tilt_pt=0.0)
+        if (s["subject"], s["asset"]) == ("IDN", "bonds"):
+            s["portfolio"].update(current_pct=3.1, target_pct=30.5, benchmark_pct=32.0,
+                                  delta="+27.4pt over 3 tranches", rebalance_pt=27.4,
+                                  tilt_pt=0.0)
+    body = section(brief.render(stances), "Stances")
+    row = next(r for r in body.splitlines() if r.startswith("| IDN | stocks"))
+    assert "-51.2pt trim over 3 tranches; -51.2pt = -51.2pt rebalance to benchmark, " \
+           "+0.0pt tilt" in row
+    assert "Rebalance vs tilt: IDN stocks -51.2pt rebalance, +0.0pt tilt; IDN bonds " \
+           "+27.4pt rebalance, +0.0pt tilt." in body
+    assert "a move to the 48/32/20 benchmark, not a model call" in body
+    # payloads before S42 have no split: no line, no cell suffix
+    plain = section(brief.render(current()), "Stances")
+    assert "rebalance" not in plain.lower()
+
+
 # ---------------- snapshots + whole brief ----------------
 
 def test_snapshot_roundtrip_and_previous_lookup(tmp_path):

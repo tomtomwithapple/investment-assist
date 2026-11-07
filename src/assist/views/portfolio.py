@@ -2,10 +2,11 @@
 `app.out_dir/layers/portfolio.json` (S33), plus the trims and adds of every candidate list.
 
 Sections: totals and dates; weights per asset class and per stance against its target (current,
-target, delta, entry, with stdlib SVG bars); holdings per owner; every account (masked number,
-statement age, statement check, trade roll-forward, cash) with its holding lines, `unheld` lines
-and the lines valued at a trade price; unmapped value; trims and adds read from
-`out/candidates/*.json` through `views.candidates.load`. The page never opens a store.
+target, delta split into rebalance to the benchmark and tilt (S42), entry, with stdlib SVG
+bars); holdings per owner; every account (masked number, statement age, statement check, trade
+roll-forward, cash) with its holding lines, `unheld` lines and the lines valued at a trade
+price; unmapped value; trims and adds read from `out/candidates/*.json` through
+`views.candidates.load`. The page never opens a store.
 
 A missing file, invalid JSON, a non-object or a builder stub (`error`) is a notice, never a 500;
 a payload the schema rejects is a notice and still renders. Every field is read with `.get`, so an
@@ -25,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from assist import web
-from assist.stance import mandate_summary
+from assist.stance import mandate_summary, split_text
 from assist.views import candidates as cand
 from assist.views.overview import TONE
 from assist.web import esc
@@ -259,8 +260,16 @@ def _stance_rows(rows: Sequence[Mapping], scale: float) -> list[str]:
         + _num_td(_t(s.get("score"))) + _num_td(pct(s.get("current_pct")))
         + _num_td(pct(s.get("target_pct")))
         + f"<td>{bar(s.get('current_pct'), s.get('target_pct'), scale)}</td>"
-        f"<td>{_t(s.get('delta'))}</td><td>{_entry(_d(s.get('entry')))}</td></tr>"
+        f"<td>{_delta(s)}</td><td>{_entry(_d(s.get('entry')))}</td></tr>"
         for s in rows]
+
+
+def _delta(s: Mapping) -> str:
+    """The delta, and under it the S42 split (rebalance to the benchmark vs the model's tilt)
+    when the row carries it."""
+    split = split_text(s) if s.get("rebalance_pt") or s.get("tilt_pt") else None
+    return _t(s.get("delta")) + ("" if split is None
+                                  else f'<br><span class="muted">{esc(split)}</span>')
 
 
 def weights(p: Mapping) -> str:

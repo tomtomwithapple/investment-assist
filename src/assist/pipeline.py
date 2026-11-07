@@ -843,12 +843,15 @@ def _journal_idn(j: journal.Journal, layers: Layers, stances: Mapping, fp: str,
 # ---------------- notify ----------------
 
 
-def message(*, day: date, brief_path: Path | None, undervalued: Sequence[Mapping] = ()) -> str:
-    """The Telegram text: per market (IDN, then USA) the undervalued top 5, then the names
-    sized to sell or buy (`sizing`). Stances, regime and the portfolio legs are in the brief."""
-    lines = [f"investment-assist {day.isoformat()}", ""]
+def message(*, day: date, brief_path: Path | None, undervalued: Sequence[Mapping] = (),
+            stances: Sequence[Mapping] = ()) -> str:
+    """The Telegram text: `notify.header` (title, disclaimer, paper-only line, S42), per market
+    (IDN, then USA) the undervalued top 5, then the names sized to sell or buy (`sizing`), each
+    market's list labelled with its stocks leg's rebalance vs tilt (`notify.leg_line`). Stances,
+    regime and the portfolio legs are in the brief."""
+    lines = notify.header(day)
     lines += _undervalued_lines(undervalued) or ["Undervalued: no market read this run"]
-    trades = trade_lines(undervalued)
+    trades = trade_lines(undervalued, stances)
     if trades:
         lines += ["", *trades]
     if brief_path is not None:
@@ -861,12 +864,16 @@ def _m(idr: float) -> str:
     return f"{idr / 1e6:,.1f}m"
 
 
-def trade_lines(payloads: Sequence[Mapping]) -> list[str]:
-    """Per market: every name sized to sell (`sizing.trims`, largest first, with its reason),
-    then every name sized to buy (a row's `size`), or one line saying there is none."""
+def trade_lines(payloads: Sequence[Mapping], stances: Sequence[Mapping] = ()) -> list[str]:
+    """Per market: its leg's rebalance vs tilt label when its stance is given (S42), every name
+    sized to sell (`sizing.trims`, largest first, with its reason), then every name sized to buy
+    (a row's `size`), or one line saying there is none."""
     lines: list[str] = []
     for p in payloads:
         mkt, sizing = p["market"], p.get("sizing") or {}
+        label = notify.leg_line(stances, mkt)
+        if label:
+            lines.append(label)
         trims = sorted(sizing.get("trims") or (), key=lambda t: (-t["idr"], t["symbol"]))
         if trims:
             lines.append(f"{mkt} to sell ({len(trims)}, IDR {_m(sum(t['idr'] for t in trims))}):")
@@ -1103,7 +1110,8 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
     res.ok = True
 
     if send:
-        msg = message(day=day, brief_path=res.brief_path, undervalued=res.undervalued)
+        msg = message(day=day, brief_path=res.brief_path, undervalued=res.undervalued,
+                      stances=res.stances)
         res.notify = notify.send(msg, kind="brief", day=day, state_dir=paths.notify,
                                  **dict(notify_kw or {}))
     return res

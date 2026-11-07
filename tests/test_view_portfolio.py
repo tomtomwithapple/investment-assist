@@ -250,6 +250,48 @@ def test_every_value_is_escaped(out):
     assert "<script>" not in r.body and "&lt;script&gt;" in r.body
 
 
+def test_stance_rows_split_the_gap_into_rebalance_and_tilt(out):
+    """PLAN S42: rows carrying rebalance_pt / tilt_pt show the split under the delta; older
+    rows without them show the delta alone."""
+    p = _payload(out)
+    for s in p["stances"]:
+        if (s["subject"], s["asset"]) == ("IDN", "stocks"):
+            s.update(current_pct=96.9, target_pct=45.7, delta="-51.2pt trim over 3 tranches",
+                     benchmark_pct=48.0, rebalance_pt=-51.2, tilt_pt=0.0)
+        if (s["subject"], s["asset"]) == ("USA", "stocks"):
+            s.update(current_pct=0.0, target_pct=23.8, delta="+23.8pt over 3 tranches",
+                     benchmark_pct=20.0, rebalance_pt=19.0, tilt_pt=4.8)
+    _put(out, p)
+    w = _card(_get(out, "/portfolio").body, "weights")
+    assert "-51.2pt = -51.2pt rebalance to benchmark, +0.0pt tilt" in w
+    assert "+23.8pt = +19.0pt rebalance to benchmark, +4.8pt tilt" in w
+    assert "rebalance to benchmark" not in _card(_get(out, "/portfolio").body, "summary")
+    # the IDN bonds row predates S42: its delta alone
+    assert "+6.1pt over 3 tranches</td>" in w
+
+
+def test_stance_page_shows_the_split(tmp_path):
+    """PLAN S42: the stance page's portfolio block has a Rebalance vs tilt row when the payload
+    carries the split (tests/test_view_stance.py is outside this slice)."""
+    src = UI / "out"
+    o = tmp_path / "out"
+    shutil.copytree(src, o)
+    f = o / "IDN" / "bonds.json"
+    s = json.loads(f.read_text())
+    s["portfolio"].update(current_pct=3.1, target_pct=30.5, benchmark_pct=32.0,
+                          rebalance_pt=27.4, tilt_pt=0.0)
+    f.write_text(json.dumps(s))
+    app = web.App(out_dir=o, snapshots_dir=UI / "snapshots", journal_path=o / "none",
+                  paper=lambda until: None, health=lambda: None)
+    body = web.dispatch(app, web.ROUTES, "/stance/IDN/bonds").body
+    assert "Rebalance vs tilt</th><td>+27.4pt = +27.4pt rebalance to benchmark, +0.0pt tilt" \
+        in body
+    plain = web.dispatch(web.App(out_dir=src, snapshots_dir=UI / "snapshots",
+                                 journal_path=src / "none", paper=lambda until: None,
+                                 health=lambda: None), web.ROUTES, "/stance/IDN/bonds").body
+    assert "Rebalance vs tilt" not in plain
+
+
 def test_route_is_registered():
     assert any(rx.pattern == r"^/portfolio$" for rx, _ in web.ROUTES)
     assert _get(Path("/nonexistent"), "/portfolio/x").status == 404
