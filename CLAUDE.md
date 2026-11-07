@@ -31,7 +31,7 @@ a disclaimer and source attribution.
   singstat, worldbankscape, bisfetcher `warehouse.duckdb`, dbnomics `data/dbnomics.duckdb`), SQLite (jquantster, financer `~/.financer/financer.db`, idx-method
   `store/data/stockbiter.db`, satudatascape `data/satudata.db`) and Postgres (bps-looker).
   openkrx is read as DuckDB over its `data/parquet` (its Postgres holds only ops tables; read
-  contract in its `docs/HANDOFF.md`, slice R1, pending as of 2026-10-23). worldbankscape is read from its
+  contract in its `docs/HANDOFF.md`, slice R1, still pending 2026-11-07). worldbankscape is read from its
   `out/*.json` contract. sec-edgar is read over HTTP (`usfin serve`, `?format=csv`) because
   `serve` holds the DuckDB lock. dbnomics' lock is mutual (a reader blocks `dbn refresh`), so
   prefer its API (`dbn serve`, 127.0.0.1:8770, `?format=csv`) or open-query-close; its tables,
@@ -93,7 +93,7 @@ geospacer (alternative data) is for theme research only and does not feed the fl
   (unhedged, price index; `stance.BENCHMARK_PCT`), rebalanced weekly, before acting with real
   money. Model segments journalled before S39 stay scored on the old 60/40 (60% JCI, 40% SBN).
 
-### Coverage gaps, in priority order (as of 2026-10-23)
+### Coverage gaps, in priority order (as of 2026-11-07)
 
 1. ~~Finish layer 0~~ (done 2026-10-13: DTWEXBGS, DFII10, NFCI, DCOILBRENTEU added to `../sec-edgar/config/fred.yaml`).
 2. ~~idxscape J4: PHEI parser~~ (done 2026-10-22: `igsyc_point`, `phei_bond_quote`,
@@ -105,7 +105,8 @@ geospacer (alternative data) is for theme research only and does not feed the fl
    benchmark stands in; unemployment from OECD).
 5. ~~OECD leading indicators~~ (done 2026-10-14: dbnomics; no CLI for SGP or EA20).
 6. ~~BI rate~~ (done 2026-10-14: bisfetcher `WS_CBPOL.M.ID`/`.D.ID`). SEKI money/credit still missing. Index-level
-   ERP and US CAPE done in dbnomics; JCI P/E from idx-method still to wire.
+   ERP and US CAPE done in dbnomics; JCI P/E wired (stocks rule: cap-weighted earnings yield over
+   idx-method's screener snapshot, 963 names).
 7. IDN stock screens and books: idx-method stopped picking stocks on 2026-10-14 (it only fetches
    now). The dividend / value / momentum books, cost model and entry levels move into
    investment-assist (S10); `vol_1y`, `amihud`, `med_value_60d`, `days_traded_60`, `mom_12_1`

@@ -8,7 +8,7 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-11-06 (S40 done, P60-paper-benchmark, **phase I done**: the paper benchmark is 48% JCI / 32% SBN leg / 20% US stocks in IDR (unhedged price index: Alpaca SPY × USD/IDR, JISDOR from 2026-10-22 spliced onto the MAS cross before it), from `stance.BENCHMARK_PCT`; the old 60/40 is reported beside it and still scores every segment journalled before S39; live 1 week scored (10-16, −7.7% vs −9.4% on 60/40), 3 stale on the IGSYC hole and the 11-06 mark). Earlier: 2026-11-06 (S39 done, P59-benchmark: whole-portfolio benchmark IDN stocks 48 / IDN bonds 32 / USA stocks 20; every target is benchmark + tilt, the three legs scaled pro rata to at most 100%, the rest cash; the other 46 stances target 0% outside the 80/20 mandate; live 45.7 / 30.5 / 23.8 = 100%, cash 0%; model 0.4.0, new journal segment). Earlier: 2026-11-06 (**phase H done**, S37 F8-ui-layers: the nav adds Regime, Signals, Portfolio and Flows; the overview banner links `/regime`, a stance's Drivers card links `/signals/<SUBJECT>` (only when that layer file exists) and its Portfolio card `/portfolio`; every page and its `.json` twin is 200 live and in the e2e test). Earlier: 2026-11-06 (S32 done, P53-portfolio-trades: layer 5 rolls each account forward through financer's loaded trade documents and splits the household by owner; live IDN stocks 96.90%, bonds 1.79%, cash 1.31% of Rp55.4 M, the second owner's 63 Stockbit lines Rp36.5 M at last trade prices). Earlier: 2026-10-29 (P48–P50 tiers). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against Stockbit's industry average and the sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S31 (top tier per industry) is built, P48–P50, but waits for a live run and replay verdict on a Mac with idx-method's `stockbiter.db`. S15 and S22 are open.
+**Last updated:** 2026-11-07 (**phase J done**: S41 P61-fingerprint-scope, the fingerprint hashes each rule module's AST without docstrings, so comments and formatting no longer segment the journal, and the paper track shows only cumulative returns below 12 scored weeks; S42 P62-rebalance-split, each stance's `portfolio` splits the gap into `rebalance_pt` (to the 48/32/20 benchmark) and `tilt_pt` (the model's call), schema 1.1.0, shown in the brief, `/portfolio`, `/stance` and Telegram, which now opens "Paper only, not an order"; live all three legs neutral, so IDN stocks −48.9pt, IDN bonds +30.2, USA stocks +20.0 are all rebalance, tilt 0; S43 F9-docs; model `sha256:b836b881ad37…` on main, no run since, so the next run opens one new journal segment; 1633 tests). Earlier: 2026-11-06 (S40 done, P60-paper-benchmark, **phase I done**: the paper benchmark is 48% JCI / 32% SBN leg / 20% US stocks in IDR (unhedged price index: Alpaca SPY × USD/IDR, JISDOR from 2026-10-22 spliced onto the MAS cross before it), from `stance.BENCHMARK_PCT`; the old 60/40 is reported beside it and still scores every segment journalled before S39; live 1 week scored (10-16, −7.7% vs −9.4% on 60/40), 3 stale on the IGSYC hole and the 11-06 mark). Earlier: 2026-11-06 (S39 done, P59-benchmark: whole-portfolio benchmark IDN stocks 48 / IDN bonds 32 / USA stocks 20; every target is benchmark + tilt, the three legs scaled pro rata to at most 100%, the rest cash; the other 46 stances target 0% outside the 80/20 mandate; live 45.7 / 30.5 / 23.8 = 100%, cash 0%; model 0.4.0, new journal segment). Earlier: 2026-11-06 (**phase H done**, S37 F8-ui-layers: the nav adds Regime, Signals, Portfolio and Flows; the overview banner links `/regime`, a stance's Drivers card links `/signals/<SUBJECT>` (only when that layer file exists) and its Portfolio card `/portfolio`; every page and its `.json` twin is 200 live and in the e2e test). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against Stockbit's industry average and the sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S31 (top tier per industry) is built, P48–P50, but waits for its live run and replay verdict. **Phases H, I and J are done** (layer pages, the 48/32/20 benchmark, review quick fixes). S15 and S22 are open.
 
 What `assist run` does:
 - It reads layers 0, 1 and 5 for every subject.
@@ -24,8 +24,8 @@ What `assist run` does:
   row.
 - It sends one Telegram summary a day.
 
-Two launchd jobs are ready in `launchd/` but are **not installed**; the user decides that
-(README, *Scheduled jobs*):
+Two launchd jobs are **installed and loaded** on this Mac (checked 2026-11-07; README,
+*Scheduled jobs*):
 - `com.tommy.investment-assist.weekly`: `assist run`, Monday 07:00 WIB.
 - `com.tommy.investment-assist.regime`: `assist regime --check`, daily 07:00 WIB. It sends
   Telegram only on a regime or dollar change.
@@ -41,9 +41,15 @@ tracking scores its first week (2026-10-09 → 10-16, benchmark −9.4%). PHEI c
 this Mac (idxscape, 2026-11-06), but IGSYC has a hole 2026-10-22 → 11-03 here; since P52 a week
 whose mark falls in a capture gap is left unscored rather than priced on an old yield.
 
-**Next up:** let this Mac's PHEI history build; then backfill 10-22 → 11-03 from the Windows
-machine's raw PHEI captures (user's call, deferred); install the jobs and let the journal build
-a record.
+**Next up:** phase K (user, 2026-11-07, not yet written): G1, gate rules on a point-in-time
+historical walk-forward with placebo instead of live journal months only (`MIN_N` = 10 live
+months each side means no rule could pass before about 2028); G2, a home IDN regime from JCI
+drawdown, IDX foreign flow z-score, JISDOR move and foreign SBN change (JCI fell 19% 10-06 →
+11-05 while the global regime read neutral). Meanwhile let the jobs and this Mac's PHEI history
+build a record; backfilling 10-22 → 11-03 from the Windows machine's raw captures stays deferred.
+Open ops question: of the fetchers, only bisfetcher.refresh, dbnomics.refresh/serve,
+worldbankscape.daily and idxscape.phei are launchd agents on this Mac; the other stores are fresh
+but what refreshes them here is not traced.
 
 | Phase | Slices | Done |
 |---|---|---|
@@ -56,7 +62,7 @@ a record.
 | G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S30 | 8 / 8 |
 | H. Layer pages (regime, signals, portfolio) | S33–S37 | 5 / 5 |
 | I. Benchmark and portfolio limits (80% IDN / 20% US stocks) | S39–S40 | 2 / 2 |
-| J. Review quick fixes (fingerprint scope, rebalance vs tilt, docs) | S41–S43 | 0 / 3 |
+| J. Review quick fixes (fingerprint scope, rebalance vs tilt, docs) | S41–S43 | 3 / 3 |
 
 ### Open data gaps (fetcher side)
 
@@ -76,22 +82,23 @@ Each gap is fixed in the repo named, never here. The brief flags each one under 
   deferred by the user until this Mac's own history suffices. Until then the paper weeks ending
   10-23, 10-30 and 11-06 stay unscored (P52).
 - **jquantster runs on the J-Quants free plan.** `investor_types` is empty (no TSE flows), and
-  daily bars end 2026-07-31.
-- **openkrx has no index Parquet on disk** (`tw_index`, KR index). There is no KR or TW index
-  valuation, and its HANDOFF read contract (R1) is still pending.
-- **singstat's refresh has been stale since 2026-10-07.** This covers the MAS SORA, SGS 2Y and
-  10Y, and EURSGD and IDRSGD. SGP confidence is the lowest of all subjects.
-- **sec-edgar's FRED data on this Mac was stale from 2026-10-12** (all five core regime inputs,
-  ×0.9⁵ on every stance's confidence). The F7-ui live doctor (2026-10-27) shows VIXCLS fresh at
-  2026-10-23.
+  daily bars end 2026-08-14 (85 of the doctor's 100 days on 2026-11-07, so stale around
+  2026-11-22).
+- **openkrx has no `data/parquet` on this Mac** (`tw_index`, KR index). There is no KR or TW
+  index valuation, and its HANDOFF read contract (R1) is still pending (2026-11-07).
+- ~~**singstat's refresh was stale from 2026-10-07.**~~ Fresh again: the 2026-11-07 doctor reads
+  2026-11-06.
+- ~~**sec-edgar's FRED data on this Mac was stale from 2026-10-12.**~~ Fresh: the 2026-11-07
+  doctor reads VIXCLS 2026-11-05.
 - **There are no USD/IDR forwards in any store.** Hedged IDR returns use the policy-rate
   differential as carry (P27).
 - **idx-method's stock history is short and unadjusted.** It holds about 5 years of closes,
   about 4 of which are usable for drawdowns (P21).
-- **satudatascape** has no store yet.
-- **idx-method has no valuation history or industry membership** (for S15). `factor_series`
-  holds price, market cap and fundamentals, not PE / PBV / PS / EV multiples, and
-  `/comparison` peer groups are kept for one day only.
+- **satudatascape** has no store yet (still missing 2026-11-07).
+- ~~**idx-method has no valuation history or industry membership**~~ (for S15). Closed
+  2026-11-06 in idx-method `c432999`: `factor_series` holds 10 years of daily PE, PBV, PS,
+  EV/EBIT and EV/EBITDA, and `industry_membership` is dated (963 shares, 103 sub-industries).
+  This unblocks S15; no adapter reads them yet.
 
 **Known bug (P21).** Entry levels are wrong for momentum names at fresh 3-year highs. For
 example, BSML at 575 (its high) gets `entry_typical` 21: a −96% "typical correction" read from a
@@ -987,18 +994,27 @@ USA stocks stance.
 No decision rule, band, tilt, benchmark or ladder changes in this phase. The ladder (3 × 10 days,
 adds and trims) stays as the user decided on 2026-11-06.
 
-- [ ] **S41 Fingerprint scope** (P61-fingerprint-scope). The fingerprint hashes each rule module's
+- [x] **S41 Fingerprint scope** (P61-fingerprint-scope). The fingerprint hashes each rule module's
   AST with docstrings removed, so comments, docstrings and formatting no longer change it, while
   any logic change still does. This method change segments the record once. The paper track
   hides annualised returns until a segment has 12 scored weeks.
-- [ ] **S42 Rebalance vs tilt** (P62-rebalance-split). The stance payload's `portfolio` splits the
+  *Done 2026-11-07:* `docs/results/P61-fingerprint-scope.md` (`11efb4e`, merge `b7088bd`). Config
+  files are still hashed by bytes, except `config/household*.yaml` (names for `/flows`), which
+  `0f4d2d4` keeps out as plumbing. `paper.MIN_ANNUALISE_WEEKS` = 12: the brief, `/paper` and
+  `assist paper` read "annualised after 12 scored weeks" (it showed −98.5% on one week).
+- [x] **S42 Rebalance vs tilt** (P62-rebalance-split). The stance payload's `portfolio` splits the
   gap into `rebalance_pt` (benchmark − current) and `tilt_pt` (target − benchmark). The brief,
   `/portfolio` and Telegram name the benchmark part as a rebalance to the 48/32/20 benchmark, not
   a model call. Telegram's sized lists are headed "paper only, not an order" and point to the
   brief.
-- [ ] **S43 Docs refresh** (F9-docs). PLAN STATUS, open data gaps, README and CLAUDE.md coverage
+  *Done 2026-11-07:* `docs/results/P62-rebalance-split.md` (`679d7c4`, merge `0b88219`). Stance
+  schema 1.1.0, both fields optional; the 0.1 pt rounding of the pro-rata cap goes into the
+  rebalance part, so a neutral leg always shows tilt 0. Live all three legs neutral, so the whole
+  gap is rebalance: IDN stocks −48.9pt, IDN bonds +30.2, USA stocks +20.0.
+- [x] **S43 Docs refresh** (F9-docs). PLAN STATUS, open data gaps, README and CLAUDE.md coverage
   match 2026-11-07: launchd jobs installed, idx-method valuation history landed, JCI P/E wired,
   phases H–J, and the Progress rows for S41–S42.
+  *Done 2026-11-07:* `docs/results/F9-docs.md`.
 
 ## Open questions
 
@@ -1048,6 +1064,9 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S37 fan-in: nav and cross-links (F8-ui-layers) | done | 2026-11-06 | this commit | e2e +11 routes, 5 web, 2 stance, 1 overview (1571 total) | nav Overview, Regime, Signals, Candidates, Industries, Portfolio, Flows, Paper, Journal, Status; live on a copy of the S33 `out/` + `assist flows`: 20 pages and their twins 200 (`/signals/IDN` 105 kB, `/portfolio` 58 kB, `/flows/2026-10` 15.5 kB), unknown subject and month 404; IDN bonds links `/signals/IDN` and `/portfolio`, GOLD only `/portfolio`; `/industries` a notice (no `IDN.json` in the copy); screenshots light and dark |
 | S39 benchmark 48/32/20 and the 100% rule (P59-benchmark) | done | 2026-11-06 | this commit | 45 stance (+15), 1 portfolio view, 1 stance view, layers out extended (1592 total) | 49 stances, model 0.4.0 `sha256:7822bcfd80…`: raw targets IDN stocks 48 (neutral) + IDN bonds 32 (neutral) + USA stocks 25 (overweight) = 105 → ×0.952 → 45.7 / 30.5 / 23.8 = 100.0%, cash 0%; moves above 10pt laddered 3×10d, adds and trims: IDN stocks 96.9 → 45.7 −51.2pt trim over 3 tranches, IDN bonds 1.8 → 30.5 +28.7pt over 3 tranches, USA stocks 0 → 23.8 +23.8pt over 3 tranches (estate-tax risk line); 46 outside the mandate at 0%, 0 trims there (nothing held outside IDN); S20a budget IDN Rp0 (trims only), USA Rp13,188,871 (unspent, no names); `/portfolio` 200 shows the sums and cash rest |
 | S40 paper benchmark with a US leg (P60-paper-benchmark) | done | 2026-11-06 | this commit | 30 paper (+10), 24 paper view (+2), ops updated (1604 total) | `assist paper` live: 48/32/20 from 2026-10-06, 1 week scored (10-16: −7.7% = JCI −14.9%, SBN leg −1.0%, US stocks −1.1% = SPY −2.0% × USD/IDR +0.9%), 3 stale (10-23 and 10-30: the IGSYC hole 10-22 → 11-03; 11-06: no JCI, SPY or JISDOR after 11-05 yet); legacy 60/40 1 week, −9.4%; journal segments `4ef43996` and `9607e4bd` are both pre-S39 and score identically to the old code (nothing scored yet); SPY 2016-01-04 → 2026-11-05 (2727 bars), USD/IDR MAS 2005-01-03 → 2026-10-21 + JISDOR 2026-10-22 → 11-05 |
+| S41 fingerprint scope (P61-fingerprint-scope) | done | 2026-11-07 | `11efb4e` (merge `b7088bd`), `0f4d2d4` | 6 journal (+1 `0f4d2d4`), 2 paper, 2 brief, 2 paper view (1617 at S41) | rule modules hashed by AST without docstrings (`rules_method` in `journal/models/`); a docstring and comment edit to the real `stance.py` and `regime.py` keeps the fingerprint, `_X = 1` changes it; `config/household*.yaml` kept out as plumbing; `assist paper`: 48/32/20 1 week scored, cumulative −7.7%, "annualised after 12 scored weeks" (was −98.5%); 60/40 −9.4%; 3 stale |
+| S42 rebalance vs tilt (P62-rebalance-split) | done | 2026-11-07 | `679d7c4` (merge `0b88219`) | 8 stance, 4 notify, 1 brief, 2 portfolio view (1633 total on main) | stance schema 1.1.0 (`rebalance_pt`, `tilt_pt`, optional; 1.0.0 still validates); live all three legs neutral, targets 48/32/20 = 100, no scaling: IDN stocks 96.9 → 48 −48.9pt all rebalance, IDN bonds 1.8 → 32 +30.2, USA stocks 0 → 20 +20.0, tilt 0; Telegram preview opens "Paper only, not an order…" and labels each market's sized list with its leg's split (not sent); golden brief unchanged |
+| S43 docs refresh (F9-docs) | done | 2026-11-07 | this commit | none (docs only; 1633 pass) | STATUS, open data gaps, README phases and data gaps, CLAUDE.md coverage gaps brought to 2026-11-07: both jobs installed and loaded, idx-method `c432999` valuation history and industry membership (S15 unblocked), JCI P/E wired; model `sha256:b836b881ad37…` on main, no run since |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

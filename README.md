@@ -8,7 +8,7 @@ Heuristic context, **not investment advice**. Every stance, brief and message sa
 its sources.
 
 - Decision flow: [`CLAUDE.md`](CLAUDE.md), section *Investment decision flow*.
-- Build plan and progress: [`PLAN.md`](PLAN.md). Phases A–D and G are built, F up to S21; S15 and S22 are open.
+- Build plan and progress: [`PLAN.md`](PLAN.md). Phases A–D and G–J are done (2026-11-07); E is 0 of 2 (S15 open, S31 built but its live verdict is open) and F 7 of 8 (S22 open).
 
 ## Quick start
 
@@ -60,7 +60,11 @@ because a worktree's `../` is not the siblings root.
 
 `assist run` reads every layer (0 regime, 1 worldbankscape score, 2 overrides, 3 market signals,
 4 candidates, 5 portfolio), writes one stance per subject × asset, journals every decision with
-the model fingerprint, writes the brief and sends one Telegram summary a day. A missing, locked
+the model fingerprint, writes the brief and sends one Telegram message a day. The message opens
+with the disclaimer and "Paper only, not an order", then the undervalued IDN and USA lists and
+every name sized to sell or buy per market, each market labelled with its stocks leg's split
+into a rebalance to the 48/32/20 benchmark and the model's tilt; stances and regime stay in the
+brief. A missing, locked
 or stale store is reported and lowers confidence; only a missing layer 1 stops the run.
 
 The brief, top to bottom:
@@ -68,11 +72,13 @@ The brief, top to bottom:
 1. the disclaimer;
 2. **Data health**: the doctor, one line per missing, locked or stale source (or a table a
    stance needs that is absent);
-3. the regime, the stance table and the changes since the last run;
+3. the regime, the stance table (each delta split into rebalance to the benchmark and tilt)
+   and the changes since the last run;
 4. **Paper track**: the benchmark (48% JCI, 32% SBN leg, 20% US stocks in IDR), the old 60/40
    alongside (it still scores model segments from before S39), and one line per model
-   fingerprint. It shows benchmark marks only until the journal has history, and a stale leg is
-   counted as a stale week, never filled in;
+   fingerprint. It shows benchmark marks only until the journal has history, shows only the
+   cumulative return until a series has 12 scored weeks, and counts a stale leg as a stale week,
+   never filled in;
 5. per-stance drivers, risks and flags, the watch list, stale inputs and sources.
 
 Same inputs give the same bytes, so a rerun on the same day rewrites nothing.
@@ -144,30 +150,21 @@ powershell -ExecutionPolicy Bypass -File schedule.ps1 install   # or -DryRun, st
 ## Data gaps the brief will flag
 
 These are fetcher-side gaps. They are fixed in the sibling repo, never here (details in
-`PLAN.md`, *Open data gaps*, and `docs/results/`). As of the 2026-10-27 doctor: 11 of 14
-sources present and fresh, 2 stale (jquantster, idx-method), 1 missing (satudatascape).
+`PLAN.md`, *Open data gaps*, and `docs/results/`). As of the 2026-11-07 doctor: 11 of 14
+sources present, 1 stale (jquantster), 2 missing (satudatascape, openkrx).
 
-- **There is no JCI fetcher.** idx-method's index CSVs are frozen at 2026-09-30, so the doctor
-  shows idx-method stale. The paper track's JCI leg, the stocks rule's verdict and the JCI
-  earnings yield history stop there. The SBN leg reads idxscape's IGSYC 10Y, which starts in
-  October 2026, so the two legs never overlap and **the paper track scores no week at all**
-  (0 weeks for the benchmark and for all 8 model segments) until a JCI series runs past
-  2026-10-06.
-- **The PHEI curve is fresh but short.** idxscape's `igsyc_point` is current (2026-10-26), so
-  both IDN rules now propose a call (bonds neutral, stocks underweight), but neither is applied:
-  their walk-forwards have an insufficient sample until the IGSYC history grows.
+- **The PHEI curve is short and has a hole.** idxscape's IGSYC history starts in October 2026
+  and has a hole 2026-10-22 → 11-03 on this Mac, so both IDN rules propose a call but neither
+  is applied (insufficient sample), and the paper weeks ending 10-23, 10-30 and 11-06 stay
+  unscored. JCI reads idxscape `index_daily` since 2026-11-06, so the paper track scores its
+  first week (10-16).
 - **jquantster is on the J-Quants free plan.** TSE investor types are empty and daily bars end
-  2026-08-03, about 12 weeks behind.
-- **openkrx has no index Parquet on disk.** There is no KR or TW index valuation.
-- **singstat's newest observation is 2026-10-07.** The MAS SORA, SGS and FX series lag, which
-  lowers SGP confidence.
+  2026-08-14 (stale around 2026-11-22).
+- **openkrx has no `data/parquet` on this Mac.** There is no KR or TW index valuation.
 - **There are no USD/IDR forwards.** Hedged IDR edges use policy-rate carry instead.
 - **idx-method's stock history is short and not adjusted.** It holds about 5 years of closes,
   about 4 of which are usable for drawdowns. P21's entry levels for
   momentum names at fresh 3-year highs are wrong (for example BSML: entry 21 against a price
   of 575). Do not use `entry_typical` for those names.
-- **sec-edgar's Alpaca tables are empty here**, so the USA undervalued list has no names.
+- **The USA undervalued list has no names** (pool 0 in the 2026-11-06 run).
 - **satudatascape has no store yet.**
-
-FRED (sec-edgar) is fresh again: VIXCLS reads 2026-10-23, so the regime inputs no longer cut
-every stance's confidence.
