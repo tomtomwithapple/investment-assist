@@ -398,3 +398,57 @@ def test_cli_run_prints_the_idn_rules_and_candidates(tmp_path, sources, monkeypa
 def test_idn_candidates_type_is_journalable():
     c = IdnCandidates(BARS, 10e6, (), (ScreenSummary("m", False, "x", None, 0, 0, 0, {}),), ())
     assert journal.canonical(c)
+
+
+# ---------------- P65: the bonds rule reads the spliced USD/IDR ----------------
+
+
+class Held:
+    """A store holding rows in memory (ids and inclusive dates filtered)."""
+
+    def __init__(self, name, rows):
+        self.name, self._rows = name, rows
+
+    def rows(self, series_ids=None, start=None, end=None, **kw):
+        return [r for r in self._rows if (series_ids is None or r.series_id in series_ids)
+                and (start is None or r.date >= start) and (end is None or r.date <= end)]
+
+
+def _weekdays(first: date, last: date) -> list[date]:
+    from datetime import timedelta
+    return [first + timedelta(days=i) for i in range((last - first).days + 1)
+            if (first + timedelta(days=i)).weekday() < 5]
+
+
+def spliced_fx() -> object:
+    from assist.sources.base import Row
+    from assist.sources.usdidr import UsdIdrSource
+    mas_days = _weekdays(date(2026, 3, 2), date(2026, 10, 23))
+    sg = Held("singstat", [r for d in mas_days for r in (
+        Row("mas:fx:usdsgd", d, 1.3, None, "singstat"),
+        Row("mas:fx:idrsgd", d, 1.3 / 16000.0, None, "singstat"))])
+    idx = Held("idxscape", [Row("JISDOR", d, 16016.0, d, "idxscape")
+                            for d in (date(2026, 10, 22), date(2026, 10, 23))])
+    return UsdIdrSource(idx, sg)
+
+
+def test_gather_idn_feeds_the_spliced_usd_idr_to_the_bonds_rule(tmp_path):
+    src = missing_idn(tmp_path)
+    src.usdidr = spliced_fx()
+    idn = pipeline.gather_idn(DAY, regime(), src)
+    b = idn.bonds
+    trend = b.signal("jisdor_trend")
+    assert trend is not None and trend.source == "MAS+JISDOR"
+    assert b.breakout is False
+    assert not any("fixings)" in s for s in b.stale_inputs)
+    assert any(d.startswith("USD/IDR: MAS cross") and "then JISDOR 2026-10-22" in d
+               and "overlap 2 days" in d for d in b.drivers)
+    assert "singstat" in b.sources and "MAS+JISDOR" not in b.sources
+    assert "idxscape (missing)" in b.stale_inputs  # the SBN signal still reads idxscape
+    assert b.call == "no_call"  # no PHEI, no CPI: the FX input alone makes no call
+
+
+def test_gather_idn_without_a_usd_idr_source_reads_idxscape_as_before(tmp_path):
+    idn = pipeline.gather_idn(DAY, regime(), missing_idn(tmp_path))
+    assert idn.bonds.signal("jisdor_trend") is None
+    assert "idxscape (missing)" in idn.bonds.stale_inputs
