@@ -946,3 +946,38 @@ slices:
       record the choice. CLAUDE.md's 60/40 line changes only with the user's OK. Done: also
       edits brief.paper_lines, the cli paper header, tests/test_ops.py, and a per-Usfin HTTP
       timeout (sources/base.http_csv, sources/usfin) because `usfin serve` takes ~12 s for SPY.
+
+  # ---------------- phase J: review quick fixes (2026-11-07) ----------------
+  - id: P61-fingerprint-scope
+    title: "PLAN S41: fingerprint hashes each rule module's AST without docstrings (comments, docstrings, formatting no longer segment the record); paper hides annualised returns below 12 scored weeks"
+    depends_on: [P60-paper-benchmark]
+    owns: ["src/assist/journal.py", "tests/test_journal.py", "src/assist/paper.py", "tests/test_paper.py", "src/assist/brief.py", "tests/test_brief.py", "src/assist/views/paper.py", "tests/test_view_paper.py", "docs/results/P61-fingerprint-scope.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+    notes: >-
+      Hash ast.dump of each module after stripping module, class and function docstrings
+      (include_attributes=False), so line numbers and comments drop out. Tests: a docstring or
+      comment edit keeps the fingerprint; a changed constant or expression changes it; config
+      files still hashed by bytes. The method change itself segments once; record old and new
+      fingerprints. Paper: below MIN_ANNUALISE_WEEKS = 12 scored weeks, show cumulative only
+      (brief, CLI, /paper and its JSON twin say "annualised after 12 weeks"). Edits only
+      brief.paper_lines in brief.py (P62 edits other functions there).
+  - id: P62-rebalance-split
+    title: "PLAN S42: portfolio gap split into rebalance_pt (benchmark - current) and tilt_pt (target - benchmark); brief, /portfolio and Telegram name the benchmark part a rebalance, Telegram size lists marked paper only"
+    depends_on: [P59-benchmark]
+    owns: ["src/assist/stance.py", "tests/test_stance.py", "schema/stance.schema.json", "src/assist/brief.py", "tests/test_brief.py", "src/assist/notify.py", "tests/test_notify.py", "src/assist/views/portfolio.py", "tests/test_view_portfolio.py", "src/assist/views/stance.py", "docs/results/P62-rebalance-split.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 1
+    notes: >-
+      No change to targets, bands, tilt, benchmark or the 3 x 10 day ladder (user, 2026-11-06).
+      Additive optional schema fields; schema minor version bump. Outside-mandate stances: rebalance
+      is the trim of what is held there, tilt 0. Telegram: header line "Paper only, not an order.
+      Sizes rebalance to the 48/32/20 benchmark plus the model tilt; read the brief." Does not edit
+      brief.paper_lines (P61 does).
+  - id: F9-docs
+    kind: integration
+    title: "PLAN S43: docs refresh to 2026-11-07 (STATUS, open data gaps, README phases, CLAUDE.md coverage) and Progress rows for S41-S42"
+    depends_on: [P61-fingerprint-scope, P62-rebalance-split]
+    owns: ["PLAN.md", "README.md", "CLAUDE.md", "docs/results/F9-docs.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5

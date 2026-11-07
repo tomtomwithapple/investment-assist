@@ -56,6 +56,7 @@ a record.
 | G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S30 | 8 / 8 |
 | H. Layer pages (regime, signals, portfolio) | S33–S37 | 5 / 5 |
 | I. Benchmark and portfolio limits (80% IDN / 20% US stocks) | S39–S40 | 2 / 2 |
+| J. Review quick fixes (fingerprint scope, rebalance vs tilt, docs) | S41–S43 | 0 / 3 |
 
 ### Open data gaps (fetcher side)
 
@@ -971,6 +972,33 @@ USA stocks stance.
   segment whose stance payloads carry `portfolio.benchmark_pct` (S39 on) is scored on 48/32/20
   with its journalled targets, every older one exactly as before. CLAUDE.md's paper-benchmark
   line awaits the user's OK.
+
+### Phase J — review quick fixes (planned 2026-11-07)
+
+**Why.** The 2026-11-07 review found output that misleads before the next Monday run:
+- The −51.2 pt IDN stocks trim comes from moving to the new benchmark, but the brief and
+  Telegram show it as if the model called it (G3).
+- The weekly job will push names sized to sell with nobody reading the brief first (O4).
+- The journal opened three model segments in 8 days, because the fingerprint hashes the rule
+  modules' raw bytes, so a docstring edit segments the record (G4).
+- The paper track annualises a single week to −98.5% (G4).
+- The docs no longer match the state (O3).
+
+No decision rule, band, tilt, benchmark or ladder changes in this phase. The ladder (3 × 10 days,
+adds and trims) stays as the user decided on 2026-11-06.
+
+- [ ] **S41 Fingerprint scope** (P61-fingerprint-scope). The fingerprint hashes each rule module's
+  AST with docstrings removed, so comments, docstrings and formatting no longer change it, while
+  any logic change still does. This method change segments the record once. The paper track
+  hides annualised returns until a segment has 12 scored weeks.
+- [ ] **S42 Rebalance vs tilt** (P62-rebalance-split). The stance payload's `portfolio` splits the
+  gap into `rebalance_pt` (benchmark − current) and `tilt_pt` (target − benchmark). The brief,
+  `/portfolio` and Telegram name the benchmark part as a rebalance to the 48/32/20 benchmark, not
+  a model call. Telegram's sized lists are headed "paper only, not an order" and point to the
+  brief.
+- [ ] **S43 Docs refresh** (F9-docs). PLAN STATUS, open data gaps, README and CLAUDE.md coverage
+  match 2026-11-07: launchd jobs installed, idx-method valuation history landed, JCI P/E wired,
+  phases H–J, and the Progress rows for S41–S42.
 
 ## Open questions
 
