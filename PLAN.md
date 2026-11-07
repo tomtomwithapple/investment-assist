@@ -41,10 +41,8 @@ tracking scores its first week (2026-10-09 → 10-16, benchmark −9.4%). PHEI c
 this Mac (idxscape, 2026-11-06), but IGSYC has a hole 2026-10-22 → 11-03 here; since P52 a week
 whose mark falls in a capture gap is left unscored rather than priced on an old yield.
 
-**Next up:** phase K, planned 2026-11-07 (S45–S55, *Phase K* below): the ten open questions
-there need your answers first (historical window and `MIN_N`, live revocation, the stocks rule's
-macro input in history, variants, the bonds 10Y ask, home-regime thresholds and effect,
-overrides, the spliced USD/IDR). S45 and S46 can start on the defaults.
+**Next up:** phase K (S45–S55, *Phase K* below); its ten choices were settled 2026-11-07 (the
+user accepted every default). S45 and S46 run first, in parallel, on branch `phase-k`.
 Meanwhile let the jobs and this Mac's PHEI history build a record; backfilling 10-22 → 11-03 from the Windows machine's raw captures stays deferred.
 Open ops question: of the fetchers, only bisfetcher.refresh, dbnomics.refresh/serve,
 worldbankscape.daily and idxscape.phei are launchd agents on this Mac; the other stores are fresh
@@ -1087,7 +1085,7 @@ before +14.5% and +13.9% rebounds), so a home regime is tested before it may shi
   and makes the one run that opens the new segment.
 - The global regime stays as it is (inputs, thresholds, `REGIME_SHIFT`).
 
-**Open — user decides** (recommended default in brackets):
+**Decided by the user (2026-11-07): all ten recommended defaults, as bracketed below.**
 1. Historical window and stride. [Month-end as-of dates from the first month with every
    required input to the last with a full 3-month forward return; horizon 3 months, stride 3,
    block 3, as the live gate.]
@@ -1190,7 +1188,7 @@ Parallel groups: {S45, S46} → {S47, S51} → {S48, S52} → {S49, S50, S53} �
   placeholders; confirm them once phase I runs.
 - Which SBN index for the benchmark (the 40% leg): pick once the PHEI parser shows what's
   available.
-- Phase K (2026-11-07): ten choices listed under *Phase K, Open — user decides*.
+- ~~Phase K (2026-11-07): ten choices~~: all ten defaults accepted by the user 2026-11-07.
 
 ## Progress
 
