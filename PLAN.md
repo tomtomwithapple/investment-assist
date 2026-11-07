@@ -62,7 +62,7 @@ but what refreshes them here is not traced.
 | G. Local UI view (read-only pages over `out/`, journal, paper) | S23–S30 | 8 / 8 |
 | H. Layer pages (regime, signals, portfolio) | S33–S37 | 5 / 5 |
 | I. Benchmark and portfolio limits (80% IDN / 20% US stocks) | S39–S40 | 2 / 2 |
-| J. Review quick fixes (fingerprint scope, rebalance vs tilt, docs) | S41–S43 | 3 / 3 |
+| J. Review quick fixes (fingerprint scope, rebalance vs tilt, docs, USA universe) | S41–S44 | 3 / 4 |
 
 ### Open data gaps (fetcher side)
 
@@ -1015,6 +1015,13 @@ adds and trims) stays as the user decided on 2026-11-06.
   match 2026-11-07: launchd jobs installed, idx-method valuation history landed, JCI P/E wired,
   phases H–J, and the Progress rows for S41–S42.
   *Done 2026-11-07:* `docs/results/F9-docs.md`.
+
+- [ ] **S44 USA universe over HTTP** (P63-us-universe). The USA undervalued list is empty (pool 0
+  on 2026-11-06): `usfin serve` takes ~22 s for `/prices/universe`, the adapter's HTTP timeout is
+  shorter, the timeout reads as "server down", and the fallback ATTACH meets serve's lock
+  (`sec-edgar (locked): universe`). Give the US candidate reads a long timeout as paper does
+  (`paper.US_HTTP_TIMEOUT`), keep a timeout distinct from a down server, and keep the run's
+  wall time bounded. `edgar_company` has no SIC, so there are no US peer groups: a sec-edgar gap.
 
 ## Open questions
 

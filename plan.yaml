@@ -981,3 +981,9 @@ slices:
     owns: ["PLAN.md", "README.md", "CLAUDE.md", "docs/results/F9-docs.md"]
     accept: uv run pytest -q && uv run ruff check .
     estimate: 0.5
+  - id: P63-us-universe
+    title: "PLAN S44: USA candidates read the sec-edgar universe and bars over HTTP with a long timeout; a read timeout is not a down server; USA undervalued list no longer empty"
+    depends_on: [P62-rebalance-split]
+    owns: ["src/assist/sources/usfin.py", "src/assist/sources/usfin_stocks.py", "src/assist/sources/base.py", "tests/sources/test_usfin*.py", "tests/sources/test_base*.py", "src/assist/candidates/us_stocks.py", "tests/test_us_stocks*.py", "src/assist/pipeline.py", "docs/results/P63-us-universe.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 1
