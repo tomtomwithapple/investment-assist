@@ -249,3 +249,36 @@ def test_golden_brief_matches_fixture():
         EXPECTED.write_text(md)
         pytest.fail("wrote expected.md; review it and rerun")
     assert md == EXPECTED.read_text(encoding="utf-8")
+
+
+# ---------------- paper lines: annualised only from 12 scored weeks (S41) ----------------
+
+
+def _paper_rep(weeks: int, annualized):
+    from datetime import date as _date
+
+    from assist.paper import PaperReport
+    summ = {"weeks": weeks, "stale_weeks": 0, "cumulative": -0.077, "annualized": annualized,
+            "volatility": None, "annualize_min_weeks": 12}
+    return PaperReport(as_of=_date(2026, 11, 6), start=_date(2026, 10, 9),
+                       legs={"stocks": "JCI"}, bond_series="igsyc.10y",
+                       benchmark_pct={"stocks": 48.0, "bonds": 32.0, "usa": 20.0},
+                       stale_inputs=[], benchmark_summary=summ, benchmark=[], segments=[],
+                       notes=[], legacy_benchmark_pct={"stocks": 60.0, "bonds": 40.0},
+                       legacy_start=_date(2026, 10, 9), legacy_summary=dict(summ))
+
+
+def test_paper_lines_hide_annualised_below_12_scored_weeks():
+    from assist import brief as _brief
+    lines = _brief.paper_lines(_paper_rep(1, None))
+    assert "cumulative -7.7%" in lines[0]
+    assert "annualised after 12 scored weeks" in lines[0]
+    assert "annualised -" not in lines[0] and "annualised n/a" not in lines[0]
+    legacy = [x for x in lines if x.startswith("Legacy")][0]
+    assert "annualised after 12 scored weeks" in legacy
+
+
+def test_paper_lines_show_annualised_from_12_scored_weeks():
+    from assist import brief as _brief
+    lines = _brief.paper_lines(_paper_rep(12, -0.29))
+    assert "annualised -29.0%" in lines[0] and "after 12" not in lines[0]

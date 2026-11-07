@@ -2,7 +2,9 @@
 
 /paper: `app.paper(until=app.today())`, each model segment's allocation vs the IDR benchmark
 (48% JCI / 32% SBN leg / 20% US stocks in IDR since S40; the legacy 60/40 beside it, for the
-segments journalled before S39), worded as `brief.paper_lines`. Each leg names its source. The
+segments journalled before S39), worded as `brief.paper_lines`. Below
+`paper.MIN_ANNUALISE_WEEKS` scored weeks the annualised cell reads "after 12 scored weeks" and the
+JSON twin's `annualized_note` says so (S41). Each leg names its source. The
 worst week is the minimum of `m.benchmark` over the report's scored benchmark marks, computed
 here (the report has no such field). Stale reasons are
 `report.stale_inputs` plus every distinct `mark.stale`. The paper callable reads sibling stores
@@ -28,6 +30,7 @@ from typing import Any
 
 from assist import brief, web
 from assist.journal import Journal, jsonable
+from assist.paper import annualized_note
 from assist.web import esc
 
 TITLE = "Assist Paper"
@@ -134,6 +137,12 @@ def stale_reasons(rep: Any) -> list[str]:
     return out
 
 
+def _annualised(summary: Mapping) -> str:
+    """The annualised return, or "after N scored weeks" below paper.MIN_ANNUALISE_WEEKS."""
+    note = annualized_note(summary)
+    return esc(note.removeprefix("annualised ")) if note else _signed(summary["annualized"])
+
+
 def _pct(pct: Any) -> str:
     return esc(brief._pct_text(pct or {}))
 
@@ -159,7 +168,7 @@ def _summary(rep: Any) -> str:
             for k, name in LEG_ROWS.items() if k in pct]
     return _card("summary", f"IDR benchmark {_mix_name(pct)}", head + _kv([
         ("Weeks scored", esc(str(bs["weeks"]))), ("Stale weeks", esc(str(bs["stale_weeks"]))),
-        ("Cumulative", _signed(bs["cumulative"])), ("Annualised", _signed(bs["annualized"])),
+        ("Cumulative", _signed(bs["cumulative"])), ("Annualised", _annualised(bs)),
         ("Volatility", _vol(bs["volatility"])),
         ("Worst week", worst + (' <span class="muted">(computed here from the weekly marks)'
                                 "</span>" if ww else "")),
@@ -180,7 +189,7 @@ def _legacy(rep: Any) -> str:
             ("Weeks scored", esc(str(ls["weeks"]))),
             ("Stale weeks", esc(str(ls["stale_weeks"]))),
             ("Cumulative", _signed(ls["cumulative"])),
-            ("Annualised", _signed(ls["annualized"]))]))
+            ("Annualised", _annualised(ls))]))
 
 
 def _seg_row(s: Any) -> list[str]:
@@ -220,7 +229,8 @@ def page(app: web.App, _m: re.Match[str]) -> web.View:
     if built is None:
         body = head + web.notice(f"paper track unavailable: {error}")
         return web.View(TITLE, body, {"as_of": day, "error": error, "report": None,
-                                      "worst_week": None, "stale_reasons": []})
+                                      "worst_week": None, "stale_reasons": [],
+                                      "annualized_note": None})
     rep = built.report
     try:
         reasons = stale_reasons(rep)
@@ -230,12 +240,13 @@ def page(app: web.App, _m: re.Match[str]) -> web.View:
                 + f'<p class="muted">Report for {esc(str(day))}, built '
                   f"{built.built_at:%H:%M:%S}; cached until the day or the journal changes.</p>")
         data = {"as_of": day, "error": None, "report": _data(rep),
-                "worst_week": worst_week(rep), "stale_reasons": reasons}
+                "worst_week": worst_week(rep), "stale_reasons": reasons,
+                "annualized_note": annualized_note(rep.benchmark_summary)}
     except (AttributeError, KeyError, TypeError) as e:  # not a PaperReport: a notice, not a 500
         error = f"unreadable paper report: {type(e).__name__}: {e}"
         body = head + web.notice(error)
         data = {"as_of": day, "error": error, "report": None, "worst_week": None,
-                "stale_reasons": []}
+                "stale_reasons": [], "annualized_note": None}
     return web.View(TITLE, body, data)
 
 

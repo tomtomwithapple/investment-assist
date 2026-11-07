@@ -399,3 +399,30 @@ def test_paper_unreadable_report_is_a_notice(jroot):
     r = _get(_app(jroot, Paper(rep={"not": "a report"})), "/paper")
     assert r.status == 200 and '<p class="notice">' in r.body
     assert "unreadable paper report" in r.body
+
+
+# ---------------- annualised only from 12 scored weeks (S41) ----------------
+
+
+def test_paper_hides_annualised_below_12_scored_weeks(jroot):
+    rep = s40_report()
+    for s in (rep.benchmark_summary, rep.legacy_summary):
+        s.update(annualized=None, annualize_min_weeks=12)
+    body = _get(_app(jroot, Paper(rep)), "/paper").body
+    for card in ("summary", "legacy"):
+        c = _card(body, card)
+        assert "<th>Cumulative</th>" in c
+        assert "<th>Annualised</th><td>after 12 scored weeks</td>" in c
+    d = json.loads(_get(_app(jroot, Paper(rep)), "/paper.json").body)
+    bs = d["report"]["benchmark_summary"]
+    assert bs["annualized"] is None and bs["annualize_min_weeks"] == 12
+    assert d["annualized_note"] == "annualised after 12 scored weeks"
+
+
+def test_paper_shows_annualised_from_12_scored_weeks(jroot):
+    rep = s40_report()
+    rep.benchmark_summary.update(weeks=12, annualized=-0.29, annualize_min_weeks=12)
+    c = _card(_get(_app(jroot, Paper(rep)), "/paper").body, "summary")
+    assert "<th>Annualised</th><td>-29.0%</td>" in c
+    d = json.loads(_get(_app(jroot, Paper(rep)), "/paper.json").body)
+    assert d["annualized_note"] is None

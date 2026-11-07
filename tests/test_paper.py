@@ -490,3 +490,23 @@ def test_missing_us_store_leaves_the_benchmark_weeks_stale_and_named():
     assert all(any(s.startswith("US leg") for s in m.stale) for m in rep.benchmark)
     assert "sec-edgar (locked)" in rep.stale_inputs
     assert rep.legacy_summary["weeks"] == 2  # the 60/40 needs no US leg
+
+
+# ---------------- annualise only from 12 scored weeks (S41) ----------------
+
+
+def test_summary_is_cumulative_only_below_min_annualise_weeks():
+    assert pp.MIN_ANNUALISE_WEEKS == 12
+    short = pp.summarize([0.01] * 11 + [None, None])
+    assert short["weeks"] == 11 and short["stale_weeks"] == 2
+    assert short["cumulative"] == pytest.approx(1.01 ** 11 - 1)
+    assert short["annualized"] is None
+    assert short["annualize_min_weeks"] == 12
+    one = pp.summarize([-0.077])  # one bad week must not read as -98.5% a year
+    assert one["cumulative"] == pytest.approx(-0.077) and one["annualized"] is None
+
+
+def test_summary_annualises_at_min_annualise_weeks():
+    s = pp.summarize([0.01] * 12)
+    assert s["annualized"] == pytest.approx(1.01 ** 52 - 1)
+    assert s["annualize_min_weeks"] == 12
