@@ -987,3 +987,175 @@ slices:
     owns: ["src/assist/sources/usfin.py", "src/assist/sources/usfin_stocks.py", "src/assist/sources/base.py", "tests/sources/test_usfin*.py", "tests/sources/test_base*.py", "src/assist/candidates/us_stocks.py", "tests/test_us_stocks*.py", "src/assist/pipeline.py", "docs/results/P63-us-universe.md"]
     accept: uv run pytest -q && uv run ruff check .
     estimate: 1
+
+  # ---------------- phase K: rules on their history, home regime (planned 2026-11-07) ----------------
+  # Slices land on branch phase-k and are merged to main once by F10, so the G1 and G2 model
+  # changes open one journal segment. Live checks before F10 run with Paths.under(<scratch>),
+  # never against the real journal/ or out/. Open questions 1-10 in PLAN.md, Phase K; the notes
+  # name the default each slice builds on.
+  - id: P64-fingerprint-rules
+    title: "PLAN S45: the model fingerprint hashes every module under layers/ (bonds/idn.py, rules/idn_stocks.py and later subpackages), not only layers/*.py"
+    depends_on: [P63-us-universe, F9-docs]
+    owns: ["src/assist/journal.py", "tests/test_journal.py", "docs/results/P64-fingerprint-rules.md"]
+    accept: uv run pytest -q tests/test_journal.py && uv run ruff check .
+    estimate: 0.5
+    notes: >-
+      Found 2026-11-07: RULE_GLOBS ("stance.py", "layers/*.py", "candidates/*.py", "eval/*.py")
+      is expanded with PACKAGE_DIR.glob, not recursive, so default_rule_files() lists neither IDN
+      rule module. Make the layers/ glob recursive (layers/**/*.py); keep sources/, cli, doctor,
+      views and pipeline out. Tests first: a constant edit in layers/bonds/idn.py and in
+      layers/rules/idn_stocks.py changes the fingerprint, a docstring or comment edit does not.
+      Record old and new fingerprints of main in the result file; no live run on the real journal.
+  - id: P65-usdidr-source
+    title: "PLAN S46: a USD/IDR source serving JISDOR spliced on the MAS cross (as paper.usd_idr) for the IDN bonds rule, live and in history"
+    depends_on: [P63-us-universe, F9-docs]
+    owns: ["src/assist/sources/usdidr.py", "tests/sources/test_usdidr.py", "tests/fixtures/usdidr/**", "src/assist/pipeline.py", "tests/test_run_idn.py", "docs/results/P65-usdidr-source.md"]
+    accept: uv run pytest -q tests/sources/test_usdidr.py tests/layers/bonds/test_idn_bonds.py tests/test_run_idn.py tests/test_paper.py && uv run ruff check .
+    estimate: 1
+    notes: >-
+      Open question 10 (default yes). Live 2026-11-07 the bonds rule is no_call on "idxscape
+      JISDOR (11 of 60 fixings)" (MIN_FX_DAYS 60): idxscape fx_rate here starts 2026-10-22. The
+      source wraps paper.usd_idr (import, do not edit paper.py): rows under series id JISDOR,
+      JISDOR from its first fixing, the MAS cross USD/SGD / IDR/SGD before, a JISDOR gap after its
+      start stays a gap; its name says which pieces were used, and the seam goes into the rule's
+      drivers. IdnSources gets it and gather_idn passes it as idn_bonds(idxscape=...); signals
+      still read idxscape. No change to the bonds rule's thresholds. Tests first: 11 JISDOR
+      fixings plus MAS history give a 20-fixing trend and a 120-fixing high; a MAS-only window
+      works; no MAS and short JISDOR stays a stale input. Live (scratch Paths): the bonds call on
+      2026-11-07 and its inputs.
+  - id: P66-rule-history
+    title: "PLAN S47: point-in-time history of the IDN bonds and stocks rules: each month end rerun as known that day, with call, missing inputs and the 3-month forward return"
+    depends_on: [P65-usdidr-source, P33-factor-series]
+    owns: ["src/assist/history.py", "tests/test_history.py", "tests/fixtures/history/**", "src/assist/sources/idxmethod_series.py", "tests/test_idxmethod_series.py", "docs/results/P66-rule-history.md"]
+    accept: uv run pytest -q tests/test_history.py tests/test_idxmethod_series.py tests/layers/rules/test_idn_stocks.py tests/layers/bonds/test_idn_bonds.py && uv run ruff check .
+    estimate: 1.5
+    notes: >-
+      Plumbing, not a rule (outside the fingerprint). Month-end as-of dates (open question 1).
+      Each date calls idn_bonds / idn_stocks unchanged with point-in-time inputs: regime from
+      regime.read_inputs (fred_as_of), P17 overrides and P18 signals as of the date, the P65
+      USD/IDR, and for stocks a factor_series EY provider with FactorSnapshots' factors_on(as_of)
+      interface (daily pe and mktcap, EY = 100 / pe, negative PE kept as an index P/E counts
+      loss makers; the daily multiples step on the filing date, idx-method c432999, so no extra
+      lag). Layer 1 per open question 4: AssetScore 50 for IDN stocks, the P17 override applied
+      by the rule as now. Forward returns: JCI month-end closes (jci(), stitched P51) over 3
+      months; bonds rule.bond_returns on month-end 10Y (IGSYC where present, else the OECD
+      proxy). Each row: as_of, call, proposed stance, missing inputs, ten_year_source, forward
+      return or null. Cache under data/history/ keyed by rule fingerprint and each store's newest
+      date. Tests first on fixtures: no row reads a value dated after its as_of or not yet known
+      (PHEI fetched_at, CPI/proxy lags), a month with no 10Y is no_call with the reason. Expect
+      calls only about 2021-11 -> 2025-02 (flows from 2021-10, proxy no call after ~2025-02) plus
+      IGSYC months from 2026-10.
+  - id: P67-rule-gate
+    title: "PLAN S48: historical gate + live monitor in place of journalled_verdict; assist rules writes out/rules/IDN-<asset>.json (verdicts, state, distance to the gate per side)"
+    depends_on: [P66-rule-history, P64-fingerprint-rules]
+    owns: ["src/assist/eval/gate.py", "tests/eval/test_gate.py", "schema/rules.schema.json", "src/assist/pipeline.py", "tests/test_run_idn.py", "src/assist/cli.py", "tests/test_ops.py", "docs/results/P67-rule-gate.md"]
+    accept: uv run pytest -q tests/eval tests/test_run_idn.py tests/test_run_e2e.py tests/test_ops.py && uv run ruff check .
+    estimate: 1.5
+    notes: >-
+      Defaults: open questions 1-3. Historical verdict = placebo.evaluate on the P66 calls
+      (enter vs hold/reduce, horizon 3, stride 3, block 3, MIN_N 10 per side); live monitor = the
+      same on journalled_calls since the verdict's date. State: passed (historical passed, not
+      revoked), insufficient, failed, revoked (live >= 5 per side and signed t <= -1.0), or
+      live-passed (the journal alone reaches 10/10, as today). Each file: rule fingerprint, the
+      months covered, on/off per side vs MIN_N, months with no call and why, both verdicts in
+      full, disclaimer. A file whose fingerprint differs from the running rule's counts as no
+      verdict. assist run reads out/rules/ and rebuilds a missing or stale one (older than its
+      newest month end), never failing the run; gated_stance keeps its signature (the gate hands
+      it the effective Verdict). `assist rules [--horizon N] [--variant ...]` for the diagnostics
+      P68/P69 report. Tests first: pass, insufficient, revoked, fingerprint mismatch, rebuild.
+  - id: P68-stocks-history
+    title: "PLAN S49: IDN stocks rule walk-forward on the real stores: calls per month, verdict, distance to 10/10, EY seam, diagnostic variants"
+    depends_on: [P67-rule-gate]
+    owns: ["docs/results/P68-stocks-history.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+    notes: >-
+      Live run only (scratch Paths). Report: months with a call and why the others have none,
+      enter / hold / reduce counts, on/off, t, p, control t, the distance to 10 per side and an
+      estimate of when it closes at the live call rate; factor_series EY vs the snapshot EY on
+      their overlap (2026-08-30 -> 11-06), names covered on each; open question 5 variants (1-month
+      horizon, valuation-only from 2016-11) as diagnostics only. A bug found goes back to P66/P67
+      (slicer invalidate), not fixed here. No threshold changes.
+  - id: P69-bonds-history
+    title: "PLAN S50: IDN bonds rule walk-forward on the real stores (2021-02 -> 2025-02 on the OECD proxy, IGSYC months from 2026-10); a plain 'not yet' if it cannot reach the gate"
+    depends_on: [P67-rule-gate]
+    owns: ["docs/results/P69-bonds-history.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+    notes: >-
+      As P68 for bonds, with the P65 USD/IDR. The OECD proxy is a monthly average, so the return
+      proxy (carry - 7 x dyield) is smoothed; say so. P31 (2026-10-23) found 29 hold, 5 enter, 5
+      reduce over 2021-11..2025-03. Write the 10Y ask for F10's Open data gaps (open question 6:
+      dbnomics IMF IFS IDN government bond yield past 2024-12, else idxscape DJPPR SUN auction
+      results), with the months it would add. No threshold changes.
+  - id: P70-home-inputs
+    title: "PLAN S51: home (IDN) regime inputs, point in time: JCI 20-day drawdown, IDX net foreign 20-day z-score, USD/IDR 20-fixing move, non-resident SBN 20-day change"
+    depends_on: [P65-usdidr-source]
+    owns: ["src/assist/layers/home_inputs.py", "tests/layers/test_home_inputs.py", "tests/fixtures/home/**", "src/assist/sources/idxscape.py", "tests/sources/test_idxscape_flows.py", "docs/results/P70-home-inputs.md"]
+    accept: uv run pytest -q tests/layers/test_home_inputs.py tests/sources/test_idxscape_flows.py tests/layers/test_signals_idn.py && uv run ruff check .
+    estimate: 1
+    notes: >-
+      HomeInputs(as_of, values, last, stale_inputs, sources) as regime.Inputs. JCI from jci()
+      (index_daily 2021-10-01 on, CSV before); IDX net foreign IDR from idxscape stock_summary
+      (2021-10-01 on, 1-day lag as P18), z-score of the 20-day sum against the trailing 250
+      days; USD/IDR from the P65 source; non-resident SBN from sbn_ownership (2021-01-04 on), %
+      change over 20 days. An input counts only if its newest point is at most 7 days old (open
+      question 7): DJPPR history is posted monthly (P18 lag 40 days), so in history SBN is mostly
+      stale and named so. No thresholds here (P71). Tests first on fixtures incl. 2026-10-06 ->
+      10-16 (JCI 6,192.9 -> 5,185.1, -11.6% on 10-16). Live: the inputs on 2026-10-16, 10-23 and
+      11-05.
+  - id: P71-home-regime
+    title: "PLAN S52: home regime rule (risk_off / neutral on hand-set points) and its walk-forward vs JCI and IDR 20d; ladder vs lump diagnostic; P8 rerun of the global regime (report only)"
+    depends_on: [P70-home-inputs]
+    owns: ["src/assist/layers/home_regime.py", "tests/layers/test_home_regime.py", "docs/results/P71-home-regime.md"]
+    accept: uv run pytest -q tests/layers/test_home_regime.py tests/layers/test_regime.py && uv run ruff check .
+    estimate: 1.5
+    notes: >-
+      Thresholds from open question 7, written before the walk-forward and not tuned after.
+      classify -> HomeRegime-shaped result (state, points, drivers, stale); history(dates) and
+      check() as regime.py: weekly Fridays 2021-10 -> 2026-10, entry_returns on JCI and USD/IDR
+      (invert) 20d, stride 4, block 4, direction -1. Diagnostic: average fill of a 3 x 10-day
+      ladder against a lump entry after each home risk_off week. Report only: P8's global regime
+      rerun on the stitched JCI to 2026-11. HOME_SHIFT_ADOPTED = False unless the check passes on
+      JCI (open question 8). Live: states per week since 2021-10, and on 2026-10-16 / 10-23 /
+      11-05.
+  - id: P72-home-stance
+    title: "PLAN S53: home regime in the stance: IDN stocks and bonds ladder on home risk_off, score shift only if adopted; stance schema 1.2.0 home_regime, regime.json home block (layer schema 1.1.0), journalled"
+    depends_on: [P67-rule-gate, P71-home-regime]
+    owns: ["src/assist/stance.py", "tests/test_stance.py", "src/assist/layers/types.py", "schema/stance.schema.json", "src/assist/pipeline.py", "src/assist/layers_out.py", "schema/layers/regime.schema.json", "tests/test_layers_out.py", "tests/test_run_e2e.py", "tests/test_run_idn.py", "docs/results/P72-home-stance.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 1.5
+    notes: >-
+      Open question 8 defaults: home risk_off ladders adds and trims of IDN stocks and IDN bonds
+      (LADDER_TRANCHES x LADDER_SPACING_DAYS, unchanged); a -5pt shift on those two scores only if
+      HOME_SHIFT_ADOPTED, and with global risk_off as well the shift is -5, not -10. No change to
+      bands, TILT_PT, BENCHMARK_PCT, TRANSITION_PT. MODEL_VERSION 0.5.0. Additive optional fields:
+      stance `home_regime` {state, points, drivers, stale_inputs}, regime.json `home` (inputs
+      with value, date, points and 1y weekly lines); 1.1.0 stances and 1.0.0 layer files still
+      validate. The regime journal record carries the home regime. Tests first: home risk_off
+      with a neutral global regime ladders an IDN add within 10pt of target; a USA stance is
+      unchanged; not adopted -> no shift.
+  - id: P73-home-pages
+    title: "PLAN S54: home regime on the brief, /regime, Telegram, and assist regime --check sends on a home state change"
+    depends_on: [P72-home-stance]
+    owns: ["src/assist/brief.py", "tests/test_brief.py", "src/assist/views/regime.py", "tests/test_view_regime.py", "src/assist/notify.py", "tests/test_notify.py", "src/assist/pipeline.py", "tests/test_ops.py", "docs/results/P73-home-pages.md"]
+    accept: uv run pytest -q tests/test_brief.py tests/test_view_regime.py tests/test_notify.py tests/test_ops.py tests/test_web.py && uv run ruff check .
+    estimate: 1
+    notes: >-
+      Brief: a "Home regime (IDN)" line under Global regime; golden brief changes only by that
+      line. /regime: a home section with the four inputs, their points and 1-year lines, read
+      from regime.json `home`, a missing block a notice; .json twin includes it. Telegram: one
+      line when home is risk_off. regime_check / regime_message (pipeline.py) compare the home
+      state too and send once on a change; the first check with no home record is a baseline.
+  - id: F10-phase-k
+    kind: integration
+    title: "PLAN S55: phase K fan-in: merge phase-k to main, one live assist run (one new journal segment), Progress rows S45-S54, STATUS, README, Open data gaps"
+    depends_on: [P68-stocks-history, P69-bonds-history, P73-home-pages, P45-start]
+    owns: ["PLAN.md", "README.md", "CLAUDE.md", "docs/results/F10-phase-k.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+    notes: >-
+      The run on main after the merge opens the one segment for the released G1 + G2 model;
+      record the old and new fingerprints, the rule states in out/rules/, the home regime and
+      every IDN stance's entry. Open data gaps gets the 10Y ask (P69). CLAUDE.md (decision rules,
+      coverage) only with the user's OK.
