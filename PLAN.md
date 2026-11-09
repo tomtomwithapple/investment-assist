@@ -79,6 +79,14 @@ Each gap is fixed in the repo named, never here. The brief flags each one under 
   current page, so the hole can only be filled from the Windows machine's raw captures:
   deferred by the user until this Mac's own history suffices. Until then the paper weeks ending
   10-23, 10-30 and 11-06 stay unscored (P52).
+- **No IDN 10Y for 2025-01 → 2026-09 (21 months) in any store** (P69, 2026-11-09). The OECD
+  proxy `idn.rate.long` ends 2024-12 and IGSYC starts 2026-10, so both IDN rules are `no_call`
+  on 2025-03 → 2026-09 and their walk-forwards stop at 2024-08 (bonds) and 2026-07 (stocks, with
+  6 windows lost). Ask, in order: **dbnomics**, an IMF IFS IDN government bond yield (monthly)
+  if it runs past 2024-12; **idxscape**, DJPPR SUN auction results (10Y benchmark
+  weighted-average yield) as a dated series. The Windows PHEI captures fill only 10-22 → 11-03.
+  Filling it adds about 8 bonds and 6 stocks gate windows; the bonds rule still cannot reach
+  10 enter windows ("not yet"), but the stocks reduce side might.
 - **jquantster runs on the J-Quants free plan.** `investor_types` is empty (no TSE flows), and
   daily bars end 2026-08-14 (85 of the doctor's 100 days on 2026-11-07, so stale around
   2026-11-22).
