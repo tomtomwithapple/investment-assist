@@ -222,17 +222,30 @@ def _trade(b: _Builder, src: str, series: list[Row]) -> None:
           f" vs {before:,.0f}mn the 3 before")
 
 
+def _spans(series: list[Row], months: int) -> bool:
+    """The series has a point `months` before its newest (a change can be measured)."""
+    return bool(series) and _at(series, _months_back(series[-1].date, months)) is not None
+
+
 def _inflation(b: _Builder, bps: dict | None, dbn: dict | None) -> None:
+    """CPI y/y over 3 months: bps-looker, else dbnomics when bps-looker has none or too little
+    for the 3-month window (P85, phase L choice 9: bps-looker's 2022=100 CPI starts 2024-01, so
+    2024-02 → 04 had no change). The newest CPI level (`inputs["cpi_yoy"]`, the bonds rule's
+    real yield) stays bps-looker's whenever it has one."""
     sid, src, series = CPI_YOY, "bps-looker", (bps or {}).get(CPI_YOY, [])
-    if bps is not None and not series:
+    if bps is not None and not _spans(series, 3):
         b.short(src, CPI_YOY, series)
-    if not series and dbn is not None:
-        sid, src, series = DBN_CPI, "dbnomics", dbn.get(DBN_CPI, [])
-        if not series:
-            b.short(src, DBN_CPI, series)
+    if series:
+        b.inputs["cpi_yoy"] = series[-1]
+    if not _spans(series, 3) and dbn is not None:
+        dseries = dbn.get(DBN_CPI, [])
+        if not dseries:
+            b.short("dbnomics", DBN_CPI, dseries)
+        if dseries or not series:
+            sid, src, series = DBN_CPI, "dbnomics", dseries
     if not series:
         return
-    b.inputs["cpi_yoy"] = series[-1]
+    b.inputs.setdefault("cpi_yoy", series[-1])
     lo, hi = BI_TARGET
     level = series[-1].value
     where = "above" if level > hi else "below" if level < lo else "inside"

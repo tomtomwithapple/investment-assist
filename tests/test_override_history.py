@@ -203,14 +203,15 @@ def test_inflation_switches_from_dbnomics_to_bps_looker_when_bps_is_known():
     assert h.row(D("2019-06-30")).components["inflation"].series_id == CPI_YOY
 
 
-def test_a_short_bps_cpi_leaves_inflation_missing_with_its_reason():
-    """bps-looker CPI known for under 3 months: P17 neither computes it nor falls back to
-    dbnomics (as the real store does from 2024-02 to 2024-04)."""
+def test_a_short_bps_cpi_falls_back_to_dbnomics():
+    """bps-looker CPI known for under 3 months (as the real store from 2024-02 to 2024-04):
+    since P85 (choice 9) inflation reads dbnomics there, and the bps short line stays stale."""
     h = OH.replay(dates(), **stores())
     row = h.row(D("2018-03-31"))  # bps CPI known for 2018-01 and 2018-02 only
-    assert "inflation" not in row.components
-    assert row.missing == (f"inflation: bps-looker {CPI_YOY} (history from 2018-01-01)",)
-    assert not row.complete
+    assert row.components["inflation"].series_id == DBN_CPI
+    assert f"bps-looker {CPI_YOY} (history from 2018-01-01)" in row.stale_inputs
+    assert row.complete
+    assert h.row(D("2018-05-31")).components["inflation"].series_id == CPI_YOY
 
 
 def test_a_short_trade_history_is_missing_until_six_months_are_known():
@@ -235,14 +236,19 @@ def test_an_unavailable_store_names_every_component_it_holds():
 
 
 def test_coverage_names_first_month_and_holes_per_component():
-    h = OH.replay(dates(), **stores())
+    # one trade month missing (2018-06): no 6 consecutive months until 2018-12 is known
+    bps = [r for r in _bps_rows() if not (r.series_id == TRADE_BALANCE
+                                          and r.date == D("2018-06-01"))]
+    h = OH.replay(dates(), **stores(bps=bps))
     cov = h.coverage()
     assert cov["trade"]["first"] == "2016-07"  # Jan-Jun 2016 known 2016-07-21
-    assert cov["inflation"]["holes"] == [["2018-02", "2018-04"]]  # bps CPI < 3 months known
+    assert cov["trade"]["holes"] == [["2018-08", "2018-12"]]
+    assert cov["inflation"]["holes"] == []  # the short bps CPI falls back (P85)
+    assert cov["inflation"]["series"] == [CPI_YOY, DBN_CPI]
     assert cov["bi_rate"]["first"] == "2016-01" and cov["bi_rate"]["holes"] == []
     assert cov["bi_rate"]["months"] == len(dates())
     assert h.complete_from() == D("2016-07-31")
-    assert h.incomplete_after_start() == [["2018-02", "2018-04"]]
+    assert h.incomplete_after_start() == [["2018-08", "2018-12"]]
 
 
 def test_summary_counts_shift_signs_on_complete_months_only():
