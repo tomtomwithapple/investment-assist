@@ -1387,7 +1387,7 @@ brackets and its reason.
   `assist overrides` writes `out/overrides/IDN.json`; `assist run` reads it (rebuilds when stale,
   never fails). Test first: pass, insufficient, Holm fails a lone p 0.03, CLI-zeroed fail blocks a
   pass, revoked, fingerprint mismatch.
-- [ ] **S60 IDN override walk-forward, live** (P78-override-walk). Docs only: per asset and
+- [x] **S60 IDN override walk-forward, live** (P78-override-walk). Docs only: per asset and
   side on/off, t, p, Holm rank, control t, CLI-zeroed result, distance to 10/10, diagnostics
   (1-month horizon, local returns). No threshold change.
 - [ ] **S61 A passed side crosses a band** (P79-override-stance). Choice 11. `build_stance`
@@ -1436,6 +1436,10 @@ Parallel groups: S57 → {S58, S61b, S62} → {S59, S63} → {S60, S64} → {S61
   - *JCI P/E level.* The cap-weighted EY over idx-method's snapshot and `factor_series` agree
     with each other (+0.06pt mean, P68), but nothing outside idx-method checks the level (an
     IDX or index-provider P/E).
+- **P17 bonds weights may be wrong-signed** (P78, 2026-11-09, evidence only). On the IDN
+  override history 2017-07 → 2024-08 an up bonds shift preceded lower 3-month 10Y returns and a
+  down shift higher (t −0.99 / −1.03, 29 windows); `bi_rate` (bonds −3) down-push reads t −1.09.
+  Weak; the weights stay as written (phase L choice 1) unless an agent review says otherwise.
 - ~~**Phase L choices 1–13**~~ (layer-2 overrides on their history): all 13 defaults accepted by
   the user 2026-11-09; S58 onward is unblocked.
 
@@ -1500,6 +1504,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S61b P17 CPI fallback (P85-cpi-fallback) | done | 2026-11-09 | this commit (branch `phase-l`) | 3 overrides_idn, override_history updated (1858 total) | P17 inflation falls back to dbnomics `idn.cpi.yoy` when bps-looker CPI has no point 3 months back (the bps short line stays stale; the newest CPI level stays bps-looker's); live: no inflation hole, 112 complete months 2017-07 → 2026-10; rule fingerprints bonds `deb1f60c…` → `f9be0b94…`, stocks `d217e458…` → `457c6c85…` (out/rules/ rebuilds cold at S66) |
 | S62 Foreign fx on the USD/IDR splice (P80-foreign-fx) | done | 2026-11-09 | this commit (branch `phase-l`) | 4 overrides_foreign (1862 total) | P28 reads IDR per USD from the P65 splice (store key `usdidr`, MAS leg lagged a day); live USA fx +0.87% / 3m, JPN +0.38% (both inside 1.5%: shifts unchanged, USA 0 / −3 / +2, JPN −3 / −2 / +1); no JISDOR stale line |
 | S59 Override gate (P77-override-gate) | done | 2026-11-09 | this commit (branch `phase-l`) | 21 override_gate, 3 run_idn, 1 ops (1887 total) | `eval/override_gate.py`: up / down per asset on complete months, phase K numbers, Holm per subject, CLI-zeroed check, live monitor on `overrides` records of the override fingerprint, revocation; `out/overrides/IDN.json` (schema `overrides.schema.json`), `assist overrides`, `assist run` reads it and journals an IDN `overrides` record; live IDN: all six sides failed (S60), nothing moves |
+| S60 IDN override walk-forward (P78-override-walk) | done | 2026-11-09 | this commit (branch `phase-l`) | docs only (1887 total) | horizon 3, complete months: stocks up 24/13 t 1.08 p 0.186, down 12/25 t 0.92 p 0.225; bonds up 13/16 t −0.99, down 15/14 t −1.03; currency up 13/24 t 1.75 p 0.122, **down 15/22 t 2.47 p 0.047** (Holm needs 0.0083; CLI zeroed t 0.95); all six failed, none insufficient; no override may cross a band; 1-month and per-component diagnostics nothing near |t| 2 |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`
