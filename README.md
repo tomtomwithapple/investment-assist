@@ -8,7 +8,7 @@ Heuristic context, **not investment advice**. Every stance, brief and message sa
 its sources.
 
 - Decision flow: [`CLAUDE.md`](CLAUDE.md), section *Investment decision flow*.
-- Build plan and progress: [`PLAN.md`](PLAN.md). Phases A–D and G–J are done (2026-11-07); E is 0 of 2 (S15 open, S31 built but its live verdict is open) and F 7 of 8 (S22 open).
+- Build plan and progress: [`PLAN.md`](PLAN.md). Phases A–D and G–K are done (2026-11-09; K: the IDN rules gated on their point-in-time history, and an IDN home regime); E is 0 of 2 (S15 open, S31 built but its live verdict is open) and F 7 of 8 (S22 open).
 
 ## Quick start
 
@@ -48,6 +48,7 @@ uv run assist brief                   # print the brief for the current out/ (--
 uv run assist regime                  # layer 0 today: risk_on | neutral | risk_off, dollar direction
 uv run assist regime --check          # daily job: journal it, Telegram only if it changed
 uv run assist regime --check --no-send  # compare only; writes and sends nothing
+uv run assist rules                   # IDN rule gates → out/rules/ (history verdict, live monitor, state, distance per side; --rebuild ~40 min)
 uv run assist paper                   # paper track vs the IDR 48/32/20 benchmark, 60/40 alongside (--json [--marks])
 uv run assist journal                 # decisions per model fingerprint, hash-chain check
 uv run assist flows                   # household transfers from financer → out/flows/<YYYY-MM>.json (for /flows)
@@ -72,7 +73,7 @@ The brief, top to bottom:
 1. the disclaimer;
 2. **Data health**: the doctor, one line per missing, locked or stale source (or a table a
    stance needs that is absent);
-3. the regime, the stance table (each delta split into rebalance to the benchmark and tilt)
+3. the global regime, the home (IDN) regime line, the stance table (each delta split into rebalance to the benchmark and tilt)
    and the changes since the last run;
 4. **Paper track**: the benchmark (48% JCI, 32% SBN leg, 20% US stocks in IDR), the old 60/40
    alongside (it still scores model segments from before S39), and one line per model
@@ -88,6 +89,7 @@ Same inputs give the same bytes, so a rerun on the same day rewrites nothing.
 | Path | What |
 |---|---|
 | `out/{SUBJECT}/{asset}.json` | one stance per in-scope subject × asset (`schema/stance.schema.json`); a rerun with unchanged inputs writes identical bytes, and out/ holds exactly the last run |
+| `out/rules/IDN-{stocks,bonds}.json` | each IDN rule's gate: historical verdict per side (enter, reduce), live journal monitor, state (passed, insufficient, failed, revoked), months covered, inputs missing; `assist run` rebuilds it when a month end has passed or a rule changed |
 | `journal/decisions.jsonl`, `journal/models/` | append-only, hash-chained decisions, each with the model fingerprint; the daily regime check adds `regime` records |
 | `data/briefs/<day>.md` | the Markdown brief, diffed against the previous day's snapshot |
 | `data/snapshots/<day>/` | copy of out/ per run day, for the brief's "changes since last run" |
@@ -158,6 +160,9 @@ sources present, 1 stale (jquantster), 2 missing (satudatascape, openkrx).
   is applied (insufficient sample), and the paper weeks ending 10-23, 10-30 and 11-06 stay
   unscored. JCI reads idxscape `index_daily` since 2026-11-06, so the paper track scores its
   first week (10-16).
+- **No IDN 10Y for 2025-01 → 2026-09.** The OECD proxy ends 2024-12 and IGSYC starts 2026-10,
+  so both IDN rules' histories stop short of their gates (bonds "not yet"); asked of dbnomics
+  (IMF IFS) and idxscape (DJPPR SUN auctions).
 - **jquantster is on the J-Quants free plan.** TSE investor types are empty and daily bars end
   2026-08-14 (stale around 2026-11-22).
 - **openkrx has no `data/parquet` on this Mac.** There is no KR or TW index valuation.
