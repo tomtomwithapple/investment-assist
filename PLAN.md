@@ -43,7 +43,7 @@ tracking scores its first week (2026-10-09 → 10-16, benchmark −9.4%). PHEI c
 this Mac (idxscape, 2026-11-06), but IGSYC has a hole 2026-10-22 → 11-03 here; since P52 a week
 whose mark falls in a capture gap is left unscored rather than priced on an old yield.
 
-**Next up:** phase L is done and nothing moved; the next gate questions are the suspect weights under *Open questions* (P17 / P28 bonds, AUS currency), for an agent review the user decides. Each Monday's run extends `out/rules/` and `out/overrides/` by a month end when one has passed, and the live monitors start counting from 2026-11-09. The phase K
+**Next up:** phase L is done and nothing moved; the suspect override weights (P17 / P28 bonds, AUS currency) were reviewed (`docs/results/R-phase-l-weights.md`: noise, no bug) and the user kept them 2026-11-09. Open: S15 (unblocked), S31 (needs `stockbiter.db` here), S22. Each Monday's run extends `out/rules/` and `out/overrides/` by a month end when one has passed, and the live monitors start counting from 2026-11-09. The phase K
 review findings still open are listed in *Open questions*, and any change to a phase K number goes
 through an agent review the user decides. Fetcher asks: the IDN 10Y for 2025-01 → 2026-09
 (dbnomics, then idxscape) and AVIA's listing P/E (idx-method), *Open data gaps*. Each Monday's
@@ -1445,17 +1445,12 @@ Parallel groups: S57 → {S58, S61b, S62} → {S59, S63} → {S60, S64} → {S61
   - *JCI P/E level.* The cap-weighted EY over idx-method's snapshot and `factor_series` agree
     with each other (+0.06pt mean, P68), but nothing outside idx-method checks the level (an
     IDX or index-provider P/E).
-- **AUS currency weights look inverted** (P83, 2026-11-09, evidence only). The P28 AUS currency
-  shift preceded the opposite AUD/IDR move on both sides (3-month t −1.50 / −0.84; 1-month
-  −2.39 / −2.51); the `fx` component (+3, AUD's own 3-month move) dominates, and AUD/IDR looks
-  mean-reverting over 1–3 months. Weights stay as written until an agent review says otherwise.
-- **Bonds weights lean the wrong way across markets** (P83, evidence only): signed t below zero on
-  both bonds sides for IDN, USA and SGP and on EMU up (P17 / P28 inflation −3, policy −3). Weak
-  per market, consistent across them. See also the P17 line below.
-- **P17 bonds weights may be wrong-signed** (P78, 2026-11-09, evidence only). On the IDN
-  override history 2017-07 → 2024-08 an up bonds shift preceded lower 3-month 10Y returns and a
-  down shift higher (t −0.99 / −1.03, 29 windows); `bi_rate` (bonds −3) down-push reads t −1.09.
-  Weak; the weights stay as written (phase L choice 1) unless an agent review says otherwise.
+- ~~**Suspect phase L override weights**~~ (P78, P83: AUS currency `fx` looked inverted; bonds
+  weights leaned the wrong way in IDN, USA, SGP, EMU up). Agent review 2026-11-09
+  (`docs/results/R-phase-l-weights.md`): noise, no sign, unit or timing bug; **kept** by the user
+  2026-11-09. Design notes left for a later ex-ante review: bonds gated in IDR unhedged mix the
+  FX leg into the sign; FRA and ITA bonds are gated on the Bund; USA `flows_treasury` (−2.42) is
+  a lead, found in-sample.
 - ~~**Phase L choices 1–13**~~ (layer-2 overrides on their history): all 13 defaults accepted by
   the user 2026-11-09; S58 onward is unblocked.
 
