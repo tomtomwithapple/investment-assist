@@ -7,7 +7,10 @@ so `assist run` also writes what layers 0, 2, 3 and 5 computed:
   every input of `assist.layers.regime` (counted rules and the not-adopted candidates): value,
   newest date, its vote as `classify` counts it, and a 1-year weekly line (each Friday: the
   series' last point on or before it, and the input as `regime.inputs` computes it that day,
-  both from the run day's vintage).
+  both from the run day's vintage). Since schema 1.1.0 (S53, P72) it also carries `home`, the
+  home (IDN) regime (P71's rule on P70's inputs): state, points, the rule's numbers, and each of
+  the four inputs with its points, value, newest date and a 1-year weekly line (each Friday: the
+  input as `home_inputs` computes it that day). No home regime this run, no `home` block.
 - `<SUBJECT>.json` for every subject the run builds layer-2 overrides for (IDN, and the
   foreign markets of P28: USA, JPN, EMU, AUS, SGP): the components, each asset's capped shift
   and uncapped raw sum, and for IDN the layer-3 signals and the chart windows (IDX net foreign
@@ -42,6 +45,8 @@ from typing import Any
 
 import jsonschema
 
+from assist.layers import home_inputs as hi
+from assist.layers import home_regime
 from assist.layers import overrides as idn_ov
 from assist.layers import overrides_foreign as fo
 from assist.layers import regime as rg
@@ -56,12 +61,15 @@ from assist.sources.idxscape import (
     SBN_NON_RESIDENT,
 )
 from assist.sources.usfin import net_liquidity
-from assist.stance import mandate_summary
+from assist.stance import HOME_SHIFT_PT, mandate_summary
 
-__all__ = ["DIR", "SCHEMA_VERSION", "portfolio_payload", "regime_payload", "subject_payload",
+__all__ = ["DIR", "SCHEMA_VERSION", "SCHEMA_VERSIONS", "home_block", "home_history",
+           "portfolio_payload", "regime_payload", "subject_payload",
            "idn_charts", "validator", "write_layers"]
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.0.0"  # the subject and portfolio files
+# Per kind; regime 1.1.0 adds the optional `home` block (S53).
+SCHEMA_VERSIONS = {"regime": "1.1.0", "subject": SCHEMA_VERSION, "portfolio": SCHEMA_VERSION}
 DIR = "layers"
 KINDS = ("regime", "subject", "portfolio")
 HISTORY_WEEKS = 52  # layer-0 sparkline
@@ -104,7 +112,7 @@ def _failure(what: str, e: Exception) -> str:
 
 
 def _head(kind: str, as_of: date, fingerprint: str) -> dict:
-    return {"schema_version": SCHEMA_VERSION, "kind": kind, "as_of": as_of.isoformat(),
+    return {"schema_version": SCHEMA_VERSIONS[kind], "kind": kind, "as_of": as_of.isoformat(),
             "model_fingerprint": fingerprint}
 
 
@@ -220,6 +228,50 @@ def regime_payload(day: date, fingerprint: str, regime: Any, inputs: Any = None,
     stale = [*regime.stale_inputs, *(inputs.stale_inputs if inputs is not None else ()),
              *history_stale]
     return _tail(p, stale, regime.sources)
+
+
+def home_history(day: date, sources: Any) -> tuple[dict[str, list[dict]], list[str]]:
+    """The 1-year weekly line of each home input ({feature: [{date, value}]}), each Friday's
+    value as `home_inputs` computes it that day. Never raises: a failure is one stale line."""
+    empty = {f: [] for f in hi.FEATURES}
+    if sources is None:
+        return empty, []
+    fridays = rg.weekly(day - timedelta(weeks=HISTORY_WEEKS) + timedelta(days=1), day)
+    try:
+        by_day = home_regime.history(fridays, sources)
+    except Exception as e:  # noqa: BLE001 - a sparkline never fails the run
+        return empty, [_failure("home history", e)]
+    out: dict[str, list[dict]] = {f: [] for f in hi.FEATURES}
+    for friday in sorted(by_day):
+        values = by_day[friday].values
+        for feat in hi.FEATURES:
+            v = _num(values.get(feat))
+            if v is not None:
+                out[feat].append({"date": friday.isoformat(), "value": v})
+    return out, []
+
+
+def home_block(home: Any, history: Mapping[str, list[dict]] | None = None) -> dict:
+    """`regime.json` `home`: the home regime, its rule's numbers and each input's line."""
+    rows = []
+    for feat in hi.FEATURES:
+        value = home.values.get(feat)
+        pts = home.by_input.get(feat)
+        rows.append({"feature": feat, "counted": pts is not None, "points": pts,
+                     "label": home_regime.FORMAT[feat].format(value) if value is not None
+                     else None,
+                     "value": _num(value), "last": _iso(home.last.get(feat)),
+                     "history": list((history or {}).get(feat, []))})
+    return {"as_of": home.as_of.isoformat(), "state": home.state, "points": home.points,
+            "drivers": list(home.drivers), "stale_inputs": list(home.stale_inputs),
+            "rule": {"state_at": home_regime.STATE_AT,
+                     "jci_points": [list(x) for x in home_regime.JCI_POINTS],
+                     "flow_z_at": home_regime.FLOW_Z_AT,
+                     "usdidr_points": [list(x) for x in home_regime.USDIDR_POINTS],
+                     "sbn_at": home_regime.SBN_AT,
+                     "max_age_days": home_regime.MAX_AGE.days,
+                     "shift_pt": HOME_SHIFT_PT, "shift_adopted": home_regime.HOME_SHIFT_ADOPTED},
+            "history_weeks": HISTORY_WEEKS, "inputs": rows}
 
 
 # ---------------- layers 2-3 ----------------
@@ -466,18 +518,26 @@ def _dumps(payload: Mapping) -> str:
 
 
 def write_layers(layers: Any, stances: Sequence[Mapping], fingerprint: str, out_dir: Path, *,
-                 fred: Any = None, idn: Any = None) -> list[Path]:
+                 fred: Any = None, idn: Any = None, home_sources: Any = None) -> list[Path]:
     """Write `out/layers/{regime,<SUBJECT>,portfolio}.json` from the run's `layers` (a
     `pipeline.Layers`) and drop subject files this run did not produce. `fred` and `idn` (the
-    run's FRED source and `IdnSources`) serve the history and chart reads. Never raises."""
+    run's FRED source and `IdnSources`) serve the history and chart reads, `home_sources` (a
+    `HomeSources`) the home inputs' weekly lines. Never raises."""
     day = layers.day
     d = Path(out_dir) / DIR
     files: list[tuple[str, dict]] = []
 
     def regime_file() -> dict:
         hist, h_stale = regime_history(day, fred)
-        return regime_payload(day, fingerprint, layers.regime, layers.regime_inputs, hist,
-                              h_stale)
+        p = regime_payload(day, fingerprint, layers.regime, layers.regime_inputs, hist,
+                           h_stale)
+        home = getattr(layers, "home", None)
+        if home is not None:
+            h_hist, hh_stale = home_history(day, home_sources)
+            p["home"] = home_block(home, h_hist)
+            p["stale_inputs"] = _uniq([*p["stale_inputs"], *hh_stale])
+            p["sources"] = _uniq([*p["sources"], *home.sources])
+        return p
 
     files.append(("regime", _safe("regime", "regime", day, fingerprint, regime_file)))
 

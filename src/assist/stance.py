@@ -40,6 +40,16 @@ of the cap thus sits in the rebalance, so a neutral leg always shows a 0 tilt an
 add up to the gap exactly. Outside the mandate the benchmark is 0: rebalance = −current, tilt 0.
 Holdings unknown: both null. Targets, deltas and entries are unchanged by the split.
 
+Phase K (S53, open question 8, fixed 2026-11-07): the home (IDN) regime (`layers.home_regime`)
+reaches IDN stocks and IDN bonds only (`HOME_ASSETS`). Home risk_off ladders their adds and trims
+(`LADDER_TRANCHES` × `LADDER_SPACING_DAYS`, the same ladder): an entry style, not a stance change,
+so it needs no gate. Their score moves `HOME_SHIFT_PT` (−5) only if
+`home_regime.HOME_SHIFT_ADOPTED` (its walk-forward passed; False since P71), and never on top of
+a global risk_off: both off is −5, not −10. Each IDN leg carries a `home_regime` block (state,
+points, drivers, stale inputs); its stale inputs stay in the block and do not lower the
+confidence, since the home regime does not move the score while not adopted. Bands, `TILT_PT`,
+`BENCHMARK_PCT` and `TRANSITION_PT` are unchanged.
+
 Every number below is hand-set and stays so until a rule using it beats its placebo control.
 TODO(PLAN.md, Open questions): the ±5 pt tilt (`TILT_PT`) is still a placeholder until phase I
 has run; the benchmark itself is the user's choice, not fitted.
@@ -54,6 +64,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 
+from assist.layers import home_regime as hr
+from assist.layers.home_regime import HomeRegime
 from assist.layers.types import (
     DISCLAIMER,
     MAX_OVERRIDE,
@@ -67,6 +79,8 @@ __all__ = [
     "BENCHMARK_PCT",
     "BENCHMARK_TEXT",
     "DISCLAIMER",
+    "HOME_ASSETS",
+    "HOME_SHIFT_PT",
     "LADDER_SPACING_DAYS",
     "LADDER_TRANCHES",
     "MANDATE",
@@ -82,6 +96,7 @@ __all__ = [
     "apply_limits",
     "base_stance",
     "build_stance",
+    "home_shift",
     "dumps",
     "mandate_summary",
     "model_fingerprint",
@@ -89,9 +104,9 @@ __all__ = [
     "stance_for",
 ]
 
-SCHEMA_VERSION = "1.1.0"  # 1.1: portfolio.rebalance_pt / tilt_pt (S42)
-MODEL_VERSION = "0.4.0"  # 0.2: phase B (F2), IDN rules and layer 4; 0.3: phase C (F3) foreign;
-# 0.4: phase I (S39), benchmark 48/32/20 and the 100% rule
+SCHEMA_VERSION = "1.2.0"  # 1.1: portfolio.rebalance_pt / tilt_pt (S42); 1.2: home_regime (S53)
+MODEL_VERSION = "0.5.0"  # 0.2: phase B (F2), IDN rules and layer 4; 0.3: phase C (F3) foreign;
+# 0.4: phase I (S39), benchmark 48/32/20 and the 100% rule; 0.5: phase K (S53), home regime
 
 # Layer-0 shift of the layer-1 score, in points (same for every asset in v0).
 REGIME_SHIFT = {"risk_on": 5.0, "neutral": 0.0, "risk_off": -5.0}
@@ -121,6 +136,11 @@ LADDER_SPACING_DAYS = 10
 TRANSITION_PT = 10.0
 STALE_PENALTY = 0.9  # confidence multiplier per stale or missing input
 
+# Open question 8 (fixed 2026-11-07): what the home (IDN) regime reaches, and its score shift,
+# applied only if `home_regime.HOME_SHIFT_ADOPTED` and not on top of a global risk_off.
+HOME_ASSETS = frozenset({("IDN", "stocks"), ("IDN", "bonds")})
+HOME_SHIFT_PT = -5.0
+
 MODEL_CONFIG = {
     "model_version": MODEL_VERSION,
     "regime_shift": REGIME_SHIFT,
@@ -135,6 +155,13 @@ MODEL_CONFIG = {
     "stale_penalty": STALE_PENALTY,
     "max_override": MAX_OVERRIDE,
     "override_moves_stance": False,  # held at the band without overrides until a placebo passes
+    "home_regime": {
+        "assets": sorted(f"{s}/{a}" for s, a in HOME_ASSETS),
+        "ladder": "risk_off",  # adds and trims, LADDER_TRANCHES x LADDER_SPACING_DAYS
+        "shift_pt": HOME_SHIFT_PT,
+        "shift_adopted": hr.HOME_SHIFT_ADOPTED,
+        "shift_with_global_risk_off": 0.0,  # both off: -5, not -10
+    },
 }
 
 
@@ -183,11 +210,26 @@ def _override_shift(key: tuple[str, str], overrides: Sequence[Override]) -> floa
     return _clip(sum(o.delta for o in mine), -MAX_OVERRIDE, MAX_OVERRIDE)
 
 
-def base_stance(score: AssetScore, regime: Regime | None) -> str:
-    """The band stance `build_stance` gives before any asset rule: layer 1 + regime. The
-    overrides may move the score but not the band (see the module notes)."""
-    shift = REGIME_SHIFT[regime.state if regime is not None else "neutral"]
-    return stance_for(_r(_clip(score.score + shift)))
+def _home_for(key: tuple[str, str], home: HomeRegime | None) -> HomeRegime | None:
+    """The home regime when it reaches this stance (IDN stocks and bonds), else None."""
+    return home if key in HOME_ASSETS else None
+
+
+def home_shift(state: str, home: HomeRegime | None) -> float:
+    """The home score shift (open question 8): `HOME_SHIFT_PT` on a home risk_off, only if
+    adopted, and 0 when the global regime is risk_off already (−5 in all, not −10)."""
+    if home is None or home.state != "risk_off" or not hr.HOME_SHIFT_ADOPTED:
+        return 0.0
+    return 0.0 if state == "risk_off" else HOME_SHIFT_PT
+
+
+def base_stance(score: AssetScore, regime: Regime | None, home: HomeRegime | None = None) -> str:
+    """The band stance `build_stance` gives before any asset rule: layer 1 + regime (+ the home
+    shift, if adopted, on IDN stocks and bonds). The overrides may move the score but not the
+    band (see the module notes)."""
+    state = regime.state if regime is not None else "neutral"
+    home = _home_for((score.subject, score.asset), home)
+    return stance_for(_r(_clip(score.score + REGIME_SHIFT[state] + home_shift(state, home))))
 
 
 def build_stance(
@@ -202,11 +244,13 @@ def build_stance(
     as_of: date | None = None,
     fingerprint: str | None = None,
     rule: RuleView | None = None,
+    home: HomeRegime | None = None,
 ) -> dict:
     """Stance payload (schema/stance.schema.json) for `score.subject` × `score.asset`.
 
     `regime` or `weights` may be None (store missing or locked): the regime is then taken as
-    neutral, holdings as unknown, and each is named in `stale_inputs`."""
+    neutral, holdings as unknown, and each is named in `stale_inputs`. `home` (the home regime)
+    is read for IDN stocks and bonds only and ignored for every other stance."""
     key = (score.subject, score.asset)
     if (subject and subject != key[0]) or (asset and asset != key[1]):
         raise ValueError(f"score is for {key}, asked for {(subject, asset)}")
@@ -230,6 +274,18 @@ def build_stance(
         risks.append("global regime risk_off")
     if dollar == "up":
         risks.append("broad dollar rising")
+    home = _home_for(key, home)
+    h_shift = home_shift(state, home)
+    home_off = home is not None and home.state == "risk_off"
+    if home_off:
+        drivers.append(f"home (IDN) regime risk_off ({home.points} points): adds and trims "
+                       f"laddered over {LADDER_TRANCHES} tranches")
+        if h_shift:
+            drivers.append(f"home (IDN) regime risk_off ({h_shift:+.1f}pt)")
+        risks.append("home (IDN) regime risk_off")
+        sources.update(home.sources)
+    elif home is not None:
+        sources.update(home.sources)
 
     mine = [o for o in overrides if (o.subject, o.asset) == key]
     for o in mine:
@@ -240,8 +296,8 @@ def build_stance(
     if regime is not None:
         drivers.extend(regime.drivers)
 
-    final = _r(_clip(score.score + shift + override))
-    stance = base_stance(score, regime)
+    final = _r(_clip(score.score + shift + h_shift + override))
+    stance = base_stance(score, regime, home)
     if stance_for(final) != stance:
         drivers.append(f"layer-2 overrides would move the stance to {stance_for(final)};"
                        f" held at {stance} until they beat a placebo")
@@ -285,9 +341,8 @@ def build_stance(
         entry = dict(_NONE)
     else:
         gap = _r(target - current)
-        if gap > 0 and state == "risk_off":
-            entry = {"style": "ladder", "tranches": LADDER_TRANCHES,
-                     "spacing_days": LADDER_SPACING_DAYS}
+        if (gap > 0 and state == "risk_off") or (gap != 0 and home_off):
+            entry = dict(_LADDER)
         elif (gap > 0 and rule is not None and rule.stance is not None and rule.entry
               and rule.entry.get("style") != "none"):
             entry = {k: int(rule.entry[k]) if k != "style" else rule.entry[k]
@@ -328,10 +383,19 @@ def build_stance(
         payload["portfolio"]["notes"] = list(weights.notes)
     if dollar is not None:
         payload["dollar"] = dollar
+    if home is not None:
+        payload["home_regime"] = {"state": home.state, "points": home.points,
+                                  "drivers": list(home.drivers),
+                                  "stale_inputs": list(home.stale_inputs)}
     return payload
 
 
 _NONE = {"style": "none", "tranches": 0, "spacing_days": 0}
+_LADDER = {"style": "ladder", "tranches": LADDER_TRANCHES, "spacing_days": LADDER_SPACING_DAYS}
+
+
+def _home_off(p: Mapping) -> bool:
+    return (p.get("home_regime") or {}).get("state") == "risk_off"
 
 
 def _split(pf: dict, tilt: float | None) -> None:
@@ -397,8 +461,9 @@ def apply_limits(stances: Sequence[dict],
     rata in 0.1 pt steps (largest remainder, so the rounded targets sum to the cap exactly) and
     its delta and entry are recomputed. Then every leg more than `TRANSITION_PT` from its
     target gets a ladder (`LADDER_TRANCHES` × `LADDER_SPACING_DAYS`), for an add or a trim; a
-    smaller move keeps the per-stance entry (risk_off or gated rule ladder, else lump; a trim
-    `none`). Changes the payloads in place and returns `mandate_summary` plus the scale."""
+    smaller move keeps the per-stance entry (global or home risk_off or gated rule ladder, else
+    lump; a trim `none`, or a ladder on a home risk_off). Changes the payloads in place and
+    returns `mandate_summary` plus the scale."""
     bm = BENCHMARK_PCT if benchmark is None else benchmark
     legs = sorted((p for p in stances if (p["subject"], p["asset"]) in bm),
                   key=lambda p: (p["subject"], p["asset"]))
@@ -422,7 +487,9 @@ def apply_limits(stances: Sequence[dict],
             if pf["current_pct"] is None:
                 continue
             gap = _r(pf["target_pct"] - pf["current_pct"])
-            if gap <= 0:
+            if gap < 0 and _home_off(p):  # home risk_off ladders trims too (S53)
+                p["entry"] = dict(_LADDER)
+            elif gap <= 0:
                 p["entry"] = dict(_NONE)
             pf["delta"] = _delta_text(gap, p["entry"])
     for p in legs:
@@ -431,8 +498,7 @@ def apply_limits(stances: Sequence[dict],
             continue
         gap = _r(pf["target_pct"] - pf["current_pct"])
         if abs(gap) > TRANSITION_PT:
-            p["entry"] = {"style": "ladder", "tranches": LADDER_TRANCHES,
-                          "spacing_days": LADDER_SPACING_DAYS}
+            p["entry"] = dict(_LADDER)
             pf["delta"] = _delta_text(gap, p["entry"])
             p["drivers"].append(f"move of {abs(gap):.1f}pt to target is above "
                                 f"{TRANSITION_PT:g}pt: laddered over {LADDER_TRANCHES} tranches")

@@ -386,6 +386,85 @@ def test_run_with_idn_stores_missing_degrades_to_no_call(tmp_path, sources):
     assert j.verify() == len(recs)
 
 
+# ---------------- home (IDN) regime in the run (S53, P72) ----------------
+
+
+def test_run_puts_the_home_regime_on_idn_legs_and_in_the_regime_record(tmp_path, sources):
+    paths = pipeline.Paths.under(tmp_path / "repo")
+    res = pipeline.run(DAY, paths=paths, sources=sources, send=False)
+    assert res.ok and res.home is not None
+    assert res.home.state == "neutral" and res.home.points == 0  # every store missing
+    for asset in ("bonds", "stocks"):
+        p = valid(json.loads((paths.out / "IDN" / f"{asset}.json").read_text()))
+        assert p["schema_version"] == "1.2.0" and p["model_version"] == "0.5.0"
+        assert p["home_regime"]["state"] == "neutral"
+        assert "idxscape (missing)" in p["home_regime"]["stale_inputs"]
+    for f in paths.out.glob("[A-Z]*/*.json"):
+        if f.parent.name != "IDN" or f.stem not in ("bonds", "stocks"):
+            assert "home_regime" not in json.loads(f.read_text()), f
+    recs = [r for r in journal.Journal(paths.journal).read() if r["kind"] == "regime"]
+    assert len(recs) == 1
+    out = recs[0]["outputs"]
+    assert out["state"] == res.regime.state and out["dollar"] == res.regime.dollar
+    assert out["home"]["state"] == "neutral" and out["home"]["points"] == 0
+    assert set(out["home"]["by_input"]) == {"jci_drawdown_20d", "idx_foreign_z", "usdidr_20d",
+                                            "sbn_non_resident_20d"}
+    assert pipeline.last_regime(journal.Journal(paths.journal).read(), DAY)["state"] == \
+        res.regime.state
+
+
+def test_home_risk_off_ladders_the_idn_legs_in_a_run(tmp_path, sources, monkeypatch):
+    from assist.layers.home_regime import HomeRegime
+
+    off = HomeRegime(DAY, "risk_off", 2, {"jci_drawdown_20d": 2, "idx_foreign_z": 0,
+                                          "usdidr_20d": 0, "sbn_non_resident_20d": None},
+                     drivers=("JCI -12.2% vs 20d high (2)",), sources=("idxscape",))
+    seen = []
+
+    def fake(day, src):
+        seen.append((day, src))
+        return off
+
+    monkeypatch.setattr(pipeline.home_regime, "home_regime", fake)
+    paths = pipeline.Paths.under(tmp_path / "repo")
+    res = pipeline.run(DAY, paths=paths, sources=sources, send=False)
+    assert res.ok and res.home is off and seen[0][0] == DAY
+    hs = seen[0][1]
+    idn = sources.idn
+    assert (hs.jci, hs.idxscape, hs.usdidr) == (idn.idxmethod, idn.idxscape, idn.idxscape)
+    for asset in ("bonds", "stocks"):
+        p = valid(json.loads((paths.out / "IDN" / f"{asset}.json").read_text()))
+        assert p["regime"] == res.regime.state
+        assert p["home_regime"]["state"] == "risk_off"
+        assert "home (IDN) regime risk_off" in p["risks"]
+        gap = round(p["portfolio"]["target_pct"] - p["portfolio"]["current_pct"], 1)
+        assert p["entry"]["style"] == ("ladder" if gap else "none"), (asset, gap)
+    rec = next(r for r in journal.Journal(paths.journal).read() if r["kind"] == "regime")
+    assert rec["outputs"]["home"]["state"] == "risk_off"
+
+
+def test_home_regime_failing_degrades(tmp_path, sources, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("home regime exploded")
+
+    monkeypatch.setattr(pipeline.home_regime, "home_regime", boom)
+    paths = pipeline.Paths.under(tmp_path / "repo")
+    res = pipeline.run(DAY, paths=paths, sources=sources, send=False)
+    assert res.ok and res.home is None
+    assert "home regime failed: RuntimeError: home regime exploded" in res.stale_inputs
+    p = valid(json.loads((paths.out / "IDN" / "bonds.json").read_text()))
+    assert "home_regime" not in p
+    rec = next(r for r in journal.Journal(paths.journal).read() if r["kind"] == "regime")
+    assert rec["outputs"]["home"] is None
+
+
+def test_home_sources_prefer_the_usdidr_splice(tmp_path):
+    src = missing_idn(tmp_path)
+    src.usdidr = splice = object()
+    hs = pipeline.home_sources(src)
+    assert (hs.jci, hs.idxscape, hs.usdidr) == (src.idxmethod, src.idxscape, splice)
+
+
 def test_rerun_is_byte_identical_with_the_idn_layers(tmp_path, sources):
     paths = pipeline.Paths.under(tmp_path / "repo")
     pipeline.run(DAY, paths=paths, sources=sources, send=False)

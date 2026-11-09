@@ -488,7 +488,7 @@ def test_schema_takes_old_payloads_without_the_split():
         p["portfolio"].pop(k)
     p["schema_version"] = "1.0.0"
     valid(p)
-    assert st.SCHEMA_VERSION == "1.1.0" and build()["schema_version"] == "1.1.0"
+    assert build()["schema_version"] == st.SCHEMA_VERSION
 
 
 def test_split_text():
@@ -498,3 +498,133 @@ def test_split_text():
     assert st.split_text(usa) == "+23.8pt = +19.0pt rebalance to benchmark, +4.8pt tilt"
     assert st.split_text({"rebalance_pt": None, "tilt_pt": None}) is None
     assert st.split_text({"current_pct": 1.0, "target_pct": 1.0}) is None
+
+
+# ---------------- home (IDN) regime (S53, P72; open question 8) ----------------
+
+HOME_LADDER = {"style": "ladder", "tranches": st.LADDER_TRANCHES,
+               "spacing_days": st.LADDER_SPACING_DAYS}
+
+
+def home(state="risk_off", points=2, **kw):
+    from assist.layers.home_regime import HomeRegime
+
+    by = {"jci_drawdown_20d": points, "idx_foreign_z": 0, "usdidr_20d": 0,
+          "sbn_non_resident_20d": None}
+    args = {"drivers": ("JCI -18.8% vs 20d high (2)",) if points else (),
+            "stale_inputs": ("idxscape SBN.TOTAL.non_resident (last 2026-09-04)",),
+            "sources": ("idxscape",)}
+    args.update(kw)
+    return HomeRegime(D, state, points, by, **args)
+
+
+def test_home_risk_off_with_neutral_global_ladders_an_idn_add_within_10pt():
+    # IDN bonds neutral: target 32, held 25, a +7pt add, under TRANSITION_PT
+    base = build(score=score(50.0), weights=weights(25.0))
+    assert base["entry"]["style"] == "lump"
+    out = valid(build(score=score(50.0), weights=weights(25.0), home=home()))
+    st.apply_limits([out])
+    valid(out)
+    assert out["regime"] == "neutral"
+    assert out["entry"] == HOME_LADDER
+    assert out["portfolio"]["delta"] == f"+7.0pt over {st.LADDER_TRANCHES} tranches"
+    # an entry style, not a stance change: stance, score and target as without it
+    for k in ("stance", "score", "layer1_score", "confidence"):
+        assert out[k] == base[k], k
+    assert out["portfolio"]["target_pct"] == base["portfolio"]["target_pct"]
+    assert out["home_regime"] == {
+        "state": "risk_off", "points": 2, "drivers": ["JCI -18.8% vs 20d high (2)"],
+        "stale_inputs": ["idxscape SBN.TOTAL.non_resident (last 2026-09-04)"]}
+    assert "home (IDN) regime risk_off" in out["risks"]
+    assert any(d.startswith("home (IDN) regime risk_off (2 points)") for d in out["drivers"])
+    assert not any("move of" in d for d in out["drivers"])  # not the S39 transition ladder
+
+
+def test_home_risk_off_ladders_an_idn_stocks_trim_within_10pt():
+    w = weights(55.0, key=("IDN", "stocks"))
+    base = build(score=score(50.0, asset="stocks"), weights=w)
+    assert base["entry"]["style"] == "none" and base["portfolio"]["delta"] == "-7.0pt trim"
+    out = build(score=score(50.0, asset="stocks"), weights=w, home=home())
+    st.apply_limits([out])
+    valid(out)
+    assert out["entry"] == HOME_LADDER
+    assert out["portfolio"]["delta"] == f"-7.0pt trim over {st.LADDER_TRANCHES} tranches"
+
+
+def test_home_ladder_survives_the_pro_rata_scale():
+    w = Weights(as_of=D, weights={("IDN", "stocks"): 52.0, ("IDN", "cash"): 48.0})
+    out = [st.build_stance(score=score(SCORE_FOR["overweight"], subject=s, asset=a),
+                           regime=regime(), weights=w,
+                           home=home() if s == "IDN" else None) for s, a in LEGS]
+    st.apply_limits(out)
+    stocks = _by(out, "IDN", "stocks")
+    assert stocks["portfolio"]["target_pct"] == 46.1  # 53 scaled ×0.870
+    assert stocks["portfolio"]["delta"] == f"-5.9pt trim over {st.LADDER_TRANCHES} tranches"
+    assert stocks["entry"] == HOME_LADDER
+
+
+def test_home_neutral_changes_no_entry_and_carries_its_block():
+    base = build(score=score(50.0), weights=weights(25.0))
+    out = valid(build(score=score(50.0), weights=weights(25.0),
+                      home=home("neutral", 1, drivers=("JCI -7.3% vs 20d high (1)",))))
+    assert out["entry"] == base["entry"] == {"style": "lump", "tranches": 1, "spacing_days": 0}
+    assert out["home_regime"]["state"] == "neutral" and out["home_regime"]["points"] == 1
+    assert {k: v for k, v in out.items() if k not in ("home_regime", "sources")} == \
+        {k: v for k, v in base.items() if k not in ("home_regime", "sources")}
+
+
+@pytest.mark.parametrize("key", [("USA", "stocks"), ("IDN", "currency"), ("JPN", "bonds")])
+def test_home_regime_leaves_other_stances_unchanged(key):
+    w = weights(5.0, key=key)
+    args = {"score": score(50.0, subject=key[0], asset=key[1]), "weights": w}
+    assert build(**args, home=home()) == build(**args)
+
+
+def test_home_shift_not_adopted_moves_no_score():
+    from assist.layers import home_regime as hr
+
+    assert hr.HOME_SHIFT_ADOPTED is False
+    assert st.MODEL_CONFIG["home_regime"]["shift_adopted"] is False
+    out = build(score=score(62.0), weights=weights(30.0), home=home())
+    assert out["score"] == 62.0 and out["stance"] == "overweight"
+    assert not any("pt)" in d and d.startswith("home") for d in out["drivers"])
+
+
+@pytest.mark.parametrize(("global_state", "expected"),
+                         [("neutral", 57.0), ("risk_off", 57.0), ("risk_on", 62.0)])
+def test_home_shift_if_adopted_is_minus_5_not_minus_10(monkeypatch, global_state, expected):
+    from assist.layers import home_regime as hr
+
+    monkeypatch.setattr(hr, "HOME_SHIFT_ADOPTED", True)
+    out = valid(build(score=score(62.0), regime=regime(global_state), weights=weights(30.0),
+                      home=home()))
+    assert out["score"] == expected  # global risk_off and home risk_off: -5, not -10
+    assert out["stance"] == st.stance_for(expected)
+    assert st.base_stance(score(62.0), regime(global_state), home()) == out["stance"]
+    if global_state != "risk_off":
+        assert "home (IDN) regime risk_off (-5.0pt)" in out["drivers"]
+    # a USA stance takes no home shift
+    usa = build(score=score(62.0, subject="USA", asset="stocks"), regime=regime(global_state),
+                weights=weights(30.0, key=("USA", "stocks")), home=home())
+    assert usa["score"] == 62.0 + st.REGIME_SHIFT[global_state]
+
+
+def test_home_config_is_fingerprinted_and_versions_bumped():
+    cfg = st.MODEL_CONFIG["home_regime"]
+    assert cfg["assets"] == ["IDN/bonds", "IDN/stocks"]
+    assert cfg["shift_pt"] == -5.0 and cfg["ladder"] == "risk_off"
+    changed = {**st.MODEL_CONFIG, "home_regime": {**cfg, "shift_adopted": True}}
+    assert st.model_fingerprint(changed) != st.model_fingerprint()
+    assert st.MODEL_VERSION == "0.5.0" and st.SCHEMA_VERSION == "1.2.0"
+
+
+def test_schema_takes_1_1_payloads_without_home_regime():
+    p = build(home=home())
+    assert p["schema_version"] == "1.2.0" and "home_regime" in p
+    valid(p)
+    p.pop("home_regime")
+    p["schema_version"] = "1.1.0"
+    valid(p)
+    bad = build(home=home())
+    bad["home_regime"]["state"] = "risk_on"  # there is no home risk_on
+    assert list(stance_validator().iter_errors(bad))

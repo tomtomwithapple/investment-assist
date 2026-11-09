@@ -30,6 +30,13 @@ are journalled.
 The bonds rule's USD/IDR is `IdnSources.usdidr` (P65): JISDOR spliced on the MAS cross, the seam
 and the overlap check in its drivers; the signals still read idxscape.
 
+Phase K (S53, P72): with `Sources.idn` set the run also reads the home (IDN) regime
+(`read_home`: P71's rule on P70's inputs, from the JCI, idxscape and the USD/IDR splice;
+`home_sources`). `build_stance` takes it for IDN stocks and bonds: home risk_off ladders their
+adds and trims, a score shift only if `home_regime.HOME_SHIFT_ADOPTED` (open question 8). It is
+journalled as `home` in the run's `regime` record and written as `home` in
+`out/layers/regime.json`; a failure is one run-level stale line, no block, never a failed run.
+
 Phase C (F3) adds the foreign subjects when `Sources.foreign` is set (`Sources.default` sets it):
 
     sec-edgar, dbnomics, bisfetcher, jquantster, ausdata, singstat → foreign overrides (2, P28)
@@ -96,12 +103,14 @@ from assist.eval import gate as rule_gate
 from assist.eval.placebo import Verdict
 from assist.fx import FxEdge, fx_edge
 from assist.layers import candidates_foreign as cf
-from assist.layers import portfolio, regime, undervalued
+from assist.layers import home_regime, portfolio, regime, undervalued
 from assist.layers.bonds import IdnBonds, idn_bonds
 from assist.layers.bonds import gated_stance as bonds_gate
 from assist.layers.bonds.idn import PROXY_10Y
 from assist.layers.candidates import IdnCandidates, idn_candidates
 from assist.layers.candidates_foreign import ForeignCandidates, IndexValuation, foreign_candidates
+from assist.layers.home_inputs import HomeSources
+from assist.layers.home_regime import HomeRegime
 from assist.layers.overrides import IdnOverrides, idn_overrides
 from assist.layers.overrides_foreign import EMU_MEMBERS, ForeignOverrides, foreign_overrides
 from assist.layers.rules import IdnStocks, idn_stocks, month_end_closes
@@ -145,6 +154,8 @@ __all__ = [
     "gather",
     "gather_foreign",
     "gather_idn",
+    "home_sources",
+    "read_home",
     "idr_edges_from",
     "in_scope",
     "rule_gates",
@@ -408,6 +419,7 @@ class Layers:
     portfolio: portfolio.Portfolio | None = None
     statements: tuple[Any, ...] = ()
     portfolio_stale: tuple[str, ...] = ()
+    home: HomeRegime | None = None  # the home (IDN) regime (S53); None without IDN sources
 
     @property
     def scores(self) -> list[AssetScore]:
@@ -437,6 +449,10 @@ def gather(day: date, sources: Sources, history: Sequence[Mapping] = (),
     pf, statements, w_stale = _portfolio(sources.financer)  # as portfolio.current_weights
     weights = pf.weights() if pf is not None else None
     stale += w_stale
+    home = None
+    if sources.idn is not None:
+        home, h_stale = read_home(day, sources.idn)
+        stale += h_stale
     idn, overrides = None, ()
     if sources.idn is not None and layer1 is not None:
         scores = {(s.subject, s.asset): s for s in layer1.scores}
@@ -453,7 +469,26 @@ def gather(day: date, sources: Sources, history: Sequence[Mapping] = (),
     return Layers(day, layer1, reg, weights, overrides=tuple(overrides),
                   stale_inputs=sorted(set(stale)), idn=idn, foreign=foreign,
                   regime_inputs=inputs, portfolio=pf, statements=statements,
-                  portfolio_stale=tuple(w_stale))
+                  portfolio_stale=tuple(w_stale), home=home)
+
+
+def home_sources(src: IdnSources) -> HomeSources:
+    """The home regime's stores from the run's IDN sources: the JCI, idxscape (flows, SBN) and
+    the P65 USD/IDR splice (idxscape JISDOR when the splice is not set)."""
+    return HomeSources(jci=src.idxmethod, idxscape=src.idxscape,
+                       usdidr=src.usdidr if src.usdidr is not None else src.idxscape)
+
+
+def read_home(day: date, src: IdnSources) -> tuple[HomeRegime | None, list[str]]:
+    """The home (IDN) regime on `day` (P71's rule on P70's inputs) and the run-level stale lines:
+    its stale inputs, or one failure line and None (never raises; a missing store is a stale
+    input inside the regime, not a failure)."""
+    try:
+        home = home_regime.home_regime(day, home_sources(src))
+    except Exception as e:  # noqa: BLE001 - the home regime never fails the run
+        first = str(e).splitlines()[0][:160] if str(e) else ""
+        return None, [f"home regime failed: {type(e).__name__}: {first}"]
+    return home, list(home.stale_inputs)
 
 
 def _portfolio(source: Any) -> tuple[portfolio.Portfolio | None, tuple[Any, ...], list[str]]:
@@ -720,7 +755,7 @@ def _idn_view(score: AssetScore, layers: Layers) -> stance.RuleView | None:
         return None
     rule, verdict = idn.rule(score.asset), idn.verdicts.get(score.asset)
     gate = bonds_gate if score.asset == "bonds" else stocks_gate
-    gated, note = gate(stance.base_stance(score, layers.regime), rule, verdict)
+    gated, note = gate(stance.base_stance(score, layers.regime, layers.home), rule, verdict)
     g = idn.gates.get(score.asset)
     if rule.proposed_stance is not None:
         note += (f" (rule gate {g.line()})" if g is not None
@@ -749,7 +784,8 @@ def build(layers: Layers, fingerprint: str) -> list[dict]:
     v = stance_validator()
     out = [stance.build_stance(score=s, regime=layers.regime, weights=layers.weights,
                                overrides=layers.overrides, as_of=layers.day,
-                               fingerprint=fingerprint, rule=rule_view(s, layers))
+                               fingerprint=fingerprint, rule=rule_view(s, layers),
+                               home=layers.home)
            for s in sorted(layers.scores, key=lambda s: (s.subject, s.asset))]
     stance.apply_limits(out)
     for p in out:
@@ -796,7 +832,10 @@ def write_out(stances: Sequence[Mapping], out_dir: Path) -> list[Path]:
 
 def _journal(j: journal.Journal, layers: Layers, stances: Sequence[Mapping], fp: str) -> str:
     run_id = uuid.uuid4().hex
-    j.record(kind="regime", fingerprint=fp, inputs={"day": layers.day}, outputs=layers.regime,
+    outputs = journal.jsonable(layers.regime)
+    if layers.idn is not None or layers.home is not None:  # S53: the home regime rides along
+        outputs["home"] = journal.jsonable(layers.home)
+    j.record(kind="regime", fingerprint=fp, inputs={"day": layers.day}, outputs=outputs,
              as_of=layers.day, run_id=run_id)
     scores = {(s.subject, s.asset): s for s in layers.scores}
     for p in stances:
@@ -1026,6 +1065,7 @@ class RunResult:
     peers: Path | None = None
     tier_replay: Path | None = None
     layer_files: list[Path] = field(default_factory=list)
+    home: HomeRegime | None = None
 
 
 def write_peers(day: date, gather: Callable[[date], dict] | None,
@@ -1114,7 +1154,7 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
     layers = gather(day, sources, history=list(j.read()), rules_dir=paths.out / "rules")
     res = RunResult(ok=False, day=day, regime=layers.regime, stale_inputs=layers.stale_inputs,
                     problems=dict(layers.layer1.problems) if layers.layer1 else {},
-                    idn=layers.idn, foreign=layers.foreign)
+                    idn=layers.idn, foreign=layers.foreign, home=layers.home)
     if layers.layer1 is None or not layers.scores:
         return res  # no layer 1, no stance: leave out/ and the journal as they were
 
@@ -1125,8 +1165,9 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
     res.stances = build(layers, fp)
     res.files = write_out(res.stances, paths.out)
     if sources.layers_out:  # S33: never raises, never changes a stance
-        res.layer_files = layers_out.write_layers(layers, res.stances, fp, paths.out,
-                                                  fred=sources.fred, idn=sources.idn)
+        res.layer_files = layers_out.write_layers(
+            layers, res.stances, fp, paths.out, fred=sources.fred, idn=sources.idn,
+            home_sources=home_sources(sources.idn) if sources.idn is not None else None)
     res.undervalued, uv_stale = _undervalued(day, sources, layers, res.stances, fp, paths)
     res.peers, peer_stale = write_peers(day, sources.peers, paths.out)
     res.tier_replay, tr_stale = write_tier_replay(day, sources.tier_replay, paths.out)
