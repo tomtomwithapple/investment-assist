@@ -2,10 +2,12 @@
 
 Assembles, for one market (IDN; USA from F6, see *US* below):
 
-- **Styles.** P36's dividend screen and P37's GARP screen (S15's value screen plugs in as one
-  more entry in `UndervaluedInputs.screens`). A style whose placebo verdict failed is listed with
-  its verdict and pool, and names no one. Within a style rows are ranked by margin over the
-  hurdle; across styles nothing is ever ranked on a mixed score (`top` takes ranks in turn).
+- **Styles.** P36's dividend screen and P37's GARP screen. S15's `industry_value` is a relative
+  gap with no expected return or margin, so it stays a layer-4 screen (`screens.run_screens`)
+  until a rule for its expected return is decided. A style whose placebo verdict failed is
+  listed with its verdict and pool, and names no one. Within a style rows are ranked by margin
+  over the hurdle; across styles nothing is ever ranked on a mixed score (`top` takes ranks in
+  turn).
 - **Tilt (S16).** Each row's required margin moves by its sector's applied shift (clamped by
   `hurdle.margin`'s ±2 pt), and the tilted sector caps go to sizing, only when the tilt's own
   verdict passed. Otherwise the shift is 0 and the cap the default 5. A name whose margin is no
@@ -85,7 +87,7 @@ __all__ = [
 
 SCHEMA = SCHEMA_DIR / "candidates.schema.json"
 SCHEMA_VERSION = "1.0.0"
-STYLES = ("dividend_value", "garp")  # S15's "value" joins here once idx-method V2/V3 land
+STYLES = ("dividend_value", "garp")  # S15's industry_value has no expected return: not a style
 TRANCHE_IDR = 10e6  # P21's DEFAULT_ORDER: the tranche costs and capacity are judged at
 DROP_FLAGS = ("over_participation", "below_one_lot")
 OUT_DIR = "candidates"
