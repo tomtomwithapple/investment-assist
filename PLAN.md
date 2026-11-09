@@ -1399,7 +1399,7 @@ brackets and its reason.
   first: a bps-looker CPI known for 2 months falls back to dbnomics.
 - [x] **S62 Foreign fx on the USD/IDR splice** (P80-foreign-fx). Choice 12. Test first: 11
   JISDOR fixings plus MAS history give USA and JPN a 3-month `fx` change.
-- [ ] **S63 Foreign override input history** (P81-foreign-override-inputs). Choice 13. S57's
+- [x] **S63 Foreign override input history** (P81-foreign-override-inputs). Choice 13. S57's
   replay for P28 per market, `GDPC1` through `fred_as_of`, the AUS fx MAS fallback in
   history; coverage per market and component.
 - [ ] **S64 Foreign forward returns** (P82-foreign-returns). Choices 2, 3, 13. Bonds on the
@@ -1505,6 +1505,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S62 Foreign fx on the USD/IDR splice (P80-foreign-fx) | done | 2026-11-09 | this commit (branch `phase-l`) | 4 overrides_foreign (1862 total) | P28 reads IDR per USD from the P65 splice (store key `usdidr`, MAS leg lagged a day); live USA fx +0.87% / 3m, JPN +0.38% (both inside 1.5%: shifts unchanged, USA 0 / −3 / +2, JPN −3 / −2 / +1); no JISDOR stale line |
 | S59 Override gate (P77-override-gate) | done | 2026-11-09 | this commit (branch `phase-l`) | 21 override_gate, 3 run_idn, 1 ops (1887 total) | `eval/override_gate.py`: up / down per asset on complete months, phase K numbers, Holm per subject, CLI-zeroed check, live monitor on `overrides` records of the override fingerprint, revocation; `out/overrides/IDN.json` (schema `overrides.schema.json`), `assist overrides`, `assist run` reads it and journals an IDN `overrides` record; live IDN: all six sides failed (S60), nothing moves |
 | S60 IDN override walk-forward (P78-override-walk) | done | 2026-11-09 | this commit (branch `phase-l`) | docs only (1887 total) | horizon 3, complete months: stocks up 24/13 t 1.08 p 0.186, down 12/25 t 0.92 p 0.225; bonds up 13/16 t −0.99, down 15/14 t −1.03; currency up 13/24 t 1.75 p 0.122, **down 15/22 t 2.47 p 0.047** (Holm needs 0.0083; CLI zeroed t 0.95); all six failed, none insufficient; no override may cross a band; 1-month and per-component diagnostics nothing near |t| 2 |
+| S63 Foreign override input history (P81-foreign-override-inputs) | done | 2026-11-09 | this commit (branch `phase-l`) | 9 override_history (1896 total) | `foreign_replay`: P28 on 262 month ends in 86 s, stores read once, GDPC1 at its vintage per date, ausdata per date, AUS fx on the MAS cross until RBA AUD/IDR has 3 months (2023-04); complete months USA 259, JPN 259, EMU 259 (from 2005-04), AUS 155 (from 2013-12, the AGS curve), SGP 247 (2006-04); GDP read at today's revision would flip USA growth in 64 of 262 months; locked reads retried |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

@@ -43,10 +43,13 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import sys
+import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from types import SimpleNamespace
+from typing import Any
 
 from assist.history import (
     HORIZON,
@@ -70,12 +73,15 @@ from assist.sources.idxscape import JISDOR
 __all__ = [
     "ASSETS",
     "COMPONENTS",
+    "FOREIGN",
+    "FredVintage",
     "DURATION",
     "HORIZON",
     "ReturnSources",
     "complete_live",
     "currency_forward",
     "expected_components",
+    "foreign_replay",
     "idn_build",
     "idn_returns",
     "with_returns",
@@ -96,6 +102,7 @@ ASSETS = ("stocks", "bonds", "currency")
 COMPONENTS = tuple(WEIGHTS)  # growth, cli, inflation, trade, bi_rate
 SCHEMA = 2  # 2: forward returns per asset (S58)
 START = date(2005, 1, 31)  # the MAS USD/IDR cross and BI rate (2005-07) start here
+LOCK_TRIES, LOCK_WAIT = 4, 2.0  # a read that finds its store locked by another reader retries
 # The series (and the store) each component reads, for its missing reason.
 SERIES = {
     "growth": (GDP_YOY,),
@@ -119,8 +126,10 @@ class Preloaded:
     adapters do (series ids, inclusive dates). An unavailable store raises the same
     `SourceUnavailable` on every call, so each month names it stale as a live read would."""
 
-    def __init__(self, source: Source, ids: Sequence[str] | None, *, end: date):
+    def __init__(self, source: Source, ids: Sequence[str] | None, *, end: date,
+                 start: date | None = None):
         self.source, self.ids, self.end = source, None if ids is None else list(ids), end
+        self.start = start
         self.name = source.name
         self._rows: list[Row] | None = None
         self._error: SourceUnavailable | None = None
@@ -129,11 +138,19 @@ class Preloaded:
     def _load(self) -> list[Row]:
         if not self._loaded:
             self._loaded = True
-            try:
-                self._rows = sorted(self.source.rows(self.ids, start=None, end=self.end),
-                                    key=lambda r: (r.series_id, r.date))
-            except SourceUnavailable as e:
-                self._error = e
+            for attempt in range(LOCK_TRIES):  # a store locked by another reader: retry
+                try:
+                    self._rows = sorted(self.source.rows(self.ids, start=self.start,
+                                                         end=self.end),
+                                        key=lambda r: (r.series_id, r.date))
+                    break
+                except SourceUnavailable as e:
+                    self._error = e
+                    if e.reason != "locked" or attempt == LOCK_TRIES - 1:
+                        break
+                    time.sleep(LOCK_WAIT * (attempt + 1))
+            if self._rows is not None:
+                self._error = None
         if self._error is not None:
             raise self._error
         return self._rows or []
@@ -183,25 +200,27 @@ class OverrideRow:
     stale_inputs: tuple[str, ...] = ()
     # per asset, the forward return over the history's horizon (None: not known yet, a gap)
     forward: Mapping[str, float | None] = field(default_factory=dict)
+    # the components of the market's spec (P17's five for IDN; a P28 market's own, S63)
+    expected: tuple[str, ...] = COMPONENTS
 
     @property
     def complete(self) -> bool:
-        """Every P17 component was computed."""
-        return all(c in self.components for c in COMPONENTS)
+        """Every component of the market's spec was computed (choice 4)."""
+        return all(c in self.components for c in self.expected)
 
     def to_dict(self) -> dict:
         return {"as_of": self.as_of.isoformat(), "shift": dict(self.shift),
                 "raw": dict(self.raw),
                 "components": {n: c.to_dict() for n, c in self.components.items()},
                 "missing": list(self.missing), "stale_inputs": list(self.stale_inputs),
-                "forward": dict(self.forward)}
+                "forward": dict(self.forward), "expected": list(self.expected)}
 
     @classmethod
     def from_dict(cls, d: Mapping) -> OverrideRow:
         return cls(date.fromisoformat(d["as_of"]), dict(d["shift"]), dict(d["raw"]),
                    {n: ComponentPoint.from_dict(c) for n, c in d["components"].items()},
                    tuple(d.get("missing", ())), tuple(d.get("stale_inputs", ())),
-                   dict(d.get("forward", {})))
+                   dict(d.get("forward", {})), tuple(d.get("expected", COMPONENTS)))
 
 
 def _ym(d: date) -> str:
@@ -239,7 +258,7 @@ class OverrideHistory:
         (months without it between its first and last)."""
         months = [r.as_of for r in self.rows]
         out = {}
-        for name in COMPONENTS:
+        for name in (self.rows[0].expected if self.rows else COMPONENTS):
             have = [r.as_of for r in self.rows if name in r.components]
             if not have:
                 out[name] = {"first": None, "last": None, "months": 0, "holes": []}
@@ -393,6 +412,120 @@ def with_returns(h: OverrideHistory, fwd: Mapping[str, Mapping[Month, float]],
     return dataclasses.replace(h, rows=rows, horizon=horizon)
 
 
+# ---------------- foreign input history (S63) ----------------
+
+FOREIGN = ("USA", "JPN", "EMU", "AUS", "SGP")
+# Choice 13: GDP is the one foreign input with vintages in a store (sec-edgar `fred_as_of`).
+VINTAGE_IDS = ("GDPC1",)
+
+
+def _aus_mas() -> Any:
+    """P28's AUS market with IDR per AUD from the MAS cross (IDR per S$ × S$ per AUD), for the
+    months before ausdata's RBA AUD/IDR (`FXRIR`, from 2023-01) has a 3-month base (choice 13).
+    History only: live keeps RBA's rate."""
+    from assist.layers import overrides_foreign as of
+    from assist.sources.singstat import fx_id
+
+    fx = of.FxSpec(of.IDR_PER_SGD, of.Ref("singstat", fx_id("AUD"), 1, of.MAS_DAILY),
+                   local_per_base=False)
+    return dataclasses.replace(of.market("AUS"), fx=fx)
+
+
+class FredVintage:
+    """sec-edgar FRED for the replay: `vintage_ids` (GDPC1) read per date at the vintage known
+    on the read's `end` (`fred_as_of`), every other series read once (`Preloaded`; daily market
+    series, not revised)."""
+
+    def __init__(self, source: Source, ids: Iterable[str], vintage_ids: Iterable[str], *,
+                 end: date, start: date | None = None):
+        self.source, self.name = source, source.name
+        self.vintage = set(vintage_ids)
+        self.pre = Preloaded(source, sorted(set(ids) - self.vintage), end=end, start=start)
+
+    def rows(self, series_ids: Sequence[str] | None = None, start: date | None = None,
+             end: date | None = None, **_kw) -> list[Row]:
+        ids = list(series_ids) if series_ids is not None else sorted(self.pre.ids or [])
+        rest = [i for i in ids if i not in self.vintage]
+        out = self.pre.rows(rest, start=start, end=end) if rest else []
+        vint = [i for i in ids if i in self.vintage]
+        if vint:
+            out += self._vintage(vint, start, end)
+        return sorted(out, key=lambda r: (r.series_id, r.date))
+
+    def _vintage(self, ids: list[str], start: date | None, end: date | None) -> list[Row]:
+        """One read per date; a store locked by another reader is retried (`LOCK_TRIES`)."""
+        for attempt in range(LOCK_TRIES):
+            try:
+                return self.source.rows(ids, start, end, as_of=end)
+            except SourceUnavailable as e:
+                if e.reason != "locked" or attempt == LOCK_TRIES - 1:
+                    raise
+                time.sleep(LOCK_WAIT * (attempt + 1))
+        return []
+
+
+def _foreign_missing(m: Any, name: str, stale: Sequence[str],
+                     names: Mapping[str, str]) -> str:
+    refs = [r for s in m.specs if s.name == name for r in (*s.refs, *s.minus)]
+    if name == "fx" and m.fx is not None:
+        refs = list(m.fx.refs)
+    keys = [*(r.series_id for r in refs), *(f"{r.source} (" for r in refs),
+            *(f"{names[r.source]} (" for r in refs if r.source in names)]
+    hits = [s for s in stale if any(k in s for k in keys)]
+    return f"{name}: " + ("; ".join(dict.fromkeys(hits)) or "no data")
+
+
+def foreign_replay(dates: Iterable[date], sources: Mapping[str, Source], *,
+                   store_dates: Mapping[str, str | None] | None = None,
+                   progress: Callable[[date], None] | None = None) -> dict[str, OverrideHistory]:
+    """P28 unchanged on each of `dates` for USA, JPN, EMU, AUS and SGP. Every store is read once
+    up to the last date (`Preloaded`), except FRED GDPC1 (its vintage per date, `FredVintage`)
+    and ausdata (asked per date with `as_of`, as P28 asks it, so a period not yet over is
+    skipped). AUS reads the MAS cross for `fx` where RBA's AUD/IDR has no 3-month base."""
+    from assist.layers import overrides_foreign as of
+
+    days = sorted(dates)
+    end = days[-1] if days else date.today()
+    # P28 reads READ_BACK before each date: nothing older is ever asked for
+    start = (days[0] if days else end) - of.READ_BACK - timedelta(days=31)
+    aus_mas = _aus_mas()
+    markets = (*of.MARKETS, aus_mas)
+    wanted: dict[str, set[str]] = {}
+    for ref in of._all_refs(markets):
+        wanted.setdefault(ref.source, set()).add(ref.series_id)
+    wrapped: dict[str, Source] = {}
+    for key, src in sources.items():
+        if key == "fred":
+            wrapped[key] = FredVintage(src, wanted.get(key, ()), VINTAGE_IDS, end=end,
+                                       start=start)
+        elif key == "ausdata":
+            wrapped[key] = src
+        else:
+            wrapped[key] = Preloaded(src, sorted(wanted.get(key, ())), end=end, start=start)
+    names = {k: getattr(v, "name", k) for k, v in sources.items()}
+    rows: dict[str, list[OverrideRow]] = {s: [] for s in FOREIGN}
+    for day in days:
+        if progress is not None:
+            progress(day)
+        fo = of.foreign_overrides(day, wrapped, markets)
+        by = {m.subject: mo for m, mo in zip(markets[:-1], fo.markets[:-1], strict=True)}
+        if by["AUS"].component("fx") is None:
+            by["AUS"] = fo.markets[-1]
+        for subject in FOREIGN:
+            mo, m = by[subject], of.market(subject)
+            if subject == "AUS" and mo is fo.markets[-1]:
+                m = aus_mas
+            comps = {c.name: ComponentPoint(c.value, c.direction, c.last.date, c.series_id,
+                                            c.source) for c in mo.components}
+            expected = expected_components(subject)
+            missing = tuple(_foreign_missing(m, n, mo.stale_inputs, names) for n in expected
+                            if n not in comps)
+            rows[subject].append(OverrideRow(day, {o.asset: o.delta for o in mo.overrides},
+                                             dict(mo.raw), comps, missing, mo.stale_inputs,
+                                             {}, expected))
+    return {s: OverrideHistory(s, tuple(rows[s]), dict(store_dates or {})) for s in FOREIGN}
+
+
 def idn_build(src, day: date) -> OverrideHistory:
     """The IDN override history on every month end `START` → `last_month_end(day)` with its
     forward returns as known on `day`, from a `pipeline.IdnSources` (read-only)."""
@@ -452,10 +585,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--json", type=str, default=None, help="write the history to this file")
     ap.add_argument("--returns", action="store_true",
                     help="join the forward returns per asset (S58)")
+    ap.add_argument("--subject", default=SUBJECT, choices=(SUBJECT, *FOREIGN),
+                    help="IDN (P17) or a P28 market (S63)")
     args = ap.parse_args(argv)
-    h = replay(month_ends(args.start, last_month_end(args.today)), **live_sources())
+    dates = month_ends(args.start, last_month_end(args.today))
+    if args.subject == SUBJECT:
+        h = replay(dates, **live_sources())
+    else:
+        from assist.layers.overrides_foreign import default_sources
+
+        h = foreign_replay(dates, default_sources(),
+                           progress=lambda d: print(f"  {d}", file=sys.stderr, flush=True)
+                           )[args.subject]
     report = {"coverage": h.coverage(), "summary": h.summary()}
-    if args.returns:
+    if args.returns and args.subject == SUBJECT:
         h = with_returns(h, idn_returns(ReturnSources.default(), today=args.today))
         report["returns"] = h.return_coverage()
     print(json.dumps(report, indent=1))
@@ -463,7 +606,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         for r in h.rows:
             sh = " ".join(f"{a[0]}{r.shift[a]:+.0f}" for a in ASSETS)
             dirs = " ".join(f"{n}{r.components[n].direction:+d}" if n in r.components
-                            else f"{n}:-" for n in COMPONENTS)
+                            else f"{n}:-" for n in r.expected)
             fw = " ".join(f"{a[0]}{'-' if r.forward.get(a) is None else f'{r.forward[a]:+.3f}'}"
                           for a in ASSETS) if r.forward else ""
             print(f"{r.as_of} {sh:14} {dirs} {fw}  {' | '.join(r.missing)}")

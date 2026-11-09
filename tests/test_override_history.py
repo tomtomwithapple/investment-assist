@@ -112,14 +112,21 @@ def test_preloaded_never_serves_past_its_end():
     assert max(r.date for r in pre.rows([GDP_YOY])) <= D("2017-12-31")
 
 
-def test_preloaded_reraises_an_unavailable_store_on_every_call():
+def test_preloaded_reraises_an_unavailable_store_on_every_call(monkeypatch):
+    monkeypatch.setattr(OH, "LOCK_WAIT", 0.0)
     fake = Fake("bps-looker", error="locked")
     pre = OH.Preloaded(fake, [GDP_YOY], end=END)
     for _ in range(2):
         with pytest.raises(SourceUnavailable) as e:
             pre.rows([GDP_YOY], start=START, end=END)
         assert e.value.stale_input == "bps-looker (locked)"
-    assert fake.calls == 1
+    assert fake.calls == OH.LOCK_TRIES  # a lock is retried, then named on every call
+    missing = Fake("bps-looker", error="missing")
+    pre = OH.Preloaded(missing, [GDP_YOY], end=END)
+    for _ in range(2):
+        with pytest.raises(SourceUnavailable):
+            pre.rows([GDP_YOY])
+    assert missing.calls == 1
 
 
 # ---------------- replay ----------------
@@ -368,3 +375,204 @@ def test_igsyc_closes_are_priced_on_their_own_dates():
     # daily closes are not lagged: the August call runs from 08-31 to 11-30
     assert fwd[(2018, 8)] == pytest.approx(0.07 * 3 / 12 - OH.DURATION * (8.0 - 7.0) / 100)
     assert (2018, 9) not in fwd
+
+
+# ---------------- foreign input history (P81, PLAN S63) ----------------
+
+import importlib.util  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from assist.layers import overrides_foreign as OF  # noqa: E402
+from assist.sources import singstat as SG  # noqa: E402
+from assist.sources.ausdata import AUD_IDR  # noqa: E402
+
+
+def _foreign_fixtures():
+    """P28's in-memory world (tests/layers/test_overrides_foreign.py), loaded by path."""
+    path = Path(__file__).parent / "layers" / "test_overrides_foreign.py"
+    spec = importlib.util.spec_from_file_location("_p28_world", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+P28 = _foreign_fixtures()
+F_DATES = OH.month_ends(D("2025-04-30"), D("2026-09-30"))
+
+
+class Counting:
+    """Wraps a fake store, counting reads and the `as_of` each read asked for."""
+
+    def __init__(self, inner):
+        self.inner, self.name, self.calls = inner, inner.name, []
+
+    def rows(self, series_ids=None, start=None, end=None, **kw):
+        self.calls.append({"ids": series_ids, "start": start, "end": end, **kw})
+        return self.inner.rows(series_ids, start, end, **kw)
+
+
+def foreign_world(**over):
+    w = P28.world(**over)
+    w["singstat"] = P28.Fake("singstat", w["singstat"]._rows + P28.daily(
+        SG.fx_id("AUD"), "singstat", fill=0.85, last=P28.AS_OF - timedelta(days=2)))
+    return {k: Counting(v) for k, v in w.items()}
+
+
+def test_foreign_replay_equals_the_layer_called_directly():
+    w = foreign_world()
+    hs = OH.foreign_replay(F_DATES, w)
+    assert set(hs) == set(OH.FOREIGN)
+    raw = P28.world()
+    raw["singstat"] = w["singstat"].inner
+    for day in (D("2025-09-30"), D("2026-09-30")):
+        direct = OF.foreign_overrides(day, raw)
+        for m in direct.markets:
+            row = hs[m.subject].row(day)
+            assert row.shift == {o.asset: o.delta for o in m.overrides}, m.subject
+            assert row.raw == m.raw
+            assert {n: c.value for n, c in row.components.items()} == {
+                c.name: c.value for c in m.components}
+
+
+def test_each_foreign_store_is_read_once_but_fred_gdp_per_date_and_ausdata_per_date():
+    w = foreign_world()
+    OH.foreign_replay(F_DATES, w)
+    for key in ("tic", "dbnomics", "bisfetcher", "jquantster", "singstat", "usdidr"):
+        assert len(w[key].calls) == 1, key
+    gdp = [c for c in w["fred"].calls if c["ids"] == ["GDPC1"]]
+    assert [c["as_of"] for c in gdp] == F_DATES  # the vintage of each month end
+    assert len(w["fred"].calls) == 1 + len(F_DATES)  # one preload of DFF / T10Y2Y
+    assert [c["as_of"] for c in w["ausdata"].calls] == F_DATES
+
+
+class VintageFred:
+    """FRED GDPC1 whose vintage as of a date differs from today's values (a revision)."""
+
+    name = "sec-edgar"
+
+    def __init__(self, today_rows, vintage_rows):
+        self.today, self.vintage = today_rows, vintage_rows
+
+    def rows(self, series_ids=None, start=None, end=None, as_of=None, **kw):
+        rows = self.vintage if as_of is not None else self.today
+        return [r for r in rows if (series_ids is None or r.series_id in series_ids)
+                and (start is None or r.date >= start) and (end is None or r.date <= end)]
+
+
+def test_gdp_is_read_at_its_vintage_not_at_todays_revision():
+    flat = P28.world()["fred"]._rows
+    others = [r for r in flat if r.series_id != "GDPC1"]
+    today = others + P28.gdp_levels(growth=(2.0,) * 12)  # revised: flat growth
+    known = others + [r._replace(as_of=D("2026-07-30")) for r in P28.gdp_levels(
+        growth=(2.0,) * 11 + (3.5,))]  # the vintage said growth jumped
+    w = foreign_world()
+    w["fred"] = VintageFred(today, known)
+    row = OH.foreign_replay([D("2026-09-30")], w)["USA"].row(D("2026-09-30"))
+    assert row.components["growth"].direction == 1
+    w["fred"] = VintageFred(today, today)
+    row = OH.foreign_replay([D("2026-09-30")], w)["USA"].row(D("2026-09-30"))
+    assert row.components["growth"].direction == 0
+
+
+def test_no_foreign_row_uses_a_value_dated_after_its_month_end():
+    base = OH.foreign_replay(F_DATES, foreign_world())
+    cut = D("2026-01-31")
+
+    def poison(fake):
+        return P28.Fake(fake.name, [r._replace(value=r.value * 7 + 13) if r.date > cut
+                                    and r.value is not None else r for r in fake._rows])
+
+    w = {k: Counting(poison(v)) for k, v in P28.world().items()}
+    w["singstat"] = Counting(poison(foreign_world()["singstat"].inner))
+    poisoned = OH.foreign_replay(F_DATES, w)
+    for s in OH.FOREIGN:
+        for d in F_DATES:
+            if d <= cut:
+                assert poisoned[s].row(d).shift == base[s].row(d).shift, (s, d)
+                assert poisoned[s].row(d).raw == base[s].row(d).raw, (s, d)
+    assert any(poisoned[s].row(D("2026-09-30")).raw != base[s].row(D("2026-09-30")).raw
+               for s in OH.FOREIGN)
+
+
+def test_aus_fx_reads_the_mas_cross_before_rba_aud_idr_has_three_months():
+    aus = [r for r in P28.world()["ausdata"]._rows if r.series_id != AUD_IDR]
+    aus += [r for r in P28.daily(AUD_IDR, "ausdata", fill=12_000.0) if r.date >= D("2026-03-02")]
+    w = foreign_world(ausdata=aus)
+    h = OH.foreign_replay(F_DATES, w)["AUS"]
+    early, late = h.row(D("2025-12-31")), h.row(D("2026-09-30"))
+    assert early.components["fx"].series_id == "IDR_PER_AUD"  # MAS: IDR per S$ x S$ per AUD
+    assert early.components["fx"].source == "singstat"
+    assert late.components["fx"].series_id == AUD_IDR
+    assert late.complete and early.complete
+
+
+def test_foreign_rows_are_complete_on_their_own_spec(monkeypatch):
+    monkeypatch.setattr(OH, "LOCK_WAIT", 0.0)
+    h = OH.foreign_replay(F_DATES, foreign_world())
+    assert h["USA"].rows[-1].expected == OH.expected_components("USA")
+    assert set(OH.expected_components("USA")) == {
+        "growth", "cli", "inflation", "policy", "curve", "flows_equity", "flows_treasury", "fx"}
+    assert set(OH.expected_components("SGP")) == {"growth", "inflation", "policy", "curve",
+                                                   "fx"}
+    for s in OH.FOREIGN:
+        assert h[s].rows[-1].complete, (s, h[s].rows[-1].missing)
+    jq_missing = OH.foreign_replay(F_DATES, foreign_world(
+        jquantster=P28.Fake("jquantster", error="locked")))["JPN"].rows[-1]
+    assert not jq_missing.complete
+    assert any(m.startswith("growth: jquantster (locked)") for m in jq_missing.missing)
+    cov = h["USA"].coverage()
+    assert set(cov) == set(OH.expected_components("USA"))
+    rt = OH.OverrideHistory.from_dict(json.loads(json.dumps(h["JPN"].to_dict())))
+    assert rt == h["JPN"] and rt.rows[0].expected == OH.expected_components("JPN")
+
+
+class FlakyFred(VintageFred):
+    """Locked on the first vintage read of each date, then fine (another reader held it)."""
+
+    def __init__(self, rows):
+        super().__init__(rows, rows)
+        self.seen: set = set()
+
+    def rows(self, series_ids=None, start=None, end=None, as_of=None, **kw):
+        if as_of is not None and as_of not in self.seen:
+            self.seen.add(as_of)
+            raise SourceUnavailable("sec-edgar", "locked")
+        return super().rows(series_ids, start, end, as_of, **kw)
+
+
+def test_a_locked_vintage_read_is_retried_and_a_lasting_lock_is_named(monkeypatch):
+    monkeypatch.setattr(OH, "LOCK_WAIT", 0.0)
+    w = foreign_world()
+    w["fred"] = FlakyFred(P28.world()["fred"]._rows)
+    row = OH.foreign_replay([D("2026-09-30")], w)["USA"].row(D("2026-09-30"))
+    assert row.complete and "growth" in row.components
+    w["fred"] = P28.Fake("sec-edgar", error="locked")
+    row = OH.foreign_replay([D("2026-09-30")], w)["USA"].row(D("2026-09-30"))
+    assert "growth: sec-edgar (locked)" in row.missing
+
+
+def test_preloaded_retries_a_lock_and_bounds_its_start(monkeypatch):
+    monkeypatch.setattr(OH, "LOCK_WAIT", 0.0)
+
+    class LockedOnce(Fake):
+        def rows(self, series_ids=None, start=None, end=None, **kw):
+            self.starts = [*getattr(self, "starts", []), start]
+            if self.calls == 0:
+                self.calls += 1
+                raise SourceUnavailable(self.name, "locked")
+            return super().rows(series_ids, start, end, **kw)
+
+    fake = LockedOnce("sec-edgar", _bps_rows())
+    pre = OH.Preloaded(fake, [GDP_YOY], end=END, start=D("2017-01-01"))
+    assert pre.rows([GDP_YOY]) and min(r.date for r in pre.rows([GDP_YOY])) >= D("2017-01-01")
+    assert fake.starts == [D("2017-01-01"), D("2017-01-01")]
+
+
+def test_the_foreign_preload_starts_at_the_first_date_less_the_read_back():
+    w = foreign_world()
+    OH.foreign_replay(F_DATES, w)
+    first = F_DATES[0] - OF.READ_BACK - timedelta(days=31)
+    for key in ("dbnomics", "singstat", "jquantster", "tic"):
+        assert (w[key].calls[0]["start"], w[key].calls[0]["end"]) == (first, F_DATES[-1]), key
+    fred = [c for c in w["fred"].calls if "as_of" not in c]
+    assert fred[0]["start"] == first
