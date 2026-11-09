@@ -49,6 +49,7 @@ uv run assist regime                  # layer 0 today: risk_on | neutral | risk_
 uv run assist regime --check          # daily job: journal it, Telegram only if it changed
 uv run assist regime --check --no-send  # compare only; writes and sends nothing
 uv run assist rules                   # IDN rule gates → out/rules/ (history verdict, live monitor, state, distance per side; --rebuild ~40 min)
+uv run assist overrides               # layer-2 override gates → out/overrides/<SUBJECT>.json (up / down per asset: placebo, Holm, CLI zeroed, live; ~70 s; --subject S, --rebuild)
 uv run assist paper                   # paper track vs the IDR 48/32/20 benchmark, 60/40 alongside (--json [--marks])
 uv run assist journal                 # decisions per model fingerprint, hash-chain check
 uv run assist flows                   # household transfers from financer → out/flows/<YYYY-MM>.json (for /flows)
@@ -73,8 +74,9 @@ The brief, top to bottom:
 1. the disclaimer;
 2. **Data health**: the doctor, one line per missing, locked or stale source (or a table a
    stance needs that is absent);
-3. the global regime, the home (IDN) regime line, the stance table (each delta split into rebalance to the benchmark and tilt)
-   and the changes since the last run;
+3. the global regime, the home (IDN) regime line, the layer-2 override gate line (sides passed,
+   bands crossed or held), the stance table (each delta split into rebalance to the benchmark
+   and tilt) and the changes since the last run;
 4. **Paper track**: the benchmark (48% JCI, 32% SBN leg, 20% US stocks in IDR), the old 60/40
    alongside (it still scores model segments from before S39), and one line per model
    fingerprint. It shows benchmark marks only until the journal has history, shows only the
@@ -90,6 +92,7 @@ Same inputs give the same bytes, so a rerun on the same day rewrites nothing.
 |---|---|
 | `out/{SUBJECT}/{asset}.json` | one stance per in-scope subject × asset (`schema/stance.schema.json`); a rerun with unchanged inputs writes identical bytes, and out/ holds exactly the last run |
 | `out/rules/IDN-{stocks,bonds}.json` | each IDN rule's gate: historical verdict per side (enter, reduce), live journal monitor, state (passed, insufficient, failed, revoked), months covered, inputs missing; `assist run` rebuilds it when a month end has passed or a rule changed |
+| `out/overrides/{IDN,USA,JPN,EMU,AUS,SGP}.json` | each subject's layer-2 override gate (phase L): per asset an up and a down side, its placebo verdict on the point-in-time override history (complete months only, IDR forward returns), Holm over the subject's tests, the CLI-zeroed check, the live monitor and state; a passed side lets that shift cross a band in its direction (EMU's reaches DEU, FRA, ITA, ESP, NLD); `assist run` rebuilds it when a month end has passed or the override changed |
 | `journal/decisions.jsonl`, `journal/models/` | append-only, hash-chained decisions, each with the model fingerprint; the daily regime check adds `regime` records |
 | `data/briefs/<day>.md` | the Markdown brief, diffed against the previous day's snapshot |
 | `data/snapshots/<day>/` | copy of out/ per run day, for the brief's "changes since last run" |
