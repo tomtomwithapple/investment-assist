@@ -9,6 +9,11 @@ file's `stale_inputs` names its feature or series id. The line per input draws `
 input as the rule sees it: a level, or its 13-week change) over the file's weekly history; a
 null week is a gap, never filled.
 
+Home (IDN) regime (S54): the file's `home` block (schema 1.1.0, S53) as its own card: the state,
+points, drivers and the rule's numbers, and each of the four inputs with its points, value,
+newest date and 1-year weekly line. A file without the block (1.0.0, or a run with no IDN
+sources) shows one line saying so, not a notice.
+
 History: every journal record of kind `regime`, one per weekly run (`assist run` journals the
 regime before its stances, which carry the same regime) and one per daily check that changed or
 set the baseline (`inputs.job` = "regime"). Newest first; a row whose state or dollar differs
@@ -34,6 +39,10 @@ STALE_DAYS = 14
 TONE = {"risk_on": "good", "neutral": "muted", "risk_off": "bad", "missing": "warn"}
 DOLLAR_TONE = {"up": "warn", "flat": "muted", "down": "good"}
 COLUMNS = ("Input", "Value", "Newest", "Direction", "Vote", "52 weeks")
+HOME_COLUMNS = ("Input", "Value", "Newest", "Points", "52 weeks")
+HOME_KIND = {"jci_drawdown_20d": "pct", "idx_foreign_z": "level", "usdidr_20d": "pct",
+             "sbn_non_resident_20d": "pct"}
+NO_HOME = ("no home (IDN) regime in this file (schema 1.0.0, or the run had no IDN sources)")
 HIST_COLUMNS = ("As of", "Regime", "Dollar", "From", "Drivers", "Model")
 NO_FILE = "no out/layers/regime.json yet: run `assist run`"
 
@@ -261,6 +270,55 @@ def _inputs(d: Mapping) -> str:
     return _card("inputs", "Layer-0 inputs", f'<table class="inputs">{head}{rows}</table>{note}')
 
 
+def _home_row(inp: Mapping, home: Mapping) -> str:
+    feat = str(inp["feature"])
+    kind = HOME_KIND.get(feat, "level")
+    named = [x for x in home.get("stale_inputs") or [] if feat in x]
+    stale = "; ".join(named) or ("not counted: no fresh value" if not inp.get("counted")
+                                 else "")
+    chip = f' <span class="chip warn" title="{esc(stale)}">stale</span>' if stale else ""
+    pts = inp.get("points")
+    pts_cell = ("-" + ' <span class="sub">not counted</span>' if pts is None
+                else esc(str(pts)) + ' <span class="sub">counted</span>')
+    return (f'<tr data-home-feature="{esc(feat)}">'
+            f'<td>{esc(str(inp.get("label") or feat))}<span class="sub">{esc(feat)}</span></td>'
+            f'<td class="num">{esc(_fmt(inp.get("value"), kind))}</td>'
+            f'<td>{esc(str(inp.get("last") or "n/a"))}{chip}</td>'
+            f"<td>{pts_cell}</td><td>{spark({**inp, 'kind': kind})}</td></tr>")
+
+
+def _home(d: Mapping) -> str:
+    home = d.get("home")
+    if not isinstance(home, Mapping):
+        return _card("home-card", "Home regime (IDN)", f'<p class="muted">{esc(NO_HOME)}</p>')
+    state, rule = str(home["state"]), home["rule"]
+    jci = ", ".join(f"{p} at {t:g}%" for t, p in rule["jci_points"])
+    usd = ", ".join(f"{p} at +{t:g}%" for t, p in rule["usdidr_points"])
+    shift = (f"{rule['shift_pt']:+g}pt on IDN stocks and bonds"
+             if rule["shift_adopted"] else
+             f"{rule['shift_pt']:+g}pt not adopted (its walk-forward has not passed)")
+    rows = [("Points", f"{esc(str(home['points']))} points <span class=\"muted\">(risk-off at "
+                       f"&ge; {esc(str(rule['state_at']))}; there is no home risk-on)</span>"),
+            ("Drivers", esc("; ".join(str(x) for x in home.get("drivers") or [])) or "none"),
+            ("On risk-off", "IDN stocks and bonds adds and trims laddered"),
+            ("Score shift", esc(shift)),
+            ("Rule", esc(f"JCI vs 20-day high: {jci}; IDX foreign 20d z <= "
+                         f"{rule['flow_z_at']:g}: 1; USD/IDR over 20 fixings: {usd}; "
+                         f"non-resident SBN 20d <= {rule['sbn_at']:g}%: 1; an input counts "
+                         f"only if at most {rule['max_age_days']} days old")),
+            ("Stale inputs", esc("; ".join(str(x) for x in home.get("stale_inputs") or []))
+             or "none")]
+    table = "<table>" + "".join(f"<tr><th>{k}</th><td>{v}</td></tr>" for k, v in rows) + "</table>"
+    head = "<tr>" + "".join(f"<th>{h}</th>" for h in HOME_COLUMNS) + "</tr>"
+    inputs = "".join(_home_row(i, home) for i in home.get("inputs") or [])
+    note = (f'<p class="muted">Each line is the input as the home rule sees it, each Friday over '
+            f"{esc(str(home['history_weeks']))} weeks.</p>")
+    call = (f'<p class="call">Home regime '
+            f'{web.chip(state.replace("_", "-"), TONE.get(state, "muted"))}</p>')
+    return _card("home-card", "Home regime (IDN)",
+                 f'{call}{table}<table class="inputs">{head}{inputs}</table>{note}')
+
+
 def _history(rows: Sequence[Mapping]) -> str:
     if not rows:
         return _card("history", "Regime history",
@@ -288,7 +346,7 @@ def body(d: dict | None, hist: Sequence[Mapping], problems: Sequence[str]) -> st
              '<p class="muted">Layer 0: the global risk regime and the dollar call, from FRED '
              "via sec-edgar.</p>", *(web.notice(p) for p in problems)]
     if d is not None:
-        parts += [_call(d), _inputs(d)]
+        parts += [_call(d), _inputs(d), _home(d)]
     parts += [_history(hist), "</div>"]
     return "".join(parts)
 

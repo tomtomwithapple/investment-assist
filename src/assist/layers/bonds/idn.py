@@ -20,8 +20,9 @@ plus the global regime:
 holdings are stable or rising and USD/IDR is not breaking out; **reduce** (underweight) when the
 real yield is low and foreigners sell or USD/IDR breaks out; **hold** (neutral) otherwise; and
 **no_call** when an input is missing. An enter is laddered when the regime is risk-off (or not
-given), bought in one go otherwise. The thresholds are hand-set: `gated_stance` lets the call
-change a stance only with a passing placebo verdict (`rule_verdict`, P9 harness).
+given), bought in one go otherwise. The thresholds are hand-set: `gated_stance` lets an enter
+change a stance only with a passing placebo verdict (`rule_verdict`, P9 harness), a reduce only
+with a passing reduce-side verdict (P74), a hold never.
 
 When the store has no PHEI tables, the 10Y falls back to dbnomics' `idn.rate.long`, labelled a
 proxy in `drivers` and `stale_inputs`; the slope is then unavailable. A proxy older than
@@ -135,12 +136,24 @@ def decide(real: int | None, foreign: int | None, breakout: bool | None) -> tupl
     return call, CALL_STANCE[call]
 
 
-def gated_stance(base: str, bonds: IdnBonds, verdict: Verdict | None) -> tuple[str, str]:
-    """The stance after the rule: `base` unless the rule made a call and its placebo verdict
-    passed. The note says which, for the journal."""
-    p = bonds.proposed_stance
+def gated_stance(base: str, bonds: IdnBonds, verdict: Verdict | None, *,
+                 reduce_verdict: Verdict | None = None) -> tuple[str, str]:
+    """The stance after the rule: `base` unless the rule made a call that its own side's
+    placebo verdict backs. `verdict` (enter vs hold + reduce) backs only an enter; a reduce needs
+    `reduce_verdict` (reduce vs enter + hold, P74), and a hold claims no edge, so it never moves
+    `base`. The note says which, for the journal."""
+    p, call = bonds.proposed_stance, bonds.call
     if p is None:
-        return base, f"bonds rule: no call ({bonds.call})"
+        return base, f"bonds rule: no call ({call})"
+    if call == "hold":
+        return base, f"bonds rule proposes {p}; not applied: a hold claims no edge"
+    if call == "reduce":
+        if reduce_verdict is None:
+            return base, f"bonds rule proposes {p}; not applied: reduce side untested"
+        if not reduce_verdict.passed:
+            reason = reduce_verdict.reason.removeprefix("reduce side: ")
+            return base, f"bonds rule proposes {p}; not applied: reduce side {reason}"
+        return p, f"bonds rule applied: {p} ({reduce_verdict.reason})"
     if verdict is None:
         return base, f"bonds rule proposes {p}; not applied: no placebo verdict"
     if not verdict.passed:

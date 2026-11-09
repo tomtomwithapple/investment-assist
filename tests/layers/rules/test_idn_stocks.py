@@ -497,6 +497,31 @@ def test_gated_stance():
         "underweight", "stocks rule: no call (no_call)")
 
 
+def test_gated_stance_applies_a_reduce_only_on_a_passed_reduce_verdict():
+    # P74: the enter verdict tests enter vs hold + reduce; it says nothing about reduce
+    import dataclasses
+    red = dataclasses.replace(run(), call="reduce", proposed_stance="underweight")
+    stance, note = gated_stance("neutral", red, _verdict(True))
+    assert stance == "neutral"
+    assert note == ("stocks rule proposes underweight; not applied: reduce side untested")
+    stance, note = gated_stance("neutral", red, _verdict(True), reduce_verdict=_verdict(False))
+    assert stance == "neutral" and "not applied: reduce side t 1.2 below 2.0" in note
+    stance, note = gated_stance("neutral", red, None, reduce_verdict=_verdict(True))
+    assert stance == "underweight" and note.startswith("stocks rule applied: underweight")
+
+
+def test_gated_stance_never_applies_a_hold():
+    import dataclasses
+    hold = dataclasses.replace(run(), call="hold", proposed_stance="neutral")
+    stance, note = gated_stance("overweight", hold, _verdict(True), reduce_verdict=_verdict(True))
+    assert stance == "overweight" and "not applied: a hold claims no edge" in note
+
+
+def test_an_enter_needs_the_enter_verdict_not_the_reduce_one():
+    s = run()
+    assert gated_stance("neutral", s, None, reduce_verdict=_verdict(True))[0] == "neutral"
+
+
 def _prices(n=120, seed_moves=None):
     out, p = [], 100.0
     for i, d in enumerate(_months(date(2026, 9, 1), n)):

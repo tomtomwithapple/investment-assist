@@ -7,6 +7,9 @@
 - PE, PBV, P/CFO and EV/EBIT derived here, point in time (no PS or EV/EBITDA: no revenue or
   D&A in the store until idx-method V1)
 - `dividends` (symbol, seq, ex, value, ccy), else the `cache/dividends` files
+- `FactorSeriesEY` (P66): the JCI earnings-yield cross-section on any date from the daily `pe`
+  and `mktcap` items (idx-method c432999), with `FactorSnapshots`' `factors_on(as_of)`
+  interface, so the IDN stocks rule can run on history
 
 Only quarter-end dates are quarterly rows. The store also echoes the latest quarter on the pull
 date (e.g. 2026-10-26) and holds a run of daily-dated rows for ITMA around 2020-01; both are
@@ -30,9 +33,12 @@ from assist.sources.idxmethod_stocks import SOURCE, IdxMethodStocks
 
 __all__ = [
     "DB",
+    "EY_ECHO_GAP",
+    "EY_WINDOW",
     "FUNDAMENTALS",
     "SOURCE",
     "Bar",
+    "FactorSeriesEY",
     "Fundamentals",
     "IdxMethodSeries",
     "Multiples",
@@ -52,6 +58,12 @@ FUNDAMENTALS = (
     "total_assets",
     "total_debt",
 )
+# EY cross-section: a name counts on `as_of` from its newest daily row in (as_of − EY_WINDOW,
+# as_of], so weekends and IDX holidays (Lebaran closes ~10 days) carry the last trading day.
+# A row more than EY_ECHO_GAP after the name's previous one is not a quote: the store echoes
+# delisted names' last values on its pull date (e.g. 35 extra names on 2026-11-06).
+EY_WINDOW = timedelta(days=14)
+EY_ECHO_GAP = timedelta(days=14)
 QUARTER_ENDS = ("03-31", "06-30", "09-30", "12-31")
 _QE_SQL = ", ".join(f"'{q}'" for q in QUARTER_ENDS)
 
@@ -290,3 +302,67 @@ class IdxMethodSeries:
                     out.setdefault(sym, []).append({"ex": ex, "value": _f(v), "ccy": ccy})
                 return out
         return IdxMethodStocks(self.root).dividends(symbols)
+
+
+class FactorSeriesEY:
+    """The JCI earnings-yield cross-section on any date, from `factor_series` daily `pe` and
+    `mktcap` (P66). Same interface as `FactorSnapshots`: `name` and `factors_on(as_of)` →
+    (newest row date used, {symbol: {mktcap, pe, earnings_yield}}), so `idn_stocks` takes it as
+    `snapshots=`. EY = 100 / PE in %, a negative PE kept (an index P/E counts loss makers), a
+    zero or missing PE gives no EY. The daily multiples step on the filing date (idx-method
+    c432999), so no extra lag is added. Read-only; one query per date."""
+
+    name = SOURCE
+
+    def __init__(self, root: Path | str):
+        self.series = IdxMethodSeries(root)
+
+    @classmethod
+    def from_config(cls, config: Path = DEFAULT_CONFIG, env: dict | None = None) -> FactorSeriesEY:
+        return cls(IdxMethodSeries.from_config(config, env).root)
+
+    def factors_on(self, as_of: date) -> tuple[date, dict[str, dict]]:
+        lo = as_of - EY_WINDOW - EY_ECHO_GAP
+        sql = (
+            "select symbol, item, date, value from factor_series where freq = 'daily'"
+            " and item in ('pe', 'mktcap') and date > ? and date <= ?"
+            " and value is not null order by symbol, item, date"
+        )
+        rows: dict[str, dict[str, list[tuple[date, float]]]] = {}
+        with self.series._con("factor_series") as con:
+            for sym, item, d, v in con.execute(sql, (lo.isoformat(), as_of.isoformat())):
+                rows.setdefault(sym, {}).setdefault(item, []).append((date.fromisoformat(d), _f(v)))
+        out: dict[str, dict] = {}
+        newest: date | None = None
+        for sym, items in rows.items():
+            pes, caps = items.get("pe", []), items.get("mktcap", [])
+            if not pes or not caps or as_of - pes[-1][0] >= EY_WINDOW:
+                continue
+            if len(pes) < 2 or pes[-1][0] - pes[-2][0] > EY_ECHO_GAP:
+                continue  # an echo, or a first quote after a long gap
+            (d, pe), (_, cap) = pes[-1], caps[-1]
+            out[sym] = {"mktcap": cap, "pe": pe, "earnings_yield": 100 / pe if pe else None}
+            newest = d if newest is None or d > newest else newest
+        if newest is None:
+            raise SourceUnavailable(
+                self.name, "missing", f"no factor_series pe by {as_of} in {self.series.db}"
+            )
+        return newest, out
+
+    def history(self, dates: Iterable[date]) -> list[tuple[date, float]]:
+        """(as_of, cap-weighted EY %) on each date that has a cross-section, as the stocks rule
+        computes it."""
+        from assist.layers.rules.idn_stocks import market_earnings_yield
+
+        out = []
+        for d in dates:
+            try:
+                _, factors = self.factors_on(d)
+            except SourceUnavailable as e:
+                if e.reason != "missing" or not self.series.db.is_file():
+                    raise
+                continue
+            ey, _, _ = market_earnings_yield(factors)
+            if ey is not None:
+                out.append((d, ey))
+        return out

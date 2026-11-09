@@ -1,5 +1,5 @@
-"""`assist` command line: doctor | status | run | brief | regime | paper | journal | industries |
-flows."""
+"""`assist` command line: doctor | status | run | rules | brief | regime | paper | journal |
+industries | flows."""
 
 from __future__ import annotations
 
@@ -98,6 +98,9 @@ def _run(args: argparse.Namespace) -> int:
                 v = "none" if verdict is None else verdict.reason
                 print(f"  {asset} rule: {rule.call}, proposes {rule.proposed_stance};"
                       f" verdict: {v}")
+                g = res.idn.gates.get(asset)
+                if g is not None:
+                    print(f"    gate {g.line()}")
             print(f"  {res.idn.candidates.headline()}")
             for c in res.idn.candidates.candidates:
                 print(f"    {c.symbol:<5} {c.screen}: {c.detail}")
@@ -118,6 +121,90 @@ def _run(args: argparse.Namespace) -> int:
     else:
         print("telegram: not sent (no stances)")
     return 0 if res.ok else 1
+
+
+def _fmt_verdict(v: dict | None) -> str:
+    if v is None:
+        return "none"
+    r = v["rule"]
+    return (f"{'passed' if v['passed'] else 'not passed'}: on {r['n_on']}, off {r['n_off']}, "
+            f"t {r['t']:.2f}, p {v['p_value']:.3f}, control t {v['control_t']:.2f}"
+            f" ({v['reason']})")
+
+
+def _print_gate(doc: dict) -> None:
+    c, s, d = doc["covers"], doc["sample"], doc["distance"]
+    print(f"IDN {doc['asset']} rule gate: {doc['state']}  ({doc['rule_fingerprint'][:19]}…,"
+          f" monitor since {doc['since']})")
+    print(f"  history {c['first']} → {c['last']} ({c['months']} month ends, "
+          f"{c['with_return']} with a {doc['params']['horizon']}-month return); window "
+          f"{c['window_first']} → {c['window_last']}; calls "
+          + ", ".join(f"{k} {n}" for k, n in sorted(doc["calls"].items())))
+    if "historical" in s:
+        h, hd = s["historical"], d["historical"]
+        print(f"  historical windows: on {h['on']} / off {h['off']} / no_call {h['no_call']}"
+              f" vs MIN_N {doc['params']['min_n']} (short on {hd['on']}, off {hd['off']})")
+    lv = s["live"]
+    print(f"  live windows: on {lv['on']} / off {lv['off']} (short on {d['live']['on']}, off "
+          f"{d['live']['off']}; revocation needs on {d['revoke']['on']}, off "
+          f"{d['revoke']['off']} more)")
+    print(f"  historical verdict: {_fmt_verdict(doc['historical'])}")
+    print(f"  live verdict: {_fmt_verdict(doc['live'])}")
+    print(f"  effective: {_fmt_verdict(doc['verdict'])}")
+    print(f"  why on: {doc['why']['on']}")
+    print(f"  why off: {doc['why']['off']}")
+    red = doc.get("reduce")
+    if red is not None:  # P74: reduce (on) vs enter / hold (off), its own gate
+        rh, rd = red["sample"].get("historical"), red["distance"].get("historical")
+        hist = (f"historical on {rh['on']} / off {rh['off']} (short on {rd['on']}, off "
+                f"{rd['off']})" if rh is not None else "no historical sample")
+        print(f"  reduce side: {red['state']}: {hist}; live on {red['sample']['live']['on']} /"
+              f" off {red['sample']['live']['off']}")
+        print(f"  reduce effective: {_fmt_verdict(red['verdict'])}")
+    missing: dict[str, int] = {}
+    for n in doc["no_call"]:
+        for m in n["missing"]:
+            missing[m.split(":")[0]] = missing.get(m.split(":")[0], 0) + 1
+    if missing:
+        print("  no_call months by missing input: "
+              + ", ".join(f"{k} {n}" for k, n in sorted(missing.items())))
+    for line in doc["stale_inputs"]:
+        print(f"  stale: {line}")
+
+
+def _rules(args: argparse.Namespace) -> int:
+    """P67: build or refresh out/rules/IDN-<asset>.json; --horizon / --variant add diagnostics
+    under out/rules/diagnostics/ that never gate a stance."""
+    from assist.eval import gate
+
+    day = _today(args)
+    paths = pipeline.Paths.default()
+    src = pipeline.IdnSources.default()
+    prices = pipeline.rule_prices(src, day)
+    records = list(journal.Journal(paths.journal).read())
+    rules_dir = paths.out / "rules"
+    gates = gate.refresh(day, rules_dir, records=records, prices=prices, build=gate.live_build,
+                         rebuild=args.rebuild)
+    for g in gates.values():
+        _print_gate(g.to_dict())
+    if args.horizon is not None or args.variant:
+        h = args.horizon or gate.HORIZON
+        for a, g in gates.items():
+            if g.rows is None or (args.variant == "valuation-only" and a != "stocks"):
+                continue
+            d = gate.diagnostic(a, g.rows, prices=prices[a], day=day, horizon=h,
+                                variant=args.variant)
+            name = f"IDN-{a}-h{h}" + (f"-{args.variant}" if args.variant else "") + ".json"
+            out = rules_dir / "diagnostics" / name
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(d, indent=1) + "\n", encoding="utf-8")
+            v, smp = d["verdict"], d["sample"]
+            print(f"diagnostic IDN {a} horizon {h}"
+                  + (f", {args.variant}" if args.variant else "")
+                  + f" (never gates): window {d['window']}, on {smp['on']} / off {smp['off']}"
+                  f" / no_call {smp['no_call']}; {_fmt_verdict(v)} → {out}")
+    print(gates["bonds"].to_dict()["disclaimer"])
+    return 0
 
 
 def _print_undervalued(p: dict) -> None:
@@ -188,15 +275,28 @@ def _brief(args: argparse.Namespace) -> int:
     return 0
 
 
+def _home_source(sources: pipeline.Sources):
+    """The home regime's stores for the daily check (S54), None without IDN sources."""
+    return pipeline.home_sources(sources.idn) if sources.idn is not None else None
+
+
 def _regime_check(args: argparse.Namespace) -> int:
-    """Daily job: Telegram only when the regime or the dollar direction changed."""
+    """Daily job: Telegram only when the regime, the dollar direction or the home (IDN) regime
+    changed."""
     day = _today(args)
-    chk = pipeline.regime_check(day, paths=pipeline.Paths.default(),
-                                source=pipeline.Sources.default().fred, send=not args.no_send)
+    sources = pipeline.Sources.default()
+    chk = pipeline.regime_check(day, paths=pipeline.Paths.default(), source=sources.fred,
+                                send=not args.no_send, home_source=_home_source(sources))
     reg = chk.regime
     print(f"regime check {day}: {reg.state}, dollar {reg.dollar}")
     for s in reg.stale_inputs:
         print(f"  stale: {s}")
+    if chk.home is not None:
+        h = chk.home
+        print(f"home (IDN) regime: {h.state} ({h.points} points)"
+              + (": " + "; ".join(h.drivers) if h.drivers else ""))
+        for s in h.stale_inputs:
+            print(f"  home stale: {s}")
     if not chk.available:
         print("regime unreadable (no FRED source): nothing compared, nothing sent")
         return 0
@@ -205,7 +305,8 @@ def _regime_check(args: argparse.Namespace) -> int:
         print("no regime journalled yet: " + ("baseline journalled" if chk.journalled
                                               else "nothing written (--no-send)"))
         return 0
-    print(f"last journalled {prev['as_of']}: {prev['state']}, dollar {prev['dollar']}")
+    print(f"last journalled {prev['as_of']}: {prev['state']}, dollar {prev['dollar']}"
+          + (f", home {prev['home']}" if prev.get("home") else ""))
     if not chk.changed:
         print("unchanged: nothing sent")
         return 0
@@ -354,6 +455,17 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--today", help="YYYY-MM-DD run date (default today)")
     r.add_argument("--no-send", action="store_true", help="write everything, send nothing")
     r.set_defaults(func=_run)
+
+    ru = sub.add_parser("rules", help="IDN rule gates → out/rules/IDN-<asset>.json (historical "
+                                      "verdict, live monitor, state, distance to the gate)")
+    ru.add_argument("--today", help="YYYY-MM-DD (default today)")
+    ru.add_argument("--rebuild", action="store_true",
+                    help="rerun every month end (about 19 min on the real stores)")
+    ru.add_argument("--horizon", type=int,
+                    help="diagnostic: the verdict on another horizon in months (never gates)")
+    ru.add_argument("--variant", choices=("valuation-only",),
+                    help="diagnostic: a variant of the stocks calls (never gates)")
+    ru.set_defaults(func=_rules)
 
     b = sub.add_parser("brief", help="print the brief for the current out/")
     b.add_argument("--send", action="store_true", help="also send the summary (once a day)")

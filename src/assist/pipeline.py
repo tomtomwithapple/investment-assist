@@ -19,10 +19,23 @@ Phase B (F2) adds Indonesia's layers 2–4 when `Sources.idn` is set (`Sources.d
     idx-method screens + costs + entry levels → candidates (4) ┴→ RuleView → build_stance
 
 The overrides shift every IDN score (`Layers.overrides`). Each rule's proposed stance goes
-through its `gated_stance` with a placebo verdict built from the rule's own journalled calls
-(`journalled_verdict`: calls recorded before the run day against the forward return that
-followed), so a rule earns the right to move a stance only on calls it made in the open. Every
-rule outcome, its verdict and the candidate list (with each screen's verdict) are journalled.
+through its `gated_stance` with the effective verdict of its gate (`eval.gate`, P67): the placebo
+verdict on the rule's point-in-time history (P66) with its journalled calls as the live monitor,
+read from `out/rules/IDN-<asset>.json` and rebuilt there when missing, for another rule
+fingerprint, or behind the newest month end (only the new month ends are rerun). The stocks rule's
+macro input is layer 1 held at 50 plus P17's override, live as in its history (open question 4),
+so the rule that is gated is the rule that runs; layer 1 still sets the band stance. Every rule
+outcome, its gate (state, rule fingerprint) and the candidate list (with each screen's verdict)
+are journalled.
+The bonds rule's USD/IDR is `IdnSources.usdidr` (P65): JISDOR spliced on the MAS cross, the seam
+and the overlap check in its drivers; the signals still read idxscape.
+
+Phase K (S53, P72): with `Sources.idn` set the run also reads the home (IDN) regime
+(`read_home`: P71's rule on P70's inputs, from the JCI, idxscape and the USD/IDR splice;
+`home_sources`). `build_stance` takes it for IDN stocks and bonds: home risk_off ladders their
+adds and trims, a score shift only if `home_regime.HOME_SHIFT_ADOPTED` (open question 8). It is
+journalled as `home` in the run's `regime` record and written as `home` in
+`out/layers/regime.json`; a failure is one run-level stale line, no block, never a failed run.
 
 Phase C (F3) adds the foreign subjects when `Sources.foreign` is set (`Sources.default` sets it):
 
@@ -86,21 +99,22 @@ from typing import Any
 from assist import brief, journal, layers_out, notify, stance
 from assist.candidates import peers as peer_cmp
 from assist.candidates import tiers_replay
+from assist.eval import gate as rule_gate
 from assist.eval.placebo import Verdict
 from assist.fx import FxEdge, fx_edge
+from assist.history import ten_year_months
 from assist.layers import candidates_foreign as cf
-from assist.layers import portfolio, regime, undervalued
+from assist.layers import home_regime, portfolio, regime, undervalued
 from assist.layers.bonds import IdnBonds, idn_bonds
 from assist.layers.bonds import gated_stance as bonds_gate
-from assist.layers.bonds import rule_verdict as bonds_verdict
-from assist.layers.bonds.idn import PROXY_10Y
 from assist.layers.candidates import IdnCandidates, idn_candidates
 from assist.layers.candidates_foreign import ForeignCandidates, IndexValuation, foreign_candidates
+from assist.layers.home_inputs import HomeSources
+from assist.layers.home_regime import HomeRegime
 from assist.layers.overrides import IdnOverrides, idn_overrides
 from assist.layers.overrides_foreign import EMU_MEMBERS, ForeignOverrides, foreign_overrides
 from assist.layers.rules import IdnStocks, idn_stocks, month_end_closes
 from assist.layers.rules import gated_stance as stocks_gate
-from assist.layers.rules import rule_verdict as stocks_verdict
 from assist.layers.signals import IdnSignals, idn_signals
 from assist.layers.types import (
     ASSETS,
@@ -113,7 +127,6 @@ from assist.layers.types import (
 )
 from assist.sources.base import SourceUnavailable
 from assist.sources.idxmethod import JCI
-from assist.sources.idxscape_phei import IGSYC_10Y
 from assist.sources.worldbankscape import Layer1
 
 __all__ = [
@@ -140,10 +153,12 @@ __all__ = [
     "gather",
     "gather_foreign",
     "gather_idn",
+    "home_sources",
+    "read_home",
     "idr_edges_from",
     "in_scope",
-    "journalled_calls",
-    "journalled_verdict",
+    "rule_gates",
+    "rule_prices",
     "last_regime",
     "live_doctor",
     "live_paper",
@@ -166,7 +181,7 @@ COUNTRIES = ("IDN", "USA", "JPN", "DEU", "FRA", "ITA", "ESP", "NLD", "SGP", "AUS
 # `business` and `property` classes have no stance. Every commodity subject is in scope.
 
 _SUBJECT_DIR = re.compile(r"^[A-Z0-9_]+$")
-RULE_HORIZON = 3  # months: the forward window a rule's journalled calls are judged on
+RULE_HORIZON = rule_gate.HORIZON  # months: the forward window a rule's calls are judged on
 RULE_ASSETS = ("bonds", "stocks")  # IDN assets with a rule; currency has overrides only
 FOREIGN = tuple(c for c in COUNTRIES if c != HOME)
 FOREIGN_ASSETS = ("stocks", "bonds", "currency")
@@ -213,6 +228,8 @@ class IdnSources:
     idxmethod: Any  # JCI: idxscape index_daily, idx-method CSV before 2021-10 (JciSource)
     snapshots: Any  # idx-method dated screener cross-sections (JCI earnings yield)
     stocks: Any  # idx-method stock files (screens, costs, entry levels)
+    # USD/IDR for the bonds rule (P65): JISDOR spliced on the MAS cross; None → idxscape JISDOR
+    usdidr: Any = None
 
     @classmethod
     def default(cls) -> IdnSources:
@@ -226,15 +243,19 @@ class IdnSources:
         from assist.sources.idxscape_phei import PheiSource
         from assist.sources.kseistat import KseistatSource
         from assist.sources.satudatascape import SatudatascapeSource
+        from assist.sources.singstat import SingstatSource
+        from assist.sources.usdidr import UsdIdrSource
         from assist.sources.usfin_tic import TicSource
 
+        idx = IdxscapeSource.from_config()
         return cls(bps=BpsLookerSource.from_config(), bisfetcher=BisfetcherSource.from_config(),
                    dbnomics=DbnomicsSource.from_config(),
                    satudatascape=SatudatascapeSource.from_config(),
-                   idxscape=IdxscapeSource.from_config(), kseistat=KseistatSource.from_config(),
+                   idxscape=idx, kseistat=KseistatSource.from_config(),
                    tic=TicSource(), phei=PheiSource.from_config(),
                    idxmethod=JciSource.from_config(),
-                   snapshots=FactorSnapshots.from_config(), stocks=IdxMethodStocks.from_config())
+                   snapshots=FactorSnapshots.from_config(), stocks=IdxMethodStocks.from_config(),
+                   usdidr=UsdIdrSource(idx, SingstatSource.from_config()))
 
 
 @dataclass
@@ -264,7 +285,9 @@ class Sources:
     `peers(day)` gives the S30 peer comparison (`out/industries/IDN.json`); None skips it.
     `tier_replay(day, out_dir)` gives the S31 replay verdict (`out/industries/IDN.replay.json`,
     P50); None skips it. `layers_out` writes each layer's result to `out/layers/` (S33, from
-    `fred` and `idn` for the chart windows); False skips it."""
+    `fred` and `idn` for the chart windows); False skips it. `rule_history(dates, day)` reruns
+    the IDN rules on month ends (`history.build`, P66) when `out/rules/` needs it (P67); None
+    never rebuilds (a missing or foreign-fingerprint file is then no verdict)."""
 
     worldbankscape: Any
     fred: Any
@@ -278,6 +301,7 @@ class Sources:
     peers: Callable[[date], dict] | None = None
     tier_replay: Callable[[date, Path], dict] | None = None
     layers_out: bool = False
+    rule_history: rule_gate.Build | None = None
 
     @classmethod
     def default(cls) -> Sources:
@@ -290,7 +314,8 @@ class Sources:
                    foreign=ForeignSources.default(), doctor=live_doctor, paper=live_paper,
                    undervalued=undervalued.gather_live,
                    undervalued_us=undervalued.gather_live_usa, peers=peer_cmp.gather_live,
-                   tier_replay=tiers_replay.run_live, layers_out=True)
+                   tier_replay=tiers_replay.run_live, layers_out=True,
+                   rule_history=rule_gate.live_build)
 
 
 def live_doctor(day: date) -> list[Any]:
@@ -323,13 +348,15 @@ class IdnLayers:
     stocks: IdnStocks
     candidates: IdnCandidates
     verdicts: dict[str, Verdict | None] = field(default_factory=dict)
+    gates: dict[str, rule_gate.Gate] = field(default_factory=dict)
 
     def rule(self, asset: str) -> IdnBonds | IdnStocks:
         return self.bonds if asset == "bonds" else self.stocks
 
     @property
     def stale_inputs(self) -> list[str]:
-        parts = (self.overrides, self.signals, self.bonds, self.stocks, self.candidates)
+        parts = (self.overrides, self.signals, self.bonds, self.stocks, self.candidates,
+                 *self.gates.values())
         return [s for p in parts for s in p.stale_inputs]
 
 
@@ -391,6 +418,7 @@ class Layers:
     portfolio: portfolio.Portfolio | None = None
     statements: tuple[Any, ...] = ()
     portfolio_stale: tuple[str, ...] = ()
+    home: HomeRegime | None = None  # the home (IDN) regime (S53); None without IDN sources
 
     @property
     def scores(self) -> list[AssetScore]:
@@ -401,10 +429,12 @@ def in_scope(s: AssetScore) -> bool:
     return s.asset in ASSETS and (s.asset == "commodities" or s.subject in COUNTRIES)
 
 
-def gather(day: date, sources: Sources, history: Sequence[Mapping] = ()) -> Layers:
+def gather(day: date, sources: Sources, history: Sequence[Mapping] = (),
+           rules_dir: Path | None = None) -> Layers:
     """Read layers 0, 1 and 5 as of `day`, plus Indonesia's layers 2–4 when `sources.idn` is
-    set and the foreign layers when `sources.foreign` is; `history` is the journal so far (for
-    the rules' verdicts). Never raises for a missing or locked store."""
+    set and the foreign layers when `sources.foreign` is; `history` is the journal so far (the
+    rules' live monitor), `rules_dir` the rule gates' `out/rules/` (None: in memory, no
+    history). Never raises for a missing or locked store."""
     stale: list[str] = []
     try:
         layer1 = sources.worldbankscape.load()
@@ -418,11 +448,16 @@ def gather(day: date, sources: Sources, history: Sequence[Mapping] = ()) -> Laye
     pf, statements, w_stale = _portfolio(sources.financer)  # as portfolio.current_weights
     weights = pf.weights() if pf is not None else None
     stale += w_stale
+    home = None
+    if sources.idn is not None:
+        home, h_stale = read_home(day, sources.idn)
+        stale += h_stale
     idn, overrides = None, ()
     if sources.idn is not None and layer1 is not None:
         scores = {(s.subject, s.asset): s for s in layer1.scores}
         idn = gather_idn(day, reg, sources.idn, score=scores.get((HOME, "stocks")),
-                         worldbankscape=sources.worldbankscape, history=history)
+                         worldbankscape=sources.worldbankscape, history=history,
+                         rules_dir=rules_dir, rule_history=sources.rule_history)
         overrides = idn.overrides.overrides
         stale += idn.stale_inputs
     foreign = None
@@ -433,7 +468,26 @@ def gather(day: date, sources: Sources, history: Sequence[Mapping] = ()) -> Laye
     return Layers(day, layer1, reg, weights, overrides=tuple(overrides),
                   stale_inputs=sorted(set(stale)), idn=idn, foreign=foreign,
                   regime_inputs=inputs, portfolio=pf, statements=statements,
-                  portfolio_stale=tuple(w_stale))
+                  portfolio_stale=tuple(w_stale), home=home)
+
+
+def home_sources(src: IdnSources) -> HomeSources:
+    """The home regime's stores from the run's IDN sources: the JCI, idxscape (flows, SBN) and
+    the P65 USD/IDR splice (idxscape JISDOR when the splice is not set)."""
+    return HomeSources(jci=src.idxmethod, idxscape=src.idxscape,
+                       usdidr=src.usdidr if src.usdidr is not None else src.idxscape)
+
+
+def read_home(day: date, src: IdnSources) -> tuple[HomeRegime | None, list[str]]:
+    """The home (IDN) regime on `day` (P71's rule on P70's inputs) and the run-level stale lines:
+    its stale inputs, or one failure line and None (never raises; a missing store is a stale
+    input inside the regime, not a failure)."""
+    try:
+        home = home_regime.home_regime(day, home_sources(src))
+    except Exception as e:  # noqa: BLE001 - the home regime never fails the run
+        first = str(e).splitlines()[0][:160] if str(e) else ""
+        return None, [f"home regime failed: {type(e).__name__}: {first}"]
+    return home, list(home.stale_inputs)
 
 
 def _portfolio(source: Any) -> tuple[portfolio.Portfolio | None, tuple[Any, ...], list[str]]:
@@ -449,23 +503,39 @@ def _portfolio(source: Any) -> tuple[portfolio.Portfolio | None, tuple[Any, ...]
 
 
 def gather_idn(day: date, reg: Regime, src: IdnSources, *, score: AssetScore | None = None,
-               worldbankscape: Any = None, history: Sequence[Mapping] = ()) -> IdnLayers:
+               worldbankscape: Any = None, history: Sequence[Mapping] = (),
+               rules_dir: Path | None = None,
+               rule_history: rule_gate.Build | None = None) -> IdnLayers:
     """Indonesia's layers 2–4 on `day` (P17 overrides, P18 signals, P31 bonds rule, P22 stocks
-    rule, layer-4 candidates) and each rule's verdict from its journalled calls."""
+    rule, layer-4 candidates) and each rule's gate (`rule_gates`). The stocks rule's macro input
+    is `history.held_score` (layer 1 held at 50, open question 4), as in the history its gate is
+    judged on; `score` and `worldbankscape` are kept for callers and no longer read by it."""
+    from assist.history import held_score
+
     ov = idn_overrides(day, bps=src.bps, bisfetcher=src.bisfetcher, dbnomics=src.dbnomics,
                        satudatascape=src.satudatascape)
     sig = idn_signals(day, idxscape=src.idxscape, kseistat=src.kseistat, tic=src.tic)
     bonds = idn_bonds(day, reg, ov, sig, phei=src.phei, dbnomics=src.dbnomics, bps=src.bps,
-                      idxscape=src.idxscape)
-    stocks = idn_stocks(day, reg, ov, sig, score, phei=src.phei, dbnomics=src.dbnomics,
-                        bps=src.bps, idxmethod=src.idxmethod, snapshots=src.snapshots,
-                        worldbankscape=worldbankscape)
+                      idxscape=src.usdidr or src.idxscape)
+    if src.usdidr is not None:
+        bonds = _with_fx_seam(bonds, src.usdidr)
+    stocks = idn_stocks(day, reg, ov, sig, held_score(day), phei=src.phei, dbnomics=src.dbnomics,
+                        bps=src.bps, idxmethod=src.idxmethod, snapshots=src.snapshots)
     cands = idn_candidates(day, stocks=src.stocks)
-    verdicts: dict[str, Verdict | None] = {
-        "bonds": journalled_verdict(history, "bonds", _ten_year_months(src, day), day),
-        "stocks": journalled_verdict(history, "stocks", _jci_months(src, day), day),
-    }
-    return IdnLayers(ov, sig, bonds, stocks, cands, verdicts)
+    gates = rule_gates(day, history, rule_prices(src, day), rules_dir, rule_history)
+    verdicts = {a: g.verdict for a, g in gates.items()}
+    return IdnLayers(ov, sig, bonds, stocks, cands, verdicts, gates)
+
+
+def _with_fx_seam(bonds: IdnBonds, fx: Any) -> IdnBonds:
+    """The bonds rule read the spliced USD/IDR (P65): add the seam line to its drivers, the
+    legs' stale inputs to its own, and attribute the legs' stores instead of the splice."""
+    drivers = [*bonds.drivers, fx.seam_line()]
+    sources = [s for s in bonds.sources if s != fx.name] + fx.sources
+    return dataclasses.replace(
+        bonds, drivers=tuple(dict.fromkeys(drivers)),
+        stale_inputs=tuple(dict.fromkeys([*bonds.stale_inputs, *fx.stale_inputs])),
+        sources=tuple(dict.fromkeys(sources)))
 
 
 def gather_foreign(day: date, src: ForeignSources) -> ForeignLayers:
@@ -575,47 +645,29 @@ def _jci_months(src: IdnSources, day: date) -> list[tuple[date, float]]:
         return []
 
 
-def _ten_year_months(src: IdnSources, day: date) -> list[tuple[date, float]]:
-    """Month-end 10Y: IGSYC 10Y (PHEI) where it exists, dbnomics' OECD proxy elsewhere, spliced
-    as the bonds rule's percentile window splices them."""
-    out: dict[tuple[int, int], tuple[date, float]] = {}
-    for source, sid in ((src.dbnomics, PROXY_10Y), (src.phei, IGSYC_10Y)):
-        try:
-            rows = source.rows([sid], end=day)
-        except SourceUnavailable:
-            continue
-        for d, v in month_end_closes(rows):
-            out[_month(d)] = (d, v)
-    return [out[k] for k in sorted(out)]
+def rule_prices(src: IdnSources, day: date) -> dict[str, list[tuple[date, float]]]:
+    """Month-end prices each rule's calls are judged on, as known on `day`: the 10Y (bonds) and
+    the JCI close (stocks). The 10Y is `history.ten_year_months` as stored (IGSYC month-end
+    closes, the OECD proxy's monthly averages dated the 1st); the gate lags the averages so a
+    return never starts before its call (P74)."""
+    return {"bonds": ten_year_months(src, day), "stocks": _jci_months(src, day)}
 
 
-def journalled_calls(history: Sequence[Mapping], asset: str,
-                     before: date) -> dict[tuple[int, int], str]:
-    """{(year, month): call} of the IDN `asset` rule from journal `rule` records dated before
-    `before`; the last call in a month stands for the month."""
-    calls: dict[tuple[int, int], str] = {}
-    for rec in history:
-        if (rec.get("kind") != "rule" or rec.get("subject") != HOME
-                or rec.get("asset") != asset or not rec.get("as_of")):
-            continue
-        d = date.fromisoformat(rec["as_of"])
-        if d < before:
-            calls[_month(d)] = rec["outputs"]["call"]
-    return calls
-
-
-def journalled_verdict(history: Sequence[Mapping], asset: str,
-                       prices: Sequence[tuple[date, float]], day: date,
-                       horizon: int = RULE_HORIZON) -> Verdict:
-    """Placebo verdict on the IDN `asset` rule's journalled calls made before `day`: does an
-    enter precede a better forward return over `horizon` months (JCI for stocks, the 10Y return
-    proxy for bonds) than a hold or reduce? Only calls made in the open count, so there is no
-    look-ahead, and a same-day rerun sees the same calls. Until enough months have a forward
-    return the verdict is an insufficient sample."""
-    calls = journalled_calls(history, asset, day)
-    keyed = {d: calls[_month(d)] for d, _ in prices if _month(d) in calls}
-    fn = bonds_verdict if asset == "bonds" else stocks_verdict
-    return fn(keyed, prices, horizon=horizon)
+def rule_gates(day: date, history: Sequence[Mapping],
+               prices: Mapping[str, Sequence[tuple[date, float]]], rules_dir: Path | None,
+               build: rule_gate.Build | None = None, *,
+               rebuild: bool = False) -> dict[str, rule_gate.Gate]:
+    """Both IDN rule gates (`eval.gate.refresh`) on `day`. Never raises: a gate that cannot be
+    read, built or written is computed in memory from the journal alone and says why."""
+    try:
+        return rule_gate.refresh(day, rules_dir, records=history, prices=prices, build=build,
+                                 rebuild=rebuild)
+    except Exception as e:  # noqa: BLE001 - a run never fails on its gate
+        first = str(e).splitlines()[0][:200] if str(e) else ""
+        gates = rule_gate.refresh(day, None, records=history, prices=prices, build=None)
+        line = f"rule gate failed: {type(e).__name__}: {first}"
+        return {a: dataclasses.replace(g, stale_inputs=(*g.stale_inputs, line))
+                for a, g in gates.items()}
 
 
 # ---------------- combine ----------------
@@ -690,10 +742,15 @@ def _idn_view(score: AssetScore, layers: Layers) -> stance.RuleView | None:
         return None
     rule, verdict = idn.rule(score.asset), idn.verdicts.get(score.asset)
     gate = bonds_gate if score.asset == "bonds" else stocks_gate
-    gated, note = gate(stance.base_stance(score, layers.regime), rule, verdict)
+    g = idn.gates.get(score.asset)
+    # P74: the enter verdict backs only an enter; a reduce needs the gate's reduce side
+    reduce_verdict = g.reduce_verdict if g is not None else None
+    gated, note = gate(stance.base_stance(score, layers.regime, layers.home), rule, verdict,
+                       reduce_verdict=reduce_verdict)
     if rule.proposed_stance is not None:
-        note += f" (verdict on its journalled calls: {_verdict_text(verdict)})"
-    applied = rule.proposed_stance is not None and verdict is not None and verdict.passed
+        note += (f" (rule gate {g.line()})" if g is not None
+                 else f" (verdict: {_verdict_text(verdict)})")
+    applied = note.startswith(f"{score.asset} rule applied:")
     drivers, watch = list(rule.drivers), []
     stale, sources = list(rule.stale_inputs), list(rule.sources)
     if score.asset == "stocks":
@@ -717,7 +774,8 @@ def build(layers: Layers, fingerprint: str) -> list[dict]:
     v = stance_validator()
     out = [stance.build_stance(score=s, regime=layers.regime, weights=layers.weights,
                                overrides=layers.overrides, as_of=layers.day,
-                               fingerprint=fingerprint, rule=rule_view(s, layers))
+                               fingerprint=fingerprint, rule=rule_view(s, layers),
+                               home=layers.home)
            for s in sorted(layers.scores, key=lambda s: (s.subject, s.asset))]
     stance.apply_limits(out)
     for p in out:
@@ -764,7 +822,10 @@ def write_out(stances: Sequence[Mapping], out_dir: Path) -> list[Path]:
 
 def _journal(j: journal.Journal, layers: Layers, stances: Sequence[Mapping], fp: str) -> str:
     run_id = uuid.uuid4().hex
-    j.record(kind="regime", fingerprint=fp, inputs={"day": layers.day}, outputs=layers.regime,
+    outputs = journal.jsonable(layers.regime)
+    if layers.idn is not None or layers.home is not None:  # S53: the home regime rides along
+        outputs["home"] = journal.jsonable(layers.home)
+    j.record(kind="regime", fingerprint=fp, inputs={"day": layers.day}, outputs=outputs,
              as_of=layers.day, run_id=run_id)
     scores = {(s.subject, s.asset): s for s in layers.scores}
     for p in stances:
@@ -828,11 +889,14 @@ def _journal_idn(j: journal.Journal, layers: Layers, stances: Mapping, fp: str,
     idn = layers.idn
     for asset in RULE_ASSETS:
         rule, verdict = idn.rule(asset), idn.verdicts.get(asset)
+        g = idn.gates.get(asset)
         p = stances.get((HOME, asset))
         j.record(kind="rule", fingerprint=fp, subject=HOME, asset=asset, as_of=layers.day,
                  run_id=run_id, inputs=rule,
                  outputs={"call": rule.call, "proposed_stance": rule.proposed_stance,
                           "stance": p["stance"] if p else None,
+                          "rule_fingerprint": g.fingerprint if g else None,
+                          "gate": g.journal() if g else None,
                           "verdict": None if verdict is None else
                           {k: v for k, v in verdict.to_dict().items() if k != "control_ts"}})
     j.record(kind="candidates", fingerprint=fp, subject=HOME, asset="stocks", as_of=layers.day,
@@ -847,9 +911,13 @@ def message(*, day: date, brief_path: Path | None, undervalued: Sequence[Mapping
             stances: Sequence[Mapping] = ()) -> str:
     """The Telegram text: `notify.header` (title, disclaimer, paper-only line, S42), per market
     (IDN, then USA) the undervalued top 5, then the names sized to sell or buy (`sizing`), each
-    market's list labelled with its stocks leg's rebalance vs tilt (`notify.leg_line`). Stances,
-    regime and the portfolio legs are in the brief."""
+    market's list labelled with its stocks leg's rebalance vs tilt (`notify.leg_line`). On a
+    home (IDN) risk_off one line after the header (S54). Stances, regime and the portfolio legs
+    are in the brief."""
     lines = notify.header(day)
+    home = brief.home_message_line(stances)  # S54: one line on a home risk_off
+    if home:
+        lines += [home, ""]
     lines += _undervalued_lines(undervalued) or ["Undervalued: no market read this run"]
     trades = trade_lines(undervalued, stances)
     if trades:
@@ -991,6 +1059,7 @@ class RunResult:
     peers: Path | None = None
     tier_replay: Path | None = None
     layer_files: list[Path] = field(default_factory=list)
+    home: HomeRegime | None = None
 
 
 def write_peers(day: date, gather: Callable[[date], dict] | None,
@@ -1076,10 +1145,10 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
     paths = paths or Paths.default()
     sources = sources or Sources.default()
     j = journal.Journal(paths.journal)
-    layers = gather(day, sources, history=list(j.read()))
+    layers = gather(day, sources, history=list(j.read()), rules_dir=paths.out / "rules")
     res = RunResult(ok=False, day=day, regime=layers.regime, stale_inputs=layers.stale_inputs,
                     problems=dict(layers.layer1.problems) if layers.layer1 else {},
-                    idn=layers.idn, foreign=layers.foreign)
+                    idn=layers.idn, foreign=layers.foreign, home=layers.home)
     if layers.layer1 is None or not layers.scores:
         return res  # no layer 1, no stance: leave out/ and the journal as they were
 
@@ -1090,8 +1159,9 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
     res.stances = build(layers, fp)
     res.files = write_out(res.stances, paths.out)
     if sources.layers_out:  # S33: never raises, never changes a stance
-        res.layer_files = layers_out.write_layers(layers, res.stances, fp, paths.out,
-                                                  fred=sources.fred, idn=sources.idn)
+        res.layer_files = layers_out.write_layers(
+            layers, res.stances, fp, paths.out, fred=sources.fred, idn=sources.idn,
+            home_sources=home_sources(sources.idn) if sources.idn is not None else None)
     res.undervalued, uv_stale = _undervalued(day, sources, layers, res.stances, fp, paths)
     res.peers, peer_stale = write_peers(day, sources.peers, paths.out)
     res.tier_replay, tr_stale = write_tier_replay(day, sources.tier_replay, paths.out)
@@ -1134,7 +1204,8 @@ def _never_fail(name: str, fn: Callable | None, fmt: Callable[[Any], list[str]],
 
 def last_regime(records: Iterable[Mapping], day: date) -> dict | None:
     """The newest journalled regime (`kind` regime, from a weekly run or a daily check) dated on
-    or before `day`, as {"as_of", "state", "dollar"}; the later record wins a tie."""
+    or before `day`, as {"as_of", "state", "dollar", "home"}; the later record wins a tie.
+    `home` is the home (IDN) state journalled with it (S54), None when the record has none."""
     best = None
     for rec in records:
         out = rec.get("outputs") or {}
@@ -1144,7 +1215,9 @@ def last_regime(records: Iterable[Mapping], day: date) -> dict | None:
         if "state" not in out or "dollar" not in out:
             continue
         if best is None or as_of >= best["as_of"]:
-            best = {"as_of": as_of, "state": out["state"], "dollar": out["dollar"]}
+            home = out.get("home") if isinstance(out.get("home"), Mapping) else {}
+            best = {"as_of": as_of, "state": out["state"], "dollar": out["dollar"],
+                    "home": home.get("state")}
     return best
 
 
@@ -1159,6 +1232,14 @@ class RegimeCheck:
     changed: bool
     notify: dict | None = None
     journalled: bool = False
+    home: HomeRegime | None = None  # the home (IDN) regime read with it (S54); None: no reading
+
+    @property
+    def home_changed(self) -> bool:
+        """The home state differs from the one journalled last (a record without one is no
+        comparison: the check journals a home baseline instead)."""
+        prev = (self.previous or {}).get("home")
+        return self.home is not None and prev is not None and prev != self.home.state
 
     def changes(self) -> list[str]:
         if not self.changed or self.previous is None:
@@ -1168,6 +1249,8 @@ class RegimeCheck:
             out.append(f"Regime: {self.previous['state']} → {self.regime.state}")
         if self.previous["dollar"] != self.regime.dollar:
             out.append(f"Dollar: {self.previous['dollar']} → {self.regime.dollar}")
+        if self.home_changed:
+            out.append(f"Home regime (IDN): {self.previous['home']} → {self.home.state}")
         return out
 
 
@@ -1179,14 +1262,28 @@ def regime_message(chk: RegimeCheck) -> str:
     if chk.previous is not None:
         lines.append(f"(since {chk.previous['as_of']})")
     lines += [""] + [f"- {d}" for d in reg.drivers]
+    if chk.home is not None:
+        lines += [f"- home: {d}" for d in chk.home.drivers]
     if reg.stale_inputs:
         lines += ["", "stale: " + ", ".join(reg.stale_inputs)]
     lines += ["", "Stances move on the weekly run; this is a heads-up only.", "", DISCLAIMER]
     return "\n".join(lines)
 
 
+def _home_reading(day: date, home_source: Any) -> HomeRegime | None:
+    """The home regime for the daily check, or None: no source, a failure, or no store read."""
+    if home_source is None:
+        return None
+    try:
+        home = home_regime.home_regime(day, home_source)
+    except Exception:  # noqa: BLE001 - the home regime never fails the check
+        return None
+    return home if home.sources else None
+
+
 def regime_check(day: date, *, paths: Paths | None = None, source: Any = None,
-                 send: bool = True, notify_kw: Mapping[str, Any] | None = None) -> RegimeCheck:
+                 send: bool = True, notify_kw: Mapping[str, Any] | None = None,
+                 home_source: Any = None) -> RegimeCheck:
     """Daily job: compute layer 0 for `day` and compare it with the last journalled regime.
 
     - Telegram (kind `regime`, send-once per day) goes out only when the state or the dollar
@@ -1198,23 +1295,34 @@ def regime_check(day: date, *, paths: Paths | None = None, source: Any = None,
     - `send=False` is a dry check: it writes nothing at all.
     - A regime read without any source (FRED missing or locked) is no reading: no change, no
       write, no message.
+    - With `home_source` (a `HomeSources`, S54) the home (IDN) regime is read too and rides in
+      the journalled record as `home`. A home state change is a change like the others (one
+      message). The first check whose last record has no home state journals a home baseline
+      and sends nothing; an unreadable home regime is no home change.
     """
     paths = paths or Paths.default()
     j = journal.Journal(paths.journal)
     reg = regime.regime(day, source=source if source is not None else Sources.default().fred)
     prev = last_regime(j.read(), day)
     available = bool(reg.sources)
-    changed = available and prev is not None and (
-        prev["state"], prev["dollar"]) != (reg.state, reg.dollar)
-    chk = RegimeCheck(day=day, regime=reg, previous=prev, available=available, changed=changed)
+    home = _home_reading(day, home_source) if available else None
+    chk = RegimeCheck(day=day, regime=reg, previous=prev, available=available, changed=False,
+                      home=home)
+    chk.changed = available and prev is not None and (
+        (prev["state"], prev["dollar"]) != (reg.state, reg.dollar) or chk.home_changed)
     if not send or not available:
         return chk
-    if changed:
+    if chk.changed:
         chk.notify = notify.send(regime_message(chk), kind="regime", day=day,
                                  state_dir=paths.notify, **dict(notify_kw or {}))
-    if prev is None or (changed and (chk.notify["sent"] or chk.notify["skipped"])):
+    home_baseline = home is not None and prev is not None and prev.get("home") is None
+    if prev is None or home_baseline or (
+            chk.changed and (chk.notify["sent"] or chk.notify["skipped"])):
         fp = j.register_model()
+        outputs = journal.jsonable(reg)
+        if home is not None:
+            outputs["home"] = journal.jsonable(home)
         j.record(kind="regime", fingerprint=fp, inputs={"day": day, "job": "regime"},
-                 outputs=reg, as_of=day, run_id=uuid.uuid4().hex)
+                 outputs=outputs, as_of=day, run_id=uuid.uuid4().hex)
         chk.journalled = True
     return chk

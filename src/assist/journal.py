@@ -7,12 +7,14 @@ the hash of the line before it (`prev`) and its own hash, and `verify()` checks 
 
 The fingerprint is sha256 over the canonical JSON of four things:
 - `config`: the hand-set weights, bands and tilts (`stance.MODEL_CONFIG` by default);
-- `rules`: sha256 of each rule module's normalised AST (stance, layers, candidates, placebo
-  eval): the module is parsed with `ast`, the module, class and function docstrings are dropped,
-  and `ast.dump(tree, include_attributes=False)` is hashed. Comments, docstrings, blank lines,
-  formatting and line numbers therefore leave the fingerprint unchanged, while any change to code
-  (a constant, an expression, a name, a signature, a string that is not a docstring) changes it
-  (S41; before it the raw bytes were hashed, so the switch segmented the record once);
+- `rules`: sha256 of each rule module's normalised AST (stance.py and every module under layers/,
+  candidates/ and eval/, subpackages included since S45, so the IDN bonds and stocks rules in
+  layers/bonds/ and layers/rules/ count): the module is parsed with `ast`, the module, class and
+  function docstrings are dropped, and `ast.dump(tree, include_attributes=False)` is hashed.
+  Comments, docstrings, blank lines, formatting and line numbers therefore leave the fingerprint
+  unchanged, while any change to code (a constant, an expression, a name, a signature, a string
+  that is not a docstring) changes it (S41; before it the raw bytes were hashed, so the
+  switch segmented the record once);
 - `config_files`: sha256 of each model config file's bytes under `config/` (not `sources.yaml`,
   which only says where stores live);
 - `rules_method`: `RULES_METHOD`, so a change of hashing method shows in the stored inputs.
@@ -84,9 +86,10 @@ DECISIONS = "decisions.jsonl"
 MODELS = "models"
 
 FINGERPRINT_RE = re.compile(r"sha256:[0-9a-f]{64}")
-# Modules whose code decides a stance or names a candidate. Adapters (sources/), the CLI and
-# doctor move data around and do not change a decision, so they stay out of the fingerprint.
-RULE_GLOBS = ("stance.py", "layers/*.py", "candidates/*.py", "eval/*.py")
+# Modules whose code decides a stance or names a candidate, at any depth (S45: `**` so subpackages
+# such as layers/bonds/ and layers/rules/ are hashed too). Adapters (sources/), views, the CLI,
+# pipeline and doctor move data around and do not change a decision, so they stay out.
+RULE_GLOBS = ("stance.py", "layers/**/*.py", "candidates/**/*.py", "eval/**/*.py")
 # sources.yaml says where stores live; household*.yaml only names people for /flows matching.
 PLUMBING_CONFIG = frozenset({"sources.yaml", "household.example.yaml", "household.local.yaml"})
 RULES_METHOD = "sha256 of ast.dump(include_attributes=False), docstrings removed"

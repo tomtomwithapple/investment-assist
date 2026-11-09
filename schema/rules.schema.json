@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tomtomtomdev/investment-assist/schema/rules.schema.json",
+  "title": "investment-assist rule gate (one IDN rule)",
+  "description": "PLAN S48 (P67): out/rules/IDN-{asset}.json. The historical placebo verdict on the rule's point-in-time history (P66), the live monitor on its journalled calls, the gate state, the on/off sample per side against MIN_N and the distance to the gate, keyed to the rule fingerprint. A file whose rule_fingerprint differs from the running rule's counts as no verdict. Heuristic context, not investment advice.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "subject", "asset", "as_of", "rule_fingerprint", "since", "state", "line",
+    "verdict", "params", "covers", "calls", "sample", "distance", "why", "no_call",
+    "historical", "live", "live_edge", "stale_inputs", "rows", "disclaimer"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "subject": {"const": "IDN"},
+    "asset": {"enum": ["bonds", "stocks"]},
+    "as_of": {"$ref": "#/$defs/date", "description": "The run (or `assist rules`) date."},
+    "rule_fingerprint": {"$ref": "#/$defs/fingerprint"},
+    "since": {"$ref": "#/$defs/date", "description": "First date this rule fingerprint's gate was written: the live monitor counts journalled calls from here."},
+    "state": {"enum": ["passed", "insufficient", "failed", "revoked", "live-passed", "none"]},
+    "line": {"type": "string"},
+    "verdict": {"anyOf": [{"$ref": "#/$defs/verdict"}, {"type": "null"}], "description": "The effective enter-side verdict handed to the rule's gated_stance (enter vs hold / reduce): it backs only an enter; null = no verdict."},
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["horizon", "stride", "block", "min_n", "revoke_n", "revoke_t", "t_min", "alpha", "seed", "start"],
+      "properties": {
+        "horizon": {"type": "integer", "minimum": 1},
+        "stride": {"type": "integer", "minimum": 1},
+        "block": {"type": "integer", "minimum": 1},
+        "min_n": {"type": "integer", "minimum": 0},
+        "revoke_n": {"type": "integer", "minimum": 0},
+        "revoke_t": {"type": "number"},
+        "t_min": {"type": "number"},
+        "alpha": {"type": "number"},
+        "seed": {"type": "integer"},
+        "start": {"$ref": "#/$defs/date"}
+      }
+    },
+    "covers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["first", "last", "months", "with_return", "window_first", "window_last"],
+      "properties": {
+        "first": {"$ref": "#/$defs/month_or_null"},
+        "last": {"$ref": "#/$defs/month_or_null"},
+        "months": {"type": "integer", "minimum": 0},
+        "with_return": {"type": "integer", "minimum": 0},
+        "window_first": {"$ref": "#/$defs/month_or_null", "description": "First month with a call (every input)."},
+        "window_last": {"$ref": "#/$defs/month_or_null", "description": "Last month with a full forward return."}
+      }
+    },
+    "calls": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+    "sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["live"],
+      "properties": {"historical": {"$ref": "#/$defs/counts"}, "live": {"$ref": "#/$defs/counts"}}
+    },
+    "distance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["live", "revoke"],
+      "properties": {
+        "historical": {"$ref": "#/$defs/sides"},
+        "live": {"$ref": "#/$defs/sides"},
+        "revoke": {"$ref": "#/$defs/sides"}
+      }
+    },
+    "why": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["on", "off"],
+      "properties": {"on": {"type": "string"}, "off": {"type": "string"}}
+    },
+    "no_call": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["month", "missing"],
+        "properties": {"month": {"$ref": "#/$defs/month"}, "missing": {"$ref": "#/$defs/texts"}}
+      }
+    },
+    "historical": {"anyOf": [{"$ref": "#/$defs/verdict"}, {"type": "null"}]},
+    "live": {"$ref": "#/$defs/verdict"},
+    "live_edge": {"$ref": "#/$defs/edge"},
+    "stale_inputs": {"$ref": "#/$defs/texts"},
+    "rows": {"type": ["array", "null"], "items": {"$ref": "#/$defs/row"}},
+    "reduce": {
+      "type": "object",
+      "description": "Schema 1.1.0 (P74): the reduce side's own gate, reduce (on) vs enter / hold (off), direction -1, on the same window, journal and numbers as the enter side. Its verdict is the only one that may apply a reduce proposal; the top-level verdict backs only an enter. Absent = reduce untested.",
+      "additionalProperties": false,
+      "required": ["side", "direction", "state", "verdict", "historical", "live", "live_edge", "sample", "distance", "why"],
+      "properties": {
+        "side": {"const": "reduce"},
+        "direction": {"const": -1},
+        "state": {"enum": ["passed", "insufficient", "failed", "revoked", "live-passed", "none"]},
+        "verdict": {"anyOf": [{"$ref": "#/$defs/verdict"}, {"type": "null"}]},
+        "historical": {"anyOf": [{"$ref": "#/$defs/verdict"}, {"type": "null"}]},
+        "live": {"$ref": "#/$defs/verdict"},
+        "live_edge": {"$ref": "#/$defs/edge"},
+        "sample": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["live"],
+          "properties": {"historical": {"$ref": "#/$defs/counts"}, "live": {"$ref": "#/$defs/counts"}}
+        },
+        "distance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["live", "revoke"],
+          "properties": {
+            "historical": {"$ref": "#/$defs/sides"},
+            "live": {"$ref": "#/$defs/sides"},
+            "revoke": {"$ref": "#/$defs/sides"}
+          }
+        },
+        "why": {"type": "string"}
+      }
+    },
+    "disclaimer": {"type": "string", "pattern": "[Nn]ot investment advice"}
+  },
+  "$defs": {
+    "date": {"type": "string", "format": "date", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "month": {"type": "string", "pattern": "^\\d{4}-\\d{2}$"},
+    "month_or_null": {"anyOf": [{"$ref": "#/$defs/month"}, {"type": "null"}]},
+    "fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "texts": {"type": "array", "items": {"type": "string"}},
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["on", "off", "no_call"],
+      "properties": {
+        "on": {"type": "integer", "minimum": 0},
+        "off": {"type": "integer", "minimum": 0},
+        "no_call": {"type": "integer", "minimum": 0}
+      }
+    },
+    "sides": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["on", "off"],
+      "properties": {"on": {"type": "integer", "minimum": 0}, "off": {"type": "integer", "minimum": 0}}
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["n_on", "n_off", "mean_on", "mean_off", "diff", "t", "ok"],
+      "properties": {
+        "n_on": {"type": "integer"}, "n_off": {"type": "integer"},
+        "mean_on": {"type": "number"}, "mean_off": {"type": "number"},
+        "diff": {"type": "number"}, "t": {"type": "number"}, "ok": {"type": "boolean"}
+      }
+    },
+    "verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "reason", "rule", "score_t", "p_value", "control_t", "control_ts", "seed", "n_shuffles", "n_controls", "block", "stride", "direction", "t_min", "alpha"],
+      "properties": {
+        "passed": {"type": "boolean"},
+        "reason": {"type": "string"},
+        "rule": {"$ref": "#/$defs/edge"},
+        "score_t": {"type": "number"},
+        "p_value": {"type": "number"},
+        "control_t": {"type": "number"},
+        "control_ts": {"type": "array", "items": {"type": "number"}},
+        "seed": {"type": "integer"},
+        "n_shuffles": {"type": "integer"},
+        "n_controls": {"type": "integer"},
+        "block": {"type": "integer"},
+        "stride": {"type": "integer"},
+        "direction": {"type": "integer"},
+        "t_min": {"type": "number"},
+        "alpha": {"type": "number"}
+      }
+    },
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["as_of", "call", "proposed_stance", "missing", "ten_year_source", "forward_return", "regime", "values", "stale_inputs"],
+      "properties": {
+        "as_of": {"$ref": "#/$defs/date"},
+        "call": {"enum": ["enter", "hold", "reduce", "no_call"]},
+        "proposed_stance": {"enum": ["overweight", "neutral", "underweight", null]},
+        "missing": {"$ref": "#/$defs/texts"},
+        "ten_year_source": {"type": ["string", "null"]},
+        "forward_return": {"type": ["number", "null"]},
+        "regime": {"type": ["string", "null"]},
+        "values": {"type": "object", "additionalProperties": {"type": ["number", "null"]}},
+        "stale_inputs": {"$ref": "#/$defs/texts"}
+      }
+    }
+  }
+}

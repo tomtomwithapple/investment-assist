@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/tomtomtomdev/investment-assist/schema/layers/regime.schema.json",
   "title": "investment-assist layer 0 file (out/layers/regime.json)",
-  "description": "PLAN S33: the layer-0 regime and dollar call as `assist run` computed it, every input of assist.layers.regime (counted rules and not-adopted candidates) with value, newest date, vote and a 1-year weekly line. A builder that failed writes the common fields and `error` only. Extends the stance contract's model_fingerprint, stale_inputs, sources and disclaimer semantics. Heuristic context, not investment advice.",
+  "description": "PLAN S33: the layer-0 regime and dollar call as `assist run` computed it, every input of assist.layers.regime (counted rules and not-adopted candidates) with value, newest date, vote and a 1-year weekly line. Schema 1.1.0 (S53) adds the optional `home` block: the home (IDN) regime with its four inputs and their weekly lines, absent in 1.0.0 files and when the run had no home regime. A builder that failed writes the common fields and `error` only. Extends the stance contract's model_fingerprint, stale_inputs, sources and disclaimer semantics. Heuristic context, not investment advice.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "kind", "as_of", "model_fingerprint", "stale_inputs", "sources", "disclaimer"],
@@ -43,11 +43,69 @@
     },
     "history_weeks": {"type": "integer", "minimum": 1},
     "inputs": {"type": "array", "items": {"$ref": "#/$defs/input"}},
+    "home": {"$ref": "#/$defs/home"},
     "stale_inputs": {"$ref": "#/$defs/texts"},
     "sources": {"$ref": "#/$defs/texts"},
     "disclaimer": {"type": "string", "minLength": 1}
   },
   "$defs": {
+    "home": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The home (IDN) regime (PLAN S51-S53, open questions 7 and 8): risk_off at rule.state_at points or more, else neutral (there is no home risk_on). On risk_off the adds and trims of IDN stocks and IDN bonds are laddered; the score shift applies only once rule.shift_adopted.",
+      "required": ["as_of", "state", "points", "drivers", "stale_inputs", "rule", "history_weeks", "inputs"],
+      "properties": {
+        "as_of": {"$ref": "#/$defs/date"},
+        "state": {"enum": ["risk_off", "neutral"]},
+        "points": {"type": "integer", "minimum": 0},
+        "drivers": {"$ref": "#/$defs/texts"},
+        "stale_inputs": {"$ref": "#/$defs/texts"},
+        "rule": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state_at", "jci_points", "flow_z_at", "usdidr_points", "sbn_at", "max_age_days", "shift_pt", "shift_adopted"],
+          "properties": {
+            "state_at": {"type": "integer"},
+            "jci_points": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}, "description": "[threshold %, points] on the JCI drawdown vs its 20-day high (<=), most severe first."},
+            "flow_z_at": {"type": "number"},
+            "usdidr_points": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}, "description": "[threshold %, points] on USD/IDR over 20 fixings (>=), most severe first."},
+            "sbn_at": {"type": "number"},
+            "max_age_days": {"type": "integer", "description": "An input counts only if its newest point is at most this old."},
+            "shift_pt": {"type": "number"},
+            "shift_adopted": {"type": "boolean"}
+          }
+        },
+        "history_weeks": {"type": "integer", "minimum": 1},
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["feature", "counted", "points", "label", "value", "last", "history"],
+            "properties": {
+              "feature": {"enum": ["jci_drawdown_20d", "idx_foreign_z", "usdidr_20d", "sbn_non_resident_20d"]},
+              "counted": {"type": "boolean", "description": "Fresh (newest point at most max_age_days old) and scored."},
+              "points": {"type": ["integer", "null"], "description": "Points scored; null when not counted."},
+              "label": {"type": ["string", "null"]},
+              "value": {"$ref": "#/$defs/number"},
+              "last": {"anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}]},
+              "history": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["date", "value"],
+                  "properties": {
+                    "date": {"$ref": "#/$defs/date"},
+                    "value": {"$ref": "#/$defs/number", "description": "The input as home_inputs computes it on the date."}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "date": {"type": "string", "format": "date", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
     "texts": {"type": "array", "items": {"type": "string"}},
     "number": {"type": ["number", "null"]},

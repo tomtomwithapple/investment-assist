@@ -19,6 +19,7 @@ from test_run_e2e import FakeFred
 from assist import cli, journal, pipeline
 from assist import stance as st
 from assist.candidates.costs import Cost
+from assist.eval import gate
 from assist.eval.placebo import Edge, Verdict
 from assist.layers.bonds import IdnBonds
 from assist.layers.candidates import IdnCandidates, ScreenSummary, assemble, idn_candidates
@@ -206,47 +207,51 @@ def test_idn_candidates_skips_pricing_when_no_screen_passes():
     assert out.candidates == ()
 
 
-# ---------------- verdicts from the journal ----------------
+# ---------------- the rule gate (P67) ----------------
 
 
-def rule_rec(asset: str, day: date, call: str) -> dict:
+def rule_rec(asset: str, day: date, call: str, fp: str) -> dict:
     return {"kind": "rule", "subject": "IDN", "asset": asset, "as_of": day.isoformat(),
-            "outputs": {"call": call}}
+            "outputs": {"call": call, "rule_fingerprint": fp}}
 
 
-def test_journalled_calls_take_the_last_call_per_month_before_the_day():
-    hist = [rule_rec("bonds", date(2026, 8, 3), "hold"), rule_rec("bonds", date(2026, 8, 28),
-                                                                   "enter"),
-            rule_rec("stocks", date(2026, 9, 1), "reduce"),
-            rule_rec("bonds", DAY, "reduce"),  # today's own call never judges itself
-            {"kind": "stance", "subject": "IDN", "asset": "bonds", "as_of": "2026-09-01"}]
-    assert pipeline.journalled_calls(hist, "bonds", DAY) == {(2026, 8): "enter"}
-    assert pipeline.journalled_calls(hist, "stocks", DAY) == {(2026, 9): "reduce"}
+def test_rule_gates_monitor_counts_journalled_calls_of_this_rule_only(tmp_path):
+    fp = gate.rule_fingerprint("stocks")
+    hist = [rule_rec("stocks", date(2026, 9, 1), "enter", fp),
+            rule_rec("stocks", date(2026, 9, 8), "hold", "sha256:" + "0" * 64)]
+    prices = {"bonds": [], "stocks": [(date(2026, m, 28), 6000.0 + m) for m in range(1, 10)]}
+    gates = pipeline.rule_gates(DAY, hist, prices, None)
+    assert gates["stocks"].state == "none" and gates["stocks"].verdict is None
+    assert gate.live_calls(hist, "stocks", fp, since=date(2026, 1, 1), before=DAY) == {
+        (2026, 9): "enter"}
 
 
-def test_journalled_verdict_is_insufficient_without_forward_returns():
-    hist = [rule_rec("stocks", date(2026, 10, 1), "enter")]
-    prices = [(date(2026, m, 28), 6000.0 + m) for m in range(1, 10)]  # JCI frozen at 2026-09
-    v = pipeline.journalled_verdict(hist, "stocks", prices, DAY)
-    assert not v.passed and "insufficient sample" in v.reason
+def test_rule_gates_never_raise(tmp_path, monkeypatch):
+    def boom(*a, **k):
+        if k.get("build") is not None or a[1] is not None:
+            raise OSError("disk full")
+        return real(*a, **k)
+
+    real = gate.refresh
+    monkeypatch.setattr(gate, "refresh", boom)
+    gates = pipeline.rule_gates(DAY, [], {"bonds": [], "stocks": []}, tmp_path, FakeBuild())
+    assert all(g.state == "none" for g in gates.values())
+    assert all("rule gate failed: OSError: disk full" in g.stale_inputs for g in gates.values())
 
 
-def test_journalled_verdict_scores_calls_against_what_followed():
-    # 40 months of calls: enter before rising months, reduce before falling ones
-    months = [date(2022 + (m // 12), m % 12 + 1, 28) for m in range(40)]
-    import random
-    rng = random.Random(3)
-    moves = [rng.choice((1, -1)) for _ in months]
-    prices, level = [], 100.0
-    for d, mv in zip(months, moves, strict=True):
-        prices.append((d, level))
-        level *= 1.03 if mv > 0 else 0.97
-    hist = []
-    for i, d in enumerate(months[:-3]):
-        ahead = sum(moves[i:i + 3])
-        hist.append(rule_rec("stocks", d, "enter" if ahead > 0 else "reduce"))
-    v = pipeline.journalled_verdict(hist, "stocks", prices, DAY, horizon=3)
-    assert v.rule.n_on + v.rule.n_off > 0 and v.rule.diff > 0
+class FakeBuild:
+    """history.build's shape: every month end a hold, no forward return (the gate fills them)."""
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, dates, today):
+        from assist.history import HistoryRow, RuleHistory
+
+        self.calls.append(len(dates))
+        return {a: RuleHistory(a, tuple(HistoryRow(d, "hold", "neutral", (), "dbnomics", None,
+                                                   "neutral", {}) for d in dates))
+                for a in gate.ASSETS}
 
 
 # ---------------- the rule view from IDN layers ----------------
@@ -283,7 +288,7 @@ def test_rule_view_keeps_the_band_when_the_verdict_fails():
     rv = pipeline.rule_view(score(), lay)
     assert rv.stance is None and rv.entry is None
     assert rv.note.startswith("bonds rule proposes overweight; not applied: t-stat 0.50")
-    assert "verdict on its journalled calls: not passed" in rv.note
+    assert "(verdict: not passed, t-stat 0.50" in rv.note  # no gate: the bare verdict
     assert "real yield 3.1% (82nd pct)" in rv.drivers
 
 
@@ -371,9 +376,93 @@ def test_run_with_idn_stores_missing_degrades_to_no_call(tmp_path, sources):
     rules = [r for r in recs if r["kind"] == "rule"]
     assert [(r["asset"], r["outputs"]["call"]) for r in rules] == [("bonds", "no_call"),
                                                                     ("stocks", "no_call")]
-    assert all("insufficient sample" in r["outputs"]["verdict"]["reason"] for r in rules)
+    # no rule history builder and no out/rules file: no verdict, and no file written
+    assert all(r["outputs"]["verdict"] is None for r in rules)
+    assert all(r["outputs"]["gate"]["state"] == "none" for r in rules)
+    assert [r["outputs"]["rule_fingerprint"] for r in rules] == [
+        gate.rule_fingerprint("bonds"), gate.rule_fingerprint("stocks")]
+    assert not (paths.out / "rules").exists()
     assert sum(r["kind"] == "candidates" for r in recs) == 1
     assert j.verify() == len(recs)
+
+
+# ---------------- home (IDN) regime in the run (S53, P72) ----------------
+
+
+def test_run_puts_the_home_regime_on_idn_legs_and_in_the_regime_record(tmp_path, sources):
+    paths = pipeline.Paths.under(tmp_path / "repo")
+    res = pipeline.run(DAY, paths=paths, sources=sources, send=False)
+    assert res.ok and res.home is not None
+    assert res.home.state == "neutral" and res.home.points == 0  # every store missing
+    for asset in ("bonds", "stocks"):
+        p = valid(json.loads((paths.out / "IDN" / f"{asset}.json").read_text()))
+        assert p["schema_version"] == "1.2.0" and p["model_version"] == "0.5.0"
+        assert p["home_regime"]["state"] == "neutral"
+        assert "idxscape (missing)" in p["home_regime"]["stale_inputs"]
+    for f in paths.out.glob("[A-Z]*/*.json"):
+        if f.parent.name != "IDN" or f.stem not in ("bonds", "stocks"):
+            assert "home_regime" not in json.loads(f.read_text()), f
+    recs = [r for r in journal.Journal(paths.journal).read() if r["kind"] == "regime"]
+    assert len(recs) == 1
+    out = recs[0]["outputs"]
+    assert out["state"] == res.regime.state and out["dollar"] == res.regime.dollar
+    assert out["home"]["state"] == "neutral" and out["home"]["points"] == 0
+    assert set(out["home"]["by_input"]) == {"jci_drawdown_20d", "idx_foreign_z", "usdidr_20d",
+                                            "sbn_non_resident_20d"}
+    assert pipeline.last_regime(journal.Journal(paths.journal).read(), DAY)["state"] == \
+        res.regime.state
+
+
+def test_home_risk_off_ladders_the_idn_legs_in_a_run(tmp_path, sources, monkeypatch):
+    from assist.layers.home_regime import HomeRegime
+
+    off = HomeRegime(DAY, "risk_off", 2, {"jci_drawdown_20d": 2, "idx_foreign_z": 0,
+                                          "usdidr_20d": 0, "sbn_non_resident_20d": None},
+                     drivers=("JCI -12.2% vs 20d high (2)",), sources=("idxscape",))
+    seen = []
+
+    def fake(day, src):
+        seen.append((day, src))
+        return off
+
+    monkeypatch.setattr(pipeline.home_regime, "home_regime", fake)
+    paths = pipeline.Paths.under(tmp_path / "repo")
+    res = pipeline.run(DAY, paths=paths, sources=sources, send=False)
+    assert res.ok and res.home is off and seen[0][0] == DAY
+    hs = seen[0][1]
+    idn = sources.idn
+    assert (hs.jci, hs.idxscape, hs.usdidr) == (idn.idxmethod, idn.idxscape, idn.idxscape)
+    for asset in ("bonds", "stocks"):
+        p = valid(json.loads((paths.out / "IDN" / f"{asset}.json").read_text()))
+        assert p["regime"] == res.regime.state
+        assert p["home_regime"]["state"] == "risk_off"
+        assert "home (IDN) regime risk_off" in p["risks"]
+        gap = round(p["portfolio"]["target_pct"] - p["portfolio"]["current_pct"], 1)
+        assert p["entry"]["style"] == ("ladder" if gap else "none"), (asset, gap)
+    rec = next(r for r in journal.Journal(paths.journal).read() if r["kind"] == "regime")
+    assert rec["outputs"]["home"]["state"] == "risk_off"
+
+
+def test_home_regime_failing_degrades(tmp_path, sources, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("home regime exploded")
+
+    monkeypatch.setattr(pipeline.home_regime, "home_regime", boom)
+    paths = pipeline.Paths.under(tmp_path / "repo")
+    res = pipeline.run(DAY, paths=paths, sources=sources, send=False)
+    assert res.ok and res.home is None
+    assert "home regime failed: RuntimeError: home regime exploded" in res.stale_inputs
+    p = valid(json.loads((paths.out / "IDN" / "bonds.json").read_text()))
+    assert "home_regime" not in p
+    rec = next(r for r in journal.Journal(paths.journal).read() if r["kind"] == "regime")
+    assert rec["outputs"]["home"] is None
+
+
+def test_home_sources_prefer_the_usdidr_splice(tmp_path):
+    src = missing_idn(tmp_path)
+    src.usdidr = splice = object()
+    hs = pipeline.home_sources(src)
+    assert (hs.jci, hs.idxscape, hs.usdidr) == (src.idxmethod, src.idxscape, splice)
 
 
 def test_rerun_is_byte_identical_with_the_idn_layers(tmp_path, sources):
@@ -391,10 +480,151 @@ def test_cli_run_prints_the_idn_rules_and_candidates(tmp_path, sources, monkeypa
     assert cli.main(["run", "--today", DAY.isoformat(), "--no-send"]) == 0
     out = capsys.readouterr().out
     assert "IDN bonds: neutral" in out and "IDN stocks: neutral" in out
-    assert "bonds rule: no_call, proposes None; verdict: insufficient sample" in out
+    assert "bonds rule: no_call, proposes None; verdict: none" in out
+    assert "gate none: no history for this rule" in out
     assert "layer 4: 0 IDN stock candidate(s)" in out
+
+
+def _gate_with_reduce(passed: bool):
+    import dataclasses as dc
+
+    g = gate.evaluate_gate("bonds", (), records=[], prices=[], day=DAY,
+                           fingerprint=gate.rule_fingerprint("bonds"), since=DAY)
+    rv = dc.replace(verdict(passed), reason=f"reduce side: gate {'passed' if passed else 'failed'}")
+    return dc.replace(g, reduce=dc.replace(g.reduce, verdict=rv))
+
+
+def test_rule_view_never_applies_a_reduce_on_the_enter_verdict():
+    # P74: a passing enter-side verdict backs only an enter; a reduce needs its own side
+    lay = layers_with(idn_layers(bonds=bonds_rule("reduce", "underweight"),
+                                 verdicts={"bonds": verdict(True)}))
+    rv = pipeline.rule_view(score(), lay)
+    assert rv.stance is None and rv.entry is None
+    assert "not applied: reduce side untested" in rv.note
+    g = _gate_with_reduce(False)
+    lay.idn.gates = {"bonds": g}
+    rv = pipeline.rule_view(score(), lay)
+    assert rv.stance is None and "not applied: reduce side gate failed" in rv.note
+
+
+def test_rule_view_applies_a_reduce_on_a_passing_reduce_side():
+    g = _gate_with_reduce(True)
+    lay = layers_with(idn_layers(bonds=bonds_rule("reduce", "underweight"),
+                                 verdicts={"bonds": verdict(False)}))
+    lay.idn.gates = {"bonds": g}
+    rv = pipeline.rule_view(score(), lay)
+    assert rv.stance == "underweight"
+    assert rv.note.startswith("bonds rule applied: underweight (reduce side: gate passed")
+
+
+def test_rule_view_never_applies_a_hold():
+    lay = layers_with(idn_layers(bonds=bonds_rule("hold", "neutral"),
+                                 verdicts={"bonds": verdict(True)}))
+    rv = pipeline.rule_view(score(), lay)
+    assert rv.stance is None and "a hold claims no edge" in rv.note
+
+
+def test_rule_prices_for_bonds_are_the_history_ten_year_series(tmp_path):
+    from assist import history
+
+    src = missing_idn(tmp_path)
+    assert pipeline.rule_prices(src, DAY)["bonds"] == history.ten_year_months(src, DAY)
+
+
+def test_run_writes_out_rules_and_journals_the_rule_fingerprint(tmp_path, sources):
+    sources.rule_history = build = FakeBuild()
+    paths = pipeline.Paths.under(tmp_path / "repo")
+    res = pipeline.run(DAY, paths=paths, sources=sources, send=False)
+    assert res.ok and build.calls == [119]  # 2016-11 → 2026-09, every month end once
+    v = gate.validator()
+    docs = {a: json.loads((paths.out / "rules" / f"IDN-{a}.json").read_text())
+            for a in gate.ASSETS}
+    for doc in docs.values():
+        v.validate(doc)
+        assert doc["state"] == "insufficient" and doc["since"] == DAY.isoformat()
+        assert doc["sample"]["historical"]["on"] == 0
+    rules = [r for r in journal.Journal(paths.journal).read() if r["kind"] == "rule"]
+    for r in rules:
+        assert r["outputs"]["rule_fingerprint"] == docs[r["asset"]]["rule_fingerprint"]
+        assert r["outputs"]["gate"]["state"] == "insufficient"
+        assert r["outputs"]["verdict"]["reason"].startswith("insufficient sample")
+    before = _out_bytes(paths.out)
+    pipeline.run(DAY, paths=paths, sources=sources, send=False)  # a weekly rerun
+    assert build.calls == [119]  # same month: nothing rebuilt
+    assert _out_bytes(paths.out) == before
+
+
+def test_rule_view_note_carries_the_gate_line():
+    g = gate.evaluate_gate("bonds", (), records=[], prices=[], day=DAY,
+                           fingerprint=gate.rule_fingerprint("bonds"), since=DAY)
+    lay = layers_with(idn_layers(verdicts={"bonds": g.verdict}))
+    lay.idn.gates = {"bonds": g}
+    rv = pipeline.rule_view(score(), lay)
+    assert rv.stance is None
+    assert "not applied: insufficient sample" in rv.note
+    assert "(rule gate insufficient: historical on 0/10, off 0/10; live on 0/10" in rv.note
+
+
+def test_gather_idn_holds_the_stocks_macro_input_at_50(tmp_path):
+    idn = pipeline.gather_idn(DAY, regime(), missing_idn(tmp_path), score=score(70.0, "stocks"))
+    assert idn.stocks.macro_score == 50.0  # not the layer-1 70 passed in
+    assert "layer 1 held at 50" in idn.stocks.sources
 
 
 def test_idn_candidates_type_is_journalable():
     c = IdnCandidates(BARS, 10e6, (), (ScreenSummary("m", False, "x", None, 0, 0, 0, {}),), ())
     assert journal.canonical(c)
+
+
+# ---------------- P65: the bonds rule reads the spliced USD/IDR ----------------
+
+
+class Held:
+    """A store holding rows in memory (ids and inclusive dates filtered)."""
+
+    def __init__(self, name, rows):
+        self.name, self._rows = name, rows
+
+    def rows(self, series_ids=None, start=None, end=None, **kw):
+        return [r for r in self._rows if (series_ids is None or r.series_id in series_ids)
+                and (start is None or r.date >= start) and (end is None or r.date <= end)]
+
+
+def _weekdays(first: date, last: date) -> list[date]:
+    from datetime import timedelta
+    return [first + timedelta(days=i) for i in range((last - first).days + 1)
+            if (first + timedelta(days=i)).weekday() < 5]
+
+
+def spliced_fx() -> object:
+    from assist.sources.base import Row
+    from assist.sources.usdidr import UsdIdrSource
+    mas_days = _weekdays(date(2026, 3, 2), date(2026, 10, 23))
+    sg = Held("singstat", [r for d in mas_days for r in (
+        Row("mas:fx:usdsgd", d, 1.3, None, "singstat"),
+        Row("mas:fx:idrsgd", d, 1.3 / 16000.0, None, "singstat"))])
+    idx = Held("idxscape", [Row("JISDOR", d, 16016.0, d, "idxscape")
+                            for d in (date(2026, 10, 22), date(2026, 10, 23))])
+    return UsdIdrSource(idx, sg)
+
+
+def test_gather_idn_feeds_the_spliced_usd_idr_to_the_bonds_rule(tmp_path):
+    src = missing_idn(tmp_path)
+    src.usdidr = spliced_fx()
+    idn = pipeline.gather_idn(DAY, regime(), src)
+    b = idn.bonds
+    trend = b.signal("jisdor_trend")
+    assert trend is not None and trend.source == "MAS+JISDOR"
+    assert b.breakout is False
+    assert not any("fixings)" in s for s in b.stale_inputs)
+    assert any(d.startswith("USD/IDR: MAS cross") and "then JISDOR 2026-10-22" in d
+               and "overlap 2 days" in d for d in b.drivers)
+    assert "singstat" in b.sources and "MAS+JISDOR" not in b.sources
+    assert "idxscape (missing)" in b.stale_inputs  # the SBN signal still reads idxscape
+    assert b.call == "no_call"  # no PHEI, no CPI: the FX input alone makes no call
+
+
+def test_gather_idn_without_a_usd_idr_source_reads_idxscape_as_before(tmp_path):
+    idn = pipeline.gather_idn(DAY, regime(), missing_idn(tmp_path))
+    assert idn.bonds.signal("jisdor_trend") is None
+    assert "idxscape (missing)" in idn.bonds.stale_inputs

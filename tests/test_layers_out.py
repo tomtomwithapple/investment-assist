@@ -21,6 +21,7 @@ from test_run_foreign import Wbs, missing_foreign
 from test_run_idn import missing_idn
 
 from assist import journal, layers_out, pipeline
+from assist.layers import home_inputs as hi
 from assist.layers import regime as rg
 from assist.layers.overrides import Component, IdnOverrides
 from assist.layers.signals import IdnSignals
@@ -119,7 +120,7 @@ def _valid(kind: str, payload: dict) -> dict:
 
 def _common(p: dict, fp: str) -> None:
     assert p["as_of"] == DAY.isoformat()
-    assert p["schema_version"] == layers_out.SCHEMA_VERSION
+    assert p["schema_version"] == layers_out.SCHEMA_VERSIONS[p["kind"]]
     assert p["model_fingerprint"] == fp
     assert p["disclaimer"] == DISCLAIMER
     assert isinstance(p["sources"], list) and isinstance(p["stale_inputs"], list)
@@ -250,6 +251,109 @@ def test_regime_store_down_is_stale_and_run_ok(tmp_path):
     assert "sec-edgar (locked)" in p["stale_inputs"]
     assert all(i["value"] is None and i["direction"] == "missing" for i in p["inputs"])
     assert all(i["history"] == [] for i in p["inputs"])
+
+
+# ---------------- home (IDN) regime in regime.json (S53, P72) ----------------
+
+
+def test_regime_file_carries_the_home_block(run):
+    res, paths = run
+    p = _valid("regime", _read(paths.out, "regime"))
+    assert layers_out.SCHEMA_VERSIONS == {"regime": "1.1.0", "subject": "1.0.0",
+                                          "portfolio": "1.0.0"}
+    assert p["schema_version"] == "1.1.0"
+    home = p["home"]
+    h = res.home
+    assert h is not None
+    assert (home["state"], home["points"]) == (h.state, h.points)
+    assert home["as_of"] == DAY.isoformat()
+    assert home["drivers"] == list(h.drivers)
+    assert home["rule"]["state_at"] == 2 and home["rule"]["shift_adopted"] is False
+    assert home["rule"]["shift_pt"] == -5.0
+    assert home["history_weeks"] == layers_out.HISTORY_WEEKS
+    by = {i["feature"]: i for i in home["inputs"]}
+    assert list(by) == list(hi.FEATURES)
+    for feat, row in by.items():
+        assert row["points"] == h.by_input[feat]
+        assert row["counted"] == (h.by_input[feat] is not None)
+        assert row["value"] == (None if h.values.get(feat) is None
+                                else pytest.approx(h.values[feat]))
+        last = h.last.get(feat)
+        assert row["last"] == (last.isoformat() if last else None)
+        days = [date.fromisoformat(x["date"]) for x in row["history"]]
+        assert all(d.weekday() == 4 and DAY - timedelta(days=366) <= d <= DAY for d in days)
+        assert days == sorted(days)
+    # the run fixture's JCI holds 3 closes, so its weekly lines are empty here; the line itself
+    # is checked on the real 2026-10 JCI in the next test
+
+
+class _Rows:
+    def __init__(self, rows, name="fake"):
+        self._rows, self.name = rows, name
+
+    def rows(self, series_ids=None, start=None, end=None, **kw):
+        return sorted((r for r in self._rows
+                       if (series_ids is None or r.series_id in series_ids)
+                       and (start is None or r.date >= start) and (end is None or r.date <= end)),
+                      key=lambda r: (r.series_id, r.date))
+
+
+def test_home_history_is_the_input_as_computed_each_friday():
+    import csv
+
+    from assist.sources.base import Row
+    from assist.sources.idxmethod import JCI
+
+    with (FIXTURES / "home" / "jci.csv").open() as f:
+        rows = [Row(JCI, date.fromisoformat(r["date"]), float(r["close"]), None,
+                    "idxscape+idx-method") for r in csv.DictReader(f)]
+    src = hi.HomeSources(jci=_Rows(rows), idxscape=_Rows([]), usdidr=_Rows([]))
+    day = date(2026, 11, 6)
+    hist, stale = layers_out.home_history(day, src)
+    assert stale == []
+    jci = hist["jci_drawdown_20d"]
+    assert jci[-1]["date"] == day.isoformat()
+    for pt in jci:
+        friday = date.fromisoformat(pt["date"])
+        assert friday.weekday() == 4
+        assert pt["value"] == pytest.approx(
+            hi.home_inputs(friday, src).values["jci_drawdown_20d"], abs=1e-6)
+    by = {pt["date"]: pt["value"] for pt in jci}
+    assert by["2026-10-16"] < -12  # the 10-16 fall: 2 points on its own
+    assert hist["idx_foreign_z"] == [] and hist["usdidr_20d"] == []
+    assert layers_out.home_history(day, None) == ({f: [] for f in hi.FEATURES}, [])
+
+
+def test_regime_file_of_schema_1_0_without_home_still_validates():
+    old = json.loads((FIXTURES / "ui" / "layers" / "regime.json").read_text())
+    assert old["schema_version"] == "1.0.0" and "home" not in old
+    _valid("regime", old)
+
+
+def test_home_history_failing_is_stale_and_the_block_stays(tmp_path, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("home history exploded")
+
+    monkeypatch.setattr(layers_out.home_regime, "history", boom)
+    paths = pipeline.Paths.under(tmp_path / "repo")
+    res = pipeline.run(DAY, paths=paths, sources=_sources(tmp_path), send=False)
+    assert res.ok
+    p = _valid("regime", _read(paths.out, "regime"))
+    assert p["home"]["state"] == res.home.state
+    assert all(i["history"] == [] for i in p["home"]["inputs"])
+    assert any(s.startswith("home history failed: RuntimeError") for s in p["stale_inputs"])
+
+
+def test_no_home_regime_writes_no_home_block(tmp_path, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("home regime exploded")
+
+    monkeypatch.setattr(pipeline.home_regime, "home_regime", boom)
+    paths = pipeline.Paths.under(tmp_path / "repo")
+    res = pipeline.run(DAY, paths=paths, sources=_sources(tmp_path), send=False)
+    assert res.ok and res.home is None
+    p = _valid("regime", _read(paths.out, "regime"))
+    assert "home" not in p and p["state"] == res.regime.state
 
 
 # ---------------- layers 2-3 ----------------
