@@ -16,8 +16,12 @@ per industry by the live model's own rules (`tiers.gates`, `tiers._pool_pcts`, `
 - Gates: liquidity (`days_traded_60`, `med_value_60d` from the history), positive TTM NI and
   equity, D/E (`total_debt` / `equity`) under the industry's `DER_CAP`. The quality floor
   (Piotroski, Altman Z, interest cover, bank prudential fields) has no history: not replayed.
-- Membership is **today's** S30 industries (`out/industries/IDN.json`), back-filled to every
-  quarter: survivorship bias, flagged in every payload until idx-method V2 lands.
+- Membership is idx-method's dated `industry_membership` (IDX-IC sub-sector, the 33 groups S30's
+  Stockbit industries match one for one), point in time: at each quarter end the latest
+  snapshot on or before it, else the first snapshot back-filled. The table starts 2026-11-06,
+  so today every replayed quarter uses that first snapshot: survivorship and reclassification
+  bias, stated in the payload's `membership` block and its flag (user's call, 2026-11-09; until
+  then the membership was `out/industries/IDN.json`, which needs idx-method's `api_raw`).
 
 **Test.** Per quarter, the equal-weighted mean over industries (at least `min_industries` with a
 Tier A) of Tier A's mean 3-month forward return (price plus dividends gone ex, to the next
@@ -54,14 +58,15 @@ from assist.eval.placebo import ALPHA, SEED, block_shuffle, evaluate
 from assist.sources.idxmethod_series import Bar, Fundamentals, multiples, quarter_ends
 
 __all__ = ["CONFIG", "FILE", "FLAGS", "blocked", "evaluate_panel", "fingerprint",
-           "journal_record", "known", "load", "members_from", "metrics_at", "replay_panel", "run",
+           "journal_record", "known", "load", "members_from", "membership_at",
+           "membership_snapshots", "metrics_at", "replay_panel", "run",
            "run_live", "shuffle_panel", "signals_from_history", "tier_a", "write"]
 
 SCHEMA_VERSION = 1
 FILE = Path("industries") / "IDN.replay.json"
 DISCLAIMER = "Heuristic, not investment advice."
-SOURCE = ("idx-method factor_series (stockbiter.db), cache/history, "
-          "out/industries/IDN.json (membership)")
+SOURCE = ("idx-method factor_series and industry_membership (stockbiter.db), "
+          "cache/history")
 
 REPLAY = {
     "version": 1,
@@ -99,8 +104,6 @@ CONFIG: dict[str, Any] = {
 }
 
 FLAGS = (
-    "survivorship: today's S30 industry membership back-filled to every quarter "
-    "(until idx-method V2)",
     f"fundamentals lagged {LAG_DAYS} days from period end (idx-method V3 open)",
     "reduced composite: no revenue, EBITDA, margins, stability or interest cover before "
     "idx-method V1",
@@ -108,6 +111,29 @@ FLAGS = (
 )
 
 Signals = Callable[[str, date], Mapping[str, Any] | None]
+Snapshot = tuple[date, Mapping[str, Mapping[str, Any]]]
+# A static mapping sym → {"industry", "label", "sector"} (today's, back-filled to every
+# quarter), or dated snapshots [(date, mapping)] in date order (`membership_snapshots`).
+Members = Mapping[str, Mapping[str, Any]] | Sequence[Snapshot]
+
+
+def membership_at(snapshots: Sequence[Snapshot], d: date
+                  ) -> tuple[Mapping[str, Mapping[str, Any]], bool]:
+    """(the latest snapshot on or before `d`, False), else (the first one, True: back-filled)."""
+    held = [m for sd, m in snapshots if sd <= d]
+    return (held[-1], False) if held else (snapshots[0][1], True)
+
+
+def _snapshots(members: Members) -> list[tuple[date | None, Mapping[str, Mapping[str, Any]]]]:
+    if isinstance(members, Mapping):
+        return [(None, members)]  # undated: today's, back-filled to every quarter
+    return sorted(members, key=lambda x: x[0])
+
+
+def _at(snaps: Sequence[tuple[date | None, Mapping]], d: date) -> tuple[Mapping, bool]:
+    if snaps[0][0] is None:
+        return snaps[0][1], True
+    return membership_at(snaps, d)  # type: ignore[arg-type]
 
 
 def fingerprint(config: Mapping[str, Any] = CONFIG) -> str:
@@ -210,7 +236,7 @@ def _mset(label: str, config: Mapping[str, Any]) -> str:
 def replay_panel(
     bars: Mapping[str, Sequence[Bar]],
     quarters: Mapping[str, Sequence[Fundamentals]],
-    members: Mapping[str, Mapping[str, Any]],
+    members: Members,
     signals: Signals | None = None,
     dividends: Mapping[str, Sequence[Mapping]] | None = None,
     *,
@@ -218,13 +244,15 @@ def replay_panel(
     config: Mapping[str, Any] = CONFIG,
 ) -> list[dict]:
     """→ [{"date", "industries": {id: {"n_gated", "recs": [{symbol, mktcap, composite,
-    pillars, fwd}]}}}] per quarter end with a later one (both on or before `as_of`). `members`
-    maps a symbol to today's {"industry", "label", "sector"}; only gated names are kept, with
-    `fwd` None when no bar follows."""
+    pillars, fwd}]}}, "back_filled"}] per quarter end with a later one (both on or before
+    `as_of`). `members` maps a symbol to today's {"industry", "label", "sector"}, or is dated
+    snapshots of such maps (`membership_at` picks one per quarter; a name outside it sits the
+    quarter out); only gated names are kept, with `fwd` None when no bar follows."""
     rp = config["replay"]
     signals = signals or (lambda _s, _d: None)
     dividends = dividends or {}
-    syms = sorted(s for s in members if bars.get(s))
+    snaps = _snapshots(members)
+    syms = sorted({s for _, m in snaps for s in m if bars.get(s)})
     if not syms:
         return []
     last = max(bars[s][-1].date for s in syms)
@@ -238,8 +266,11 @@ def replay_panel(
         metrics: dict[str, dict] = {}
         fwd: dict[str, float | None] = {}
         caps: dict[str, float] = {}
+        members_q, back_filled = _at(snaps, q)
         for sym in syms:
-            mem = members[sym]
+            mem = members_q.get(sym)
+            if mem is None:
+                continue
             bar = _bar_at(bars[sym], q, dates[sym])
             if bar is None or bar.date < q - window:
                 continue
@@ -260,27 +291,27 @@ def replay_panel(
         by_ind: dict[str, list[str]] = {}
         by_sec: dict[str, list[str]] = {}
         for sym in metrics:
-            by_ind.setdefault(str(members[sym]["industry"]), []).append(sym)
-            by_sec.setdefault(str(members[sym].get("sector") or ""), []).append(sym)
+            by_ind.setdefault(str(members_q[sym]["industry"]), []).append(sym)
+            by_sec.setdefault(str(members_q[sym].get("sector") or ""), []).append(sym)
         sector_pcts: dict[str, dict] = {}
         industries = {}
         for ind, gated in sorted(by_ind.items()):
             if len(gated) >= config["min_peer_group"]:
                 pcts = tiers._pool_pcts(gated, metrics, config)
             else:
-                sec = str(members[gated[0]].get("sector") or "")
+                sec = str(members_q[gated[0]].get("sector") or "")
                 if sec not in sector_pcts:
                     sector_pcts[sec] = tiers._pool_pcts(by_sec[sec], metrics, config)
                 pcts = sector_pcts[sec]
             recs = []
             for sym in sorted(gated):
-                label = str(members[sym].get("label") or "")
+                label = str(members_q[sym].get("label") or "")
                 pillars, comp = tiers._score(sym, _mset(label, config), pcts, config)
                 recs.append({"symbol": sym, "mktcap": caps[sym], "composite": comp,
                              "pillars": {p: v["score"] for p, v in pillars.items()},
                              "fwd": fwd[sym]})
             industries[ind] = {"n_gated": len(gated), "recs": recs}
-        panel.append({"date": q, "industries": industries})
+        panel.append({"date": q, "industries": industries, "back_filled": back_filled})
     return panel
 
 
@@ -441,7 +472,7 @@ def evaluate_panel(panel: Sequence[Mapping], config: Mapping[str, Any] = CONFIG,
 def run(
     bars: Mapping[str, Sequence[Bar]],
     quarters: Mapping[str, Sequence[Fundamentals]],
-    members: Mapping[str, Mapping[str, Any]],
+    members: Members,
     signals: Signals | None = None,
     dividends: Mapping[str, Sequence[Mapping]] | None = None,
     *,
@@ -455,12 +486,38 @@ def run(
     panel = replay_panel(bars, quarters, members, signals, dividends, as_of=as_of,
                          config=config)
     res = evaluate_panel(panel, config, **kw)
-    return _payload(day, res, members=len(members), stale=stale, config=config,
-                    as_of=panel[-1]["date"].isoformat() if panel else None)
+    snaps = _snapshots(members)
+    scored = {q["quarter"] for q in res["per_quarter"]}
+    back = sum(1 for q in panel if q["date"].isoformat() in scored and q["back_filled"])
+    first = snaps[0][0].isoformat() if snaps[0][0] else None
+    membership = {
+        "source": "idx-method industry_membership (IDX-IC sub-sector)" if first
+        else "given, undated (today's)",
+        "snapshots": len(snaps) if first else 0,
+        "first_snapshot": first,
+        "last_snapshot": snaps[-1][0].isoformat() if first else None,
+        "names": len({s for _, m in snaps for s in m}),
+        "quarters_back_filled": back,
+        "quarters_point_in_time": len(scored) - back,
+    }
+    return _payload(day, res, members=membership["names"], stale=stale, config=config,
+                    as_of=panel[-1]["date"].isoformat() if panel else None,
+                    membership=membership)
+
+
+def _membership_flag(m: Mapping[str, Any] | None) -> str:
+    if not m or not m.get("first_snapshot"):
+        return ("survivorship: today's industry membership back-filled to every quarter "
+                "(survivorship and reclassification)")
+    return (f"survivorship: membership from idx-method industry_membership, point in time from "
+            f"its first snapshot {m['first_snapshot']}; {m['quarters_back_filled']} of "
+            f"{m['quarters_back_filled'] + m['quarters_point_in_time']} scored quarters fall "
+            "before it and use that snapshot back-filled (survivorship and reclassification)")
 
 
 def _payload(day: date, res: Mapping, *, members: int, stale: Sequence[str],
-             config: Mapping[str, Any], as_of: str | None, blocked: str | None = None) -> dict:
+             config: Mapping[str, Any], as_of: str | None, blocked: str | None = None,
+             membership: Mapping[str, Any] | None = None) -> dict:
     return {
         "schema_version": SCHEMA_VERSION,
         "market": "IDN",
@@ -471,7 +528,8 @@ def _payload(day: date, res: Mapping, *, members: int, stale: Sequence[str],
         "blocked": blocked,
         "context_only": not res.get("passed"),
         "members": members,
-        "flags": list(FLAGS),
+        "membership": dict(membership) if membership else None,
+        "flags": [_membership_flag(membership), *FLAGS],
         "fingerprint": fingerprint(config),
         "tier_fingerprint": tiers.fingerprint(),
         "weights": dict(config["weights"]),
@@ -503,36 +561,55 @@ def members_from(peers_payload: Mapping) -> dict[str, dict]:
     return out
 
 
-def run_live(day: date, out_dir: Path) -> dict:
-    """The replay over the real stores (read-only): membership from `out/industries/IDN.json`,
-    bars, quarters and dividends from `factor_series`, signals from `cache/history/`. A missing
-    input gives a `blocked` payload, never an exception."""
+def membership_snapshots(series: Any) -> list[Snapshot]:
+    """Dated membership from idx-method's `industry_membership`, read-only: [(date, {sym:
+    {"industry": sub_sector_id, "label": sub_sector, "sector"}})] in date order. A missing db
+    or table raises `SourceUnavailable`."""
+    snaps: dict[date, dict[str, dict]] = {}
+    with series._con("industry_membership") as con:
+        rows = con.execute("select date, symbol, sub_sector_id, sub_sector, sector"
+                           " from industry_membership order by date, symbol").fetchall()
+    for d, sym, sid, sub, sec in rows:
+        if sid is None:
+            continue
+        snaps.setdefault(date.fromisoformat(d), {})[sym] = {
+            "industry": str(sid), "label": sub, "sector": sec}
+    return sorted(snaps.items())
+
+
+def run_live(day: date, out_dir: Path, series: Any = None) -> dict:
+    """The replay over the real stores (read-only): dated membership from idx-method's
+    `industry_membership`, bars, quarters and dividends from `factor_series`, signals from
+    `cache/history/`. A missing input gives a `blocked` payload, never an exception.
+    `out_dir` is unused (kept for the pipeline hook's signature)."""
     from assist.candidates.dividend_value import load as load_series
     from assist.sources.base import SourceUnavailable
+    from assist.sources.idxmethod_series import IdxMethodSeries
     from assist.sources.idxmethod_stocks import IdxMethodStocks
 
-    path = Path(out_dir) / "industries" / "IDN.json"
+    series = series or IdxMethodSeries.from_config()
     try:
-        members = members_from(json.loads(path.read_text()))
-    except (OSError, ValueError) as e:
-        return blocked(day, f"no S30 membership ({path.name}: {type(e).__name__})")
-    if not members:
-        return blocked(day, "no S30 membership (no industries in IDN.json)")
-    data = load_series()
+        snaps = membership_snapshots(series)
+    except SourceUnavailable as e:
+        return blocked(day, f"no industry_membership ({e.reason})")
+    if not snaps:
+        return blocked(day, "no industry_membership rows")
+    data = load_series(series)
     if not data.bars:
         return blocked(day, "factor_series unavailable", data.stale)
     stale = list(data.stale)
+    names = {s for _, m in snaps for s in m}
     try:
         stocks = IdxMethodStocks.from_config()
-        history = stocks.history(members)
+        history = stocks.history(names)
         signals = signals_from_history(history)
-        if len(history) < len(members):
-            stale.append(f"cache/history holds {len(history)} of {len(members)} member names: "
+        if len(history) < len(names):
+            stale.append(f"cache/history holds {len(history)} of {len(names)} member names: "
                          "the rest fail the liquidity gate")
     except SourceUnavailable as e:
         signals = None
         stale.append(e.stale_input)
-    return run(data.bars, data.quarters, members, signals, data.dividends, day=day,
+    return run(data.bars, data.quarters, snaps, signals, data.dividends, day=day,
                stale=stale)
 
 

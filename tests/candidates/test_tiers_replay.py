@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import random
+import sqlite3
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -204,9 +205,98 @@ def test_deterministic_rerun(planted, planted_payload):
 
 
 def test_blocked_payload_and_live_without_membership(tmp_path):
-    p = tiers_replay.run_live(DAY, tmp_path)
+    from assist.sources.idxmethod_series import IdxMethodSeries
+
+    p = tiers_replay.run_live(DAY, tmp_path, series=IdxMethodSeries(tmp_path))
     assert p["status"] == "blocked" and p["context_only"]
     assert "membership" in p["verdict"]
+
+
+# ---------------- dated membership (idx-method industry_membership; user, 2026-11-09) -------
+
+
+def _store(root: Path, rows: list[tuple]) -> Path:
+    db = root / "store" / "data" / "stockbiter.db"
+    db.parent.mkdir(parents=True)
+    con = sqlite3.connect(db)
+    con.execute("""CREATE TABLE industry_membership (date TEXT NOT NULL, symbol TEXT NOT NULL,
+        sector_id INTEGER, sector TEXT, sub_sector_id INTEGER, sub_sector TEXT,
+        industry_id INTEGER, industry TEXT, sub_industry_id INTEGER, sub_industry TEXT,
+        peers TEXT, PRIMARY KEY (date, symbol))""")
+    con.executemany("insert into industry_membership values (?,?,?,?,?,?,?,?,?,?,?)", rows)
+    con.commit()
+    con.close()
+    return db
+
+
+def _row(d: str, sym: str, sub_id: int, sub: str, sector: str) -> tuple:
+    return (d, sym, 9, sector, sub_id, sub, 1, "ind", 2, "subind", "[]")
+
+
+def test_membership_at_takes_the_latest_snapshot_on_or_before_else_the_first():
+    s1, s2 = {"A": {"industry": "1"}}, {"A": {"industry": "2"}}
+    snaps = [(date(2020, 1, 1), s1), (date(2021, 1, 1), s2)]
+    assert tiers_replay.membership_at(snaps, date(2019, 12, 31)) == (s1, True)  # back-filled
+    assert tiers_replay.membership_at(snaps, date(2020, 6, 30)) == (s1, False)
+    assert tiers_replay.membership_at(snaps, date(2021, 1, 1)) == (s2, False)
+
+
+def test_one_later_snapshot_is_todays_membership_back_filled(planted, planted_payload):
+    snaps = [(date(2026, 11, 6), planted["members"])]
+    assert tiers_replay.replay_panel(planted["bars"], planted["quarters"], snaps,
+                                     planted["signals"]) == _panel(planted)
+    p = _run({**planted, "members": snaps})
+    for k in ("status", "t", "p", "perm_p", "control_t", "quarters", "picks"):
+        assert p[k] == planted_payload[k]
+    m = p["membership"]
+    assert m["snapshots"] == 1 and m["first_snapshot"] == "2026-11-06"
+    assert m["quarters_back_filled"] == p["quarters"] and m["quarters_point_in_time"] == 0
+    flag = next(f for f in p["flags"] if f.startswith("survivorship"))
+    assert "industry_membership" in flag and "2026-11-06" in flag and "back-filled" in flag
+
+
+def test_dated_membership_moves_a_name_from_its_snapshot_date(planted):
+    base = _panel(planted)
+    early, late = base[3], base[12]
+    sym = next(r["symbol"] for r in early["industries"]["101"]["recs"]
+               if r["symbol"] in {x["symbol"] for x in late["industries"]["101"]["recs"]})
+    moved = {**planted["members"], sym: {**planted["members"][sym], "industry": "202"}}
+    gone = {s: m for s, m in planted["members"].items() if s != sym}
+    for later, where in ((moved, "202"), (gone, None)):
+        snaps = [(early["date"] - timedelta(days=1), planted["members"]),
+                 (late["date"] - timedelta(days=1), later)]
+        panel = tiers_replay.replay_panel(planted["bars"], planted["quarters"], snaps,
+                                          planted["signals"])
+        q3 = next(q for q in panel if q["date"] == early["date"])
+        q12 = next(q for q in panel if q["date"] == late["date"])
+        assert sym in {r["symbol"] for r in q3["industries"]["101"]["recs"]}
+        assert sym not in {r["symbol"] for r in q12["industries"]["101"]["recs"]}
+        in_202 = sym in {r["symbol"] for r in q12["industries"]["202"]["recs"]}
+        assert in_202 == (where == "202")
+
+
+def test_run_live_reads_industry_membership_not_the_s30_file(tmp_path):
+    from assist.sources.idxmethod_series import IdxMethodSeries
+
+    _store(tmp_path, [_row("2026-11-06", "BBCA", 31, "Bank", "Keuangan"),
+                      _row("2026-11-06", "ANTM", 11, "Barang Baku", "Barang Baku")])
+    snaps = tiers_replay.membership_snapshots(IdxMethodSeries(tmp_path))
+    assert snaps == [(date(2026, 11, 6), {
+        "ANTM": {"industry": "11", "label": "Barang Baku", "sector": "Barang Baku"},
+        "BBCA": {"industry": "31", "label": "Bank", "sector": "Keuangan"}})]
+    out = tmp_path / "out"  # no out/industries/IDN.json at all
+    p = tiers_replay.run_live(DAY, out, series=IdxMethodSeries(tmp_path))
+    assert p["status"] == "blocked" and "factor_series" in p["verdict"]  # got past membership
+
+
+def test_run_live_blocked_without_industry_membership(tmp_path):
+    from assist.sources.idxmethod_series import IdxMethodSeries
+
+    p = tiers_replay.run_live(DAY, tmp_path, series=IdxMethodSeries(tmp_path))
+    assert p["status"] == "blocked" and "industry_membership" in p["verdict"]
+    _store(tmp_path, [])
+    p = tiers_replay.run_live(DAY, tmp_path, series=IdxMethodSeries(tmp_path))
+    assert p["status"] == "blocked" and "industry_membership" in p["verdict"]
 
 
 # ---------------- outputs ----------------
