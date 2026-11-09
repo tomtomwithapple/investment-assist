@@ -58,6 +58,7 @@ class ScreenSummary:
     n_ranked: int
     n_named: int
     verdict: dict
+    flags: tuple[str, ...] = ()  # what the replay could not reproduce point in time
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,7 @@ def _summary(name: str, res: Mapping) -> ScreenSummary:
         name=name, passed=bool(res.get("passed")), blocked=res.get("blocked"),
         edge_bps=None if spread is None else spread * 1e4, months=int(res.get("months") or 0),
         n_ranked=int(res.get("n_ranked") or 0), n_named=0, verdict=dict(res.get("verdict") or {}),
+        flags=tuple(res.get("flags") or ()),
     )
 
 

@@ -1,5 +1,8 @@
 """IDN stock screens (layer 4): dividend, value and momentum, each gated by a placebo control.
 
+A fourth, S15's industry-relative value screen, lives in `candidates.industry_value` and joins
+`run_screens`' results under the same gates, quality floor and placebo rule.
+
 The rules are idx-method's former books, recovered from its git history (9a0ea38^) rather than
 invented here:
 
@@ -414,11 +417,14 @@ def run_screens(
     stocks: IdxMethodStocks | None = None,
     as_of: date | None = None,
     screens: Iterable[Screen] | None = None,
+    *,
+    industry: bool = True,
     **kw,
 ) -> dict:
     """Every screen over idx-method's files → {`as_of`, `screens`: {name: result},
     `stale_inputs`}. A missing input is a `stale_inputs` entry, never a crash; a screen whose
-    inputs are missing fails its placebo on sample size and names no one."""
+    inputs are missing fails its placebo on sample size and names no one. `industry` adds the
+    fourth screen, S15's `industry_value`, over idx-method's `stockbiter.db` (read-only)."""
     stocks = stocks or IdxMethodStocks.from_config()
     screens = list(screens or SCREENS.values())
     stale: list[str] = []
@@ -444,4 +450,14 @@ def run_screens(
                            sectors=sectors, as_of=live_as_of or date.today(), **kw)
         for s in screens
     }
+    if industry:
+        from assist.candidates import industry_value
+        from assist.sources.idxmethod_series import IdxMethodSeries
+
+        day = live_as_of or as_of or date.today()
+        data = (industry_value.load(IdxMethodSeries(stocks.root), day) if factors
+                else industry_value.IndustryData())
+        stale += [x for x in data.stale if x not in stale]
+        results[industry_value.NAME] = industry_value.run(
+            data, table, as_of=day, flagged=flagged, sectors=sectors, **kw)
     return {"as_of": live_as_of, "screens": results, "stale_inputs": stale}
