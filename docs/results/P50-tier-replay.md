@@ -130,3 +130,41 @@ survivorship first, and "context only" whenever `context_only` is true. `pillars
 `mean_excess`, `t`, `quarters`) can go in a collapsed diagnostics row marked "decides
 nothing". `per_quarter` holds the series (`quarter`, `excess`, `placebo`, `industries`,
 `picks`) if a chart is wanted.
+
+## Live run 2026-11-09
+
+**Of record: blocked.** `assist run` writes `out/industries/IDN.replay.json` with `status:
+blocked` ("no S30 membership (IDN.json: FileNotFoundError)"), because `assist industries`
+cannot build `IDN.json` while idx-method's `api_raw` is empty on this Mac (P48). Everything
+else the replay reads is present: `factor_series` 1,006 symbols 2016-11-07 → 2026-11-06,
+`cache/history/` 962 of 963 member names.
+
+**Diagnostic only, not the verdict of record.** S30's industries are the IDX sub-sectors one
+for one (`peers.SUBSECTORS`), and idx-method's `industry_membership` (V2, 963 names,
+2026-11-06) carries the same 33 sub-sectors with the same names. So `tiers_replay.run` was run
+read-only from a scratch script with membership `sub_sector_id` / `sub_sector` / `sector` from
+that table, everything else as `run_live` (code, `CONFIG` and fingerprints unchanged):
+
+| | |
+|---|---|
+| status | **failed** (t 0.02 below 2.0) |
+| quarters | 15, 2022-12-31 → 2026-06-30 |
+| Tier A minus industry median, 3 m | +3.11 pt vs placebo +3.08 pt |
+| t / p / perm_p / control t | 0.02 / 0.508 / 0.468 / −0.17 |
+| pool | 963 members, 17.2 industries with a Tier A per quarter, 370 Tier A picks in all |
+| pillars alone (decide nothing) | value +2.92 pt t 2.66; growth +4.98 t 2.16; health +4.08 t 2.12; momentum +3.19 t 1.53; quality +1.67 t 1.38 |
+
+Random picks of the same size from the gated pool beat the industry median by as much as the
+composite's Tier A does: the composite adds nothing over its own placebo, though each pillar
+alone beats the median. That spread is diagnosis only; S31's weights are fixed before the
+replay, so a re-weighting is a new model and would need an agent review the user decides.
+
+Why 15 quarters, not ~37 from 2017: `cache/history/` starts 2021-11-01, so `mom_12_1` and the
+liquidity gate (`days_traded_60`) have no value before late 2022, and every name fails the
+liquidity gate in earlier quarters. Momentum and liquidity from `factor_series` daily bars
+(back to 2016-11) would lengthen the replay, but the spec names `cache/history/`, so that is a
+user decision too.
+
+The `survivorship` flag still says "until idx-method V2"; V2 (`industry_membership`) has
+landed but holds one date (2026-11-06), so today's membership is still back-filled and the
+flag stands in substance.

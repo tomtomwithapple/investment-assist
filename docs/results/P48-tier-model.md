@@ -108,3 +108,15 @@ returns 976 rows from `factors.json`, but liquidity and momentum only for 17 nam
 `cache/history/` holds 20 files on this Mac (the jobs Mac has the full set). Rerun
 `assist industries` where the db and the full history cache are present to record names gated
 in and out by reason, industries with a Tier A, and the A and B counts.
+
+## Live run 2026-11-09: still blocked, on a new reason
+
+`stockbiter.db` is on this Mac since 2026-11-06 (1.7 GB), and `cache/history/` now holds 984
+files, but the db was built here by the 17:00 backfill jobs only (`pulls`: `industry`,
+`factors`, and the `import_idx` loads of dividends, fundamentals, insider). `endpoints_pull.py`
+(weekdays 16:30) has never run on this Mac, so `api_raw` has **0 rows** and
+`uv run assist industries` exits 1 with `peer comparison failed: SourceUnavailable: idx-method
+missing: no comparison_industries in api_raw`. No schema 4 file is written, so no name has a
+tier yet. Nothing is wrong in the adapter: the tables it reads are unchanged, only empty.
+Filling `api_raw` is idx-method's job (a `endpoints_pull.py` run on a logged-in session, or the
+jobs Mac's db), *Open data gaps* in PLAN.md. `uv run pytest -q`: 1938 passed; ruff clean.

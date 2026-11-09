@@ -60,3 +60,11 @@ all read in both themes.
 Not run: idx-method's `store/data/stockbiter.db` is absent on this Mac, so there is no real
 schema 4 `out/industries/IDN.json`; fixtures only. Any existing schema 3 file shows the notice
 and the S30 view until `assist industries` runs where the db is present.
+
+## Live check 2026-11-09
+
+`assist status` on 127.0.0.1:8790: `/` 200, `/industries` 200 (2,771 B), `/industries.json`
+200 (`rows: []`, problem "no peer comparison in out/industries/ yet"), an unknown
+`/industries/<id>` 404, `/status` and `.json` 200; server stopped, port free. No schema 4 file
+exists (P48: `api_raw` empty on this Mac), so there is no `/industries/<id>` to open and the
+tier table is not drawn live yet.
