@@ -16,7 +16,7 @@ Assembles, for one market (IDN; USA from F6, see *US* below):
   (`TRANCHE_IDR`); no estimate, `over_participation` or `below_one_lot` drops the name. The list
   is reviewed quarterly and a name held while it passes, so one round trip a year is charged
   against the annual margin (`net_margin_pt`); a round trip that eats the margin drops it. Entry
-  level = `entry_typical`, else `entry_deep`.
+  level = `entry_typical`; none when no correction completed (P21, no `entry_deep` fallback).
 - **Layer 5 and sizing (S20a).** Held or not, from financer's statement lines per symbol, and
   P38's `sizing.size` from the market's stocks stance (`target_pct` − `current_pct` × the
   portfolio value). A name in two styles is sized once, under the style where its margin is
@@ -177,11 +177,10 @@ def _get(obj: Any, key: str) -> Any:
 def _entry(levels: Any) -> dict:
     if levels is None:
         return {"level": None, "basis": "none", "status": "no entry levels"}
-    typical, deep = _get(levels, "entry_typical"), _get(levels, "entry_deep")
+    # P21 (2026-11-10): no fallback to `entry_deep` when no correction completed
+    typical = _get(levels, "entry_typical")
     if typical is not None:
         return {"level": float(typical), "basis": "typical", "status": str(_get(levels, "status"))}
-    if deep is not None:
-        return {"level": float(deep), "basis": "deep", "status": str(_get(levels, "status"))}
     return {"level": None, "basis": "none", "status": str(_get(levels, "status"))}
 
 

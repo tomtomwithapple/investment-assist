@@ -183,7 +183,7 @@ def test_entry_and_costs_as_layer4_assembles_them():
             "ELSA": {"levels": None, "cost": cost(rt=40.0)}}
     p = valid(build(inputs({"dividend_value": screen("dividend_value", cands=DIV)}, plan=plan)))
     rows = {r["symbol"]: r for r in p["styles"][0]["rows"]}
-    assert rows["BMRI"]["entry"] == {"level": 800.0, "basis": "deep", "status": "wait"}
+    assert rows["BMRI"]["entry"] == {"level": None, "basis": "none", "status": "wait"}  # P21
     assert rows["ELSA"]["entry"]["basis"] == "none"
     assert rows["ELSA"]["net_margin_pt"] == pytest.approx(0.52 - 0.4)
     assert rows["ELSA"]["cost"]["round_trip_bps"] == pytest.approx(40.0)

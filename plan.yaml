@@ -833,6 +833,14 @@ slices:
       (t 0.02, p 0.508, control t -0.17, 15 quarters 2022-12 to 2026-06). #3 (bars back to
       2016-11) stopped: factor_series has price from 2016-11 but no store has traded value or
       volume before 2021-10, so the liquidity gate cannot run earlier.
+  - id: P21b-entry-peak
+    title: "Known bug P21: a correction completes only on recovery to the peak it fell from; no entry_deep fallback when none completed"
+    depends_on: [P21-cost-entry]
+    owns: ["src/assist/candidates/entry.py", "src/assist/layers/candidates.py", "src/assist/layers/undervalued.py", "tests/candidates/test_costs_entry.py", "tests/test_run_idn.py", "tests/test_run_undervalued.py", "docs/results/P21-cost-entry.md"]
+    accept: uv run pytest -q tests/candidates/test_costs_entry.py tests/test_run_idn.py tests/test_run_undervalued.py && uv run ruff check .
+    estimate: 0.5
+    notes: >-
+      User chose no fallback 2026-11-10 (over a bound, which would add a tunable number).
   - id: P51-jci-idxscape
     title: "Gap 2b closed: JCI from idxscape index_daily COMPOSITE (stitched to idx-method's frozen CSV before 2021-10-01); IDX.<code> index series in the idxscape adapter"
     depends_on: [P3-idn-prices, P30-paper]

@@ -99,3 +99,25 @@ show the same: DCII is `deep` in both, and SRAJ, CASA, MPRO and SMMA are `wait` 
 - Neither the levels nor the cost prior may change a stance before a placebo control (CLAUDE.md).
 - `entry_plan` takes `factors=` so a caller that already ran `load_factors` (P20 screens) doesn't
   derive the factors twice.
+
+## P21b-entry-peak (2026-11-10): the known bug, fixed
+
+**Cause.** `corrections` measured a correction against the rolling 3-year high. When an old peak
+left the window the high dropped, the drawdown shrank without any recovery, and the correction
+read as completed at its full depth. BSML (1805 → 67, then 575) got a −96% typical correction
+and `entry_typical` 21; DEWI −86% and 35.
+
+**Fix.** `corrections(dd, highs=...)` measures depth and completion against the peak at the
+correction's start; `measure` passes the rolling highs. A name whose crash never recovered to
+its old peak has no completed correction, so `entry_typical` is None.
+
+**No deep-zone fallback (user's choice).** The deep zone (10th-percentile drawdown) has a median
+of −64% across 893 names and is below −80% for 220, so falling back to it gave the same far-off
+levels (BSML 33). `layers/candidates.assemble` and `layers/undervalued` now give entry basis
+`none` when there is no typical level. `entry_deep` stays in `EntryLevels` as context, and
+sizing's later tranche limits still use it only when it sits below the price.
+
+**Live (idx-method `cache/history/`, 2026-11-04 bars).** 194 of 893 names change typical
+correction; 405 have none (was 286). 488 names carry an entry level, 29 below half their price
+(142 before, with the fallback). BSML, DEWI, BBCA, TLKM: none. BMRI 5950 (−20.1%, 2
+corrections), ASII 4190 (−43.4%, 1).
