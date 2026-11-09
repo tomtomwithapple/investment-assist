@@ -130,7 +130,7 @@ def test_last_regime_is_the_newest_journalled_on_or_before_the_day():
                                                                 "dollar": "down"}},
     ]
     last = pipeline.last_regime(recs, DAY)
-    assert last == {"as_of": "2026-10-21", "state": "risk_off", "dollar": "up"}
+    assert last == {"as_of": "2026-10-21", "state": "risk_off", "dollar": "up", "home": None}
     assert pipeline.last_regime(recs, date(2026, 10, 18)) is None
     assert pipeline.last_regime([], DAY) is None
 
@@ -226,6 +226,103 @@ def test_regime_message_names_change_drivers_and_disclaimer(paths):
     assert msg.startswith(f"investment-assist regime {DAY}")
     assert "Regime: neutral → risk_off" in msg and "since 2026-10-22" in msg
     assert msg.rstrip().endswith(DISCLAIMER)
+
+
+# ---------------- home (IDN) regime in the daily check (S54, P73) ----------------
+
+
+def _home(state="neutral", points=0, drivers=(), sources=("idxscape",)):
+    from assist.layers.home_regime import HomeRegime
+
+    return HomeRegime(DAY, state, points, {"jci_drawdown_20d": points}, drivers=tuple(drivers),
+                      sources=tuple(sources))
+
+
+@pytest.fixture
+def home(monkeypatch):
+    """The home regime the check reads: set `home.now` to a HomeRegime (or an exception)."""
+    class H:
+        now = _home()
+
+    def read(day, sources):
+        assert sources == "HOME"
+        if isinstance(H.now, Exception):
+            raise H.now
+        return H.now
+
+    monkeypatch.setattr(pipeline.home_regime, "home_regime", read)
+    return H
+
+
+def _hcheck(paths, fred, day=DAY, telegram=None, send=True):
+    kw = {"creds": CREDS, "client": telegram[1]} if telegram is not None else {}
+    return pipeline.regime_check(day, paths=paths, source=fred, send=send, notify_kw=kw,
+                                 home_source="HOME")
+
+
+def test_home_state_change_alone_sends_once(paths, telegram, home):
+    _hcheck(paths, FakeFred(), day=DAY - timedelta(days=1))
+    home.now = _home("risk_off", 2, ["JCI -17.5% vs 20d high (2)"])
+    chk = _hcheck(paths, FakeFred(), telegram=telegram)
+    assert chk.changed and chk.changes() == ["Home regime (IDN): neutral → risk_off"]
+    assert chk.notify["sent"] and len(telegram[0]) == 1
+    text = parse_qs(telegram[0][0].content.decode())["text"][0]
+    assert "Home regime (IDN): neutral → risk_off" in text
+    assert "home: JCI -17.5% vs 20d high (2)" in text
+    recs = _regime_records(paths)
+    assert [r["outputs"]["home"]["state"] for r in recs] == ["neutral", "risk_off"]
+    again = _hcheck(paths, FakeFred(), telegram=telegram)
+    assert not again.changed and len(telegram[0]) == 1
+
+
+def test_first_check_with_no_home_record_is_a_home_baseline(paths, telegram, home):
+    _check(paths, FakeFred(), day=DAY - timedelta(days=1))  # a record without `home`
+    home.now = _home("risk_off", 2)
+    chk = _hcheck(paths, FakeFred(), telegram=telegram)
+    assert not chk.changed and chk.notify is None and telegram[0] == []
+    assert chk.journalled  # the home baseline is journalled, nothing sent
+    assert _regime_records(paths)[-1]["outputs"]["home"]["state"] == "risk_off"
+    unchanged = _hcheck(paths, FakeFred(), day=DAY + timedelta(days=1), telegram=telegram)
+    assert not unchanged.changed and not unchanged.journalled
+
+
+def test_global_and_home_change_together_in_one_message(paths, telegram, home):
+    _hcheck(paths, FakeFred(), day=DAY - timedelta(days=1))
+    home.now = _home("risk_off", 3)
+    chk = _hcheck(paths, FakeFred(stress=True), telegram=telegram)
+    assert chk.changes() == ["Regime: neutral → risk_off",
+                             "Home regime (IDN): neutral → risk_off"]
+    assert len(telegram[0]) == 1
+
+
+def test_home_unreadable_is_no_home_change(paths, telegram, home):
+    _hcheck(paths, FakeFred(), day=DAY - timedelta(days=1))
+    home.now = RuntimeError("store exploded")
+    chk = _hcheck(paths, FakeFred(), telegram=telegram)
+    assert chk.home is None and not chk.changed and telegram[0] == []
+    home.now = _home("risk_off", 2, sources=())  # no store read: no reading
+    chk = _hcheck(paths, FakeFred(), telegram=telegram)
+    assert not chk.changed and telegram[0] == []
+
+
+def test_last_regime_carries_the_home_state():
+    recs = [{"kind": "regime", "as_of": "2026-10-21",
+             "outputs": {"state": "neutral", "dollar": "flat", "home": {"state": "risk_off"}}},
+            {"kind": "regime", "as_of": "2026-10-20",
+             "outputs": {"state": "neutral", "dollar": "flat", "home": None}}]
+    assert pipeline.last_regime(recs, DAY)["home"] == "risk_off"
+    assert pipeline.last_regime(recs[1:], DAY)["home"] is None
+
+
+def test_cli_regime_check_prints_the_home_regime(paths, monkeypatch, capsys, home):
+    monkeypatch.setattr(pipeline.Paths, "default", classmethod(lambda cls: paths))
+    fake = pipeline.Sources(worldbankscape=None, fred=FakeFred(), financer=None)
+    monkeypatch.setattr(pipeline.Sources, "default", classmethod(lambda cls: fake))
+    monkeypatch.setattr(cli, "_home_source", lambda sources: "HOME")
+    home.now = _home("risk_off", 2, ["JCI -17.5% vs 20d high (2)"])
+    assert cli.main(["regime", "--check", "--no-send", "--today", DAY.isoformat()]) == 0
+    out = capsys.readouterr().out
+    assert "home (IDN) regime: risk_off (2 points): JCI -17.5% vs 20d high (2)" in out
 
 
 # ---------------- doctor in the brief header ----------------

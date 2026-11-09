@@ -273,3 +273,85 @@ def esc(s: str) -> str:
 def test_page_style_does_not_redefine_layout_tokens():
     tokens = set(re.findall(r"(--[\w-]+):", web.PAGE))
     assert tokens and not tokens & set(re.findall(r"(--[\w-]+):", view.STYLE))
+
+
+# ---------------- home (IDN) regime section (S54, P73) ----------------
+
+
+def _home_block() -> dict:
+    def line(vals):
+        return [{"date": f"2026-10-{d:02d}", "value": v} for d, v in vals]
+
+    return {
+        "as_of": "2026-11-06", "state": "risk_off", "points": 2,
+        "drivers": ["JCI -17.5% vs 20d high (2)"],
+        "stale_inputs": ["idxscape SBN.TOTAL.non_resident (last 2026-09-25)"],
+        "rule": {"state_at": 2, "jci_points": [[-12.0, 2], [-7.0, 1]], "flow_z_at": -1.5,
+                 "usdidr_points": [[4.0, 2], [2.0, 1]], "sbn_at": -1.5, "max_age_days": 7,
+                 "shift_pt": -5.0, "shift_adopted": False},
+        "history_weeks": 52,
+        "inputs": [
+            {"feature": "jci_drawdown_20d", "counted": True, "points": 2,
+             "label": "JCI -17.5% vs 20d high", "value": -17.45, "last": "2026-11-05",
+             "history": line([(16, -18.8), (23, -12.2), (30, -18.3)])},
+            {"feature": "idx_foreign_z", "counted": True, "points": 0,
+             "label": "IDX foreign 20d z -0.72", "value": -0.72, "last": "2026-11-05",
+             "history": line([(16, -0.3), (23, -0.8), (30, -1.0)])},
+            {"feature": "usdidr_20d", "counted": True, "points": 0,
+             "label": "USD/IDR +1.1%/20 fixings", "value": 1.15, "last": "2026-11-05",
+             "history": []},
+            {"feature": "sbn_non_resident_20d", "counted": False, "points": None,
+             "label": "non-resident SBN +0.1%/20d", "value": 0.1, "last": "2026-09-25",
+             "history": line([(16, 3.1)])},
+        ],
+    }
+
+
+@pytest.fixture
+def home_root(root):
+    """`root` with a 1.1.0 regime file carrying `home`; the fixture file is put back after."""
+    d = _fixture()
+    d["schema_version"] = "1.1.0"
+    d["home"] = _home_block()
+    assert list(layers_out.validator("regime").iter_errors(d)) == []
+    _write(root, d)
+    yield root, d
+    (root / "out" / "layers" / "regime.json").write_bytes(FIXTURE.read_bytes())
+
+
+def test_home_card_shows_state_points_rule_and_drivers(home_root):
+    root, _d = home_root
+    home = _card(_get(root, "/regime").body, "home-card")
+    assert "Home regime (IDN)" in home
+    assert '<span class="chip bad">risk-off</span>' in home
+    assert "2 points" in home and "risk-off at &ge; 2" in home
+    assert "JCI -17.5% vs 20d high (2)" in home
+    assert "not adopted" in home  # the -5pt shift waits on a passing walk-forward
+    assert "laddered" in home
+
+
+def test_home_inputs_have_points_value_date_and_a_line(home_root):
+    root, _d = home_root
+    html = _get(root, "/regime").body
+    for feat in ("jci_drawdown_20d", "idx_foreign_z", "usdidr_20d", "sbn_non_resident_20d"):
+        m = re.search(rf'<tr[^>]*data-home-feature="{feat}">(.*?)</tr>', html, re.S)
+        assert m, feat
+    jci = re.search(r'data-home-feature="jci_drawdown_20d">(.*?)</tr>', html, re.S).group(1)
+    assert "-17.45%" in jci and "2026-11-05" in jci and "<svg" in jci and "<td>2 <span" in jci
+    usd = re.search(r'data-home-feature="usdidr_20d">(.*?)</tr>', html, re.S).group(1)
+    assert "no history" in usd
+    sbn = re.search(r'data-home-feature="sbn_non_resident_20d">(.*?)</tr>', html, re.S).group(1)
+    assert "not counted" in sbn and "stale" in sbn
+
+
+def test_no_home_block_is_a_line_not_a_failure(root):
+    html = _get(root, "/regime").body
+    home = _card(html, "home-card")
+    assert "no home (IDN) regime in this file" in home
+    assert 'class="notice"' not in html
+
+
+def test_json_twin_carries_the_home_block(home_root):
+    root, d = home_root
+    twin = json.loads(_get(root, "/regime.json").body)
+    assert twin["regime"]["home"] == d["home"]

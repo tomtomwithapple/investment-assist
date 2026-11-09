@@ -367,3 +367,36 @@ def test_message_carries_the_paper_header_and_leg_labels():
     j = lines.index("USA to sell: none")
     assert lines[j - 1].startswith("USA stocks leg (paper): +23.8pt = +19.0pt rebalance")
     assert text.endswith("not investment advice.")
+
+
+# ---------------- home (IDN) regime line (S54, P73) ----------------
+
+
+def _home_legs(state: str) -> list[dict]:
+    import copy
+
+    legs = copy.deepcopy(LEGS)
+    for s in legs:
+        if s["subject"] == "IDN":
+            s["home_regime"] = {"state": state, "points": 2 if state == "risk_off" else 0,
+                                "drivers": ["JCI -17.5% vs 20d high (2)"], "stale_inputs": []}
+    return legs
+
+
+def test_message_has_one_home_line_on_home_risk_off():
+    from assist import pipeline
+
+    text = pipeline.message(day=D, brief_path=None, stances=_home_legs("risk_off"))
+    lines = text.splitlines()
+    home = [x for x in lines if x.startswith("Home regime (IDN)")]
+    assert home == ["Home regime (IDN) risk_off (2 points: JCI -17.5% vs 20d high (2)): IDN "
+                    "stocks and bonds adds and trims laddered"]
+    assert lines.index(home[0]) == 4  # right after the header
+
+
+def test_message_has_no_home_line_when_neutral_or_absent():
+    from assist import pipeline
+
+    for legs in (_home_legs("neutral"), LEGS):
+        text = pipeline.message(day=D, brief_path=None, stances=legs)
+        assert "Home regime" not in text

@@ -452,6 +452,44 @@ def _fingerprint(fp: str) -> str:
     return fp[: len("sha256:") + 12]
 
 
+HOME_ASSETS = (("IDN", "stocks"), ("IDN", "bonds"))
+
+
+def _home(stances: Sequence[Mapping]) -> Mapping | None:
+    """The home (IDN) regime block of the IDN stocks or bonds stance (S53), None without one."""
+    for s in stances:
+        if (s.get("subject"), s.get("asset")) in HOME_ASSETS and s.get("home_regime"):
+            return s["home_regime"]
+    return None
+
+
+def home_line(stances: Sequence[Mapping]) -> str | None:
+    """The brief's "Home regime (IDN)" line (S54): state, points, scoring drivers, what a
+    risk_off does, stale inputs; None when no IDN stance carries the home regime."""
+    h = _home(stances)
+    if h is None:
+        return None
+    n = int(h.get("points") or 0)
+    line = f"- Home regime (IDN): {h['state']}, {n} point{'' if n == 1 else 's'}"
+    if h.get("drivers"):
+        line += f" ({'; '.join(h['drivers'])})"
+    if h["state"] == "risk_off":
+        line += "; IDN stocks and bonds adds and trims laddered"
+    if h.get("stale_inputs"):
+        line += "; stale: " + "; ".join(h["stale_inputs"])
+    return line
+
+
+def home_message_line(stances: Sequence[Mapping]) -> str | None:
+    """The Telegram line (S54): only on a home risk_off."""
+    h = _home(stances)
+    if h is None or h["state"] != "risk_off":
+        return None
+    why = f": {'; '.join(h['drivers'])}" if h.get("drivers") else ""
+    return (f"Home regime (IDN) risk_off ({h.get('points')} points{why}): IDN stocks and bonds "
+            "adds and trims laddered")
+
+
 def _grouped_line(name: str, groups: Mapping[str, list[str]]) -> str:
     if not groups:
         return f"- {name}: n/a"
@@ -528,6 +566,9 @@ def render(current: Sequence[Mapping], previous: Sequence[Mapping] | None = None
     if stances:
         out.append(_grouped_line("Regime", _by_value(stances, "regime")))
         out.append(_grouped_line("Dollar", _by_value(stances, "dollar")))
+        home = home_line(stances)
+        if home:
+            out.append(home)
         fps = sorted({_fingerprint(s["model_fingerprint"]) for s in stances})
         out.append(f"- Model: `{'`, `'.join(fps)}`")
     else:

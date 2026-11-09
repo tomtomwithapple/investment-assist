@@ -921,9 +921,13 @@ def message(*, day: date, brief_path: Path | None, undervalued: Sequence[Mapping
             stances: Sequence[Mapping] = ()) -> str:
     """The Telegram text: `notify.header` (title, disclaimer, paper-only line, S42), per market
     (IDN, then USA) the undervalued top 5, then the names sized to sell or buy (`sizing`), each
-    market's list labelled with its stocks leg's rebalance vs tilt (`notify.leg_line`). Stances,
-    regime and the portfolio legs are in the brief."""
+    market's list labelled with its stocks leg's rebalance vs tilt (`notify.leg_line`). On a
+    home (IDN) risk_off one line after the header (S54). Stances, regime and the portfolio legs
+    are in the brief."""
     lines = notify.header(day)
+    home = brief.home_message_line(stances)  # S54: one line on a home risk_off
+    if home:
+        lines += [home, ""]
     lines += _undervalued_lines(undervalued) or ["Undervalued: no market read this run"]
     trades = trade_lines(undervalued, stances)
     if trades:
@@ -1210,7 +1214,8 @@ def _never_fail(name: str, fn: Callable | None, fmt: Callable[[Any], list[str]],
 
 def last_regime(records: Iterable[Mapping], day: date) -> dict | None:
     """The newest journalled regime (`kind` regime, from a weekly run or a daily check) dated on
-    or before `day`, as {"as_of", "state", "dollar"}; the later record wins a tie."""
+    or before `day`, as {"as_of", "state", "dollar", "home"}; the later record wins a tie.
+    `home` is the home (IDN) state journalled with it (S54), None when the record has none."""
     best = None
     for rec in records:
         out = rec.get("outputs") or {}
@@ -1220,7 +1225,9 @@ def last_regime(records: Iterable[Mapping], day: date) -> dict | None:
         if "state" not in out or "dollar" not in out:
             continue
         if best is None or as_of >= best["as_of"]:
-            best = {"as_of": as_of, "state": out["state"], "dollar": out["dollar"]}
+            home = out.get("home") if isinstance(out.get("home"), Mapping) else {}
+            best = {"as_of": as_of, "state": out["state"], "dollar": out["dollar"],
+                    "home": home.get("state")}
     return best
 
 
@@ -1235,6 +1242,14 @@ class RegimeCheck:
     changed: bool
     notify: dict | None = None
     journalled: bool = False
+    home: HomeRegime | None = None  # the home (IDN) regime read with it (S54); None: no reading
+
+    @property
+    def home_changed(self) -> bool:
+        """The home state differs from the one journalled last (a record without one is no
+        comparison: the check journals a home baseline instead)."""
+        prev = (self.previous or {}).get("home")
+        return self.home is not None and prev is not None and prev != self.home.state
 
     def changes(self) -> list[str]:
         if not self.changed or self.previous is None:
@@ -1244,6 +1259,8 @@ class RegimeCheck:
             out.append(f"Regime: {self.previous['state']} → {self.regime.state}")
         if self.previous["dollar"] != self.regime.dollar:
             out.append(f"Dollar: {self.previous['dollar']} → {self.regime.dollar}")
+        if self.home_changed:
+            out.append(f"Home regime (IDN): {self.previous['home']} → {self.home.state}")
         return out
 
 
@@ -1255,14 +1272,28 @@ def regime_message(chk: RegimeCheck) -> str:
     if chk.previous is not None:
         lines.append(f"(since {chk.previous['as_of']})")
     lines += [""] + [f"- {d}" for d in reg.drivers]
+    if chk.home is not None:
+        lines += [f"- home: {d}" for d in chk.home.drivers]
     if reg.stale_inputs:
         lines += ["", "stale: " + ", ".join(reg.stale_inputs)]
     lines += ["", "Stances move on the weekly run; this is a heads-up only.", "", DISCLAIMER]
     return "\n".join(lines)
 
 
+def _home_reading(day: date, home_source: Any) -> HomeRegime | None:
+    """The home regime for the daily check, or None: no source, a failure, or no store read."""
+    if home_source is None:
+        return None
+    try:
+        home = home_regime.home_regime(day, home_source)
+    except Exception:  # noqa: BLE001 - the home regime never fails the check
+        return None
+    return home if home.sources else None
+
+
 def regime_check(day: date, *, paths: Paths | None = None, source: Any = None,
-                 send: bool = True, notify_kw: Mapping[str, Any] | None = None) -> RegimeCheck:
+                 send: bool = True, notify_kw: Mapping[str, Any] | None = None,
+                 home_source: Any = None) -> RegimeCheck:
     """Daily job: compute layer 0 for `day` and compare it with the last journalled regime.
 
     - Telegram (kind `regime`, send-once per day) goes out only when the state or the dollar
@@ -1274,23 +1305,34 @@ def regime_check(day: date, *, paths: Paths | None = None, source: Any = None,
     - `send=False` is a dry check: it writes nothing at all.
     - A regime read without any source (FRED missing or locked) is no reading: no change, no
       write, no message.
+    - With `home_source` (a `HomeSources`, S54) the home (IDN) regime is read too and rides in
+      the journalled record as `home`. A home state change is a change like the others (one
+      message). The first check whose last record has no home state journals a home baseline
+      and sends nothing; an unreadable home regime is no home change.
     """
     paths = paths or Paths.default()
     j = journal.Journal(paths.journal)
     reg = regime.regime(day, source=source if source is not None else Sources.default().fred)
     prev = last_regime(j.read(), day)
     available = bool(reg.sources)
-    changed = available and prev is not None and (
-        prev["state"], prev["dollar"]) != (reg.state, reg.dollar)
-    chk = RegimeCheck(day=day, regime=reg, previous=prev, available=available, changed=changed)
+    home = _home_reading(day, home_source) if available else None
+    chk = RegimeCheck(day=day, regime=reg, previous=prev, available=available, changed=False,
+                      home=home)
+    chk.changed = available and prev is not None and (
+        (prev["state"], prev["dollar"]) != (reg.state, reg.dollar) or chk.home_changed)
     if not send or not available:
         return chk
-    if changed:
+    if chk.changed:
         chk.notify = notify.send(regime_message(chk), kind="regime", day=day,
                                  state_dir=paths.notify, **dict(notify_kw or {}))
-    if prev is None or (changed and (chk.notify["sent"] or chk.notify["skipped"])):
+    home_baseline = home is not None and prev is not None and prev.get("home") is None
+    if prev is None or home_baseline or (
+            chk.changed and (chk.notify["sent"] or chk.notify["skipped"])):
         fp = j.register_model()
+        outputs = journal.jsonable(reg)
+        if home is not None:
+            outputs["home"] = journal.jsonable(home)
         j.record(kind="regime", fingerprint=fp, inputs={"day": day, "job": "regime"},
-                 outputs=reg, as_of=day, run_id=uuid.uuid4().hex)
+                 outputs=outputs, as_of=day, run_id=uuid.uuid4().hex)
         chk.journalled = True
     return chk

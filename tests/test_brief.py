@@ -307,3 +307,48 @@ def test_paper_lines_show_annualised_from_12_scored_weeks():
     from assist import brief as _brief
     lines = _brief.paper_lines(_paper_rep(12, -0.29))
     assert "annualised -29.0%" in lines[0] and "after 12" not in lines[0]
+
+
+# ---------------- home (IDN) regime line (S54, P73) ----------------
+
+
+HOME_OFF = {"state": "risk_off", "points": 2, "drivers": ["JCI -17.5% vs 20d high (2)"],
+            "stale_inputs": []}
+
+
+def _with_home(home: dict) -> list[dict]:
+    out = copy.deepcopy(current())
+    for s in out:
+        if s["subject"] == "IDN" and s["asset"] in ("stocks", "bonds"):
+            s["home_regime"] = copy.deepcopy(home)
+    return out
+
+
+def test_home_regime_line_under_the_global_regime():
+    md = brief.render(_with_home(HOME_OFF))
+    reg = section(md, "Global regime")
+    assert ("- Home regime (IDN): risk_off, 2 points (JCI -17.5% vs 20d high (2)); IDN stocks "
+            "and bonds adds and trims laddered") in reg
+
+
+def test_home_regime_neutral_and_stale_inputs():
+    home = {"state": "neutral", "points": 1, "drivers": ["USD/IDR +2.1%/20 fixings (1)"],
+            "stale_inputs": ["idxscape SBN.TOTAL.non_resident (last 2026-09-25)"]}
+    line = brief.home_line(_with_home(home))
+    assert line == ("- Home regime (IDN): neutral, 1 point (USD/IDR +2.1%/20 fixings (1)); "
+                    "stale: idxscape SBN.TOTAL.non_resident (last 2026-09-25)")
+
+
+def test_no_home_regime_no_line():
+    assert brief.home_line(current()) is None
+    assert "Home regime" not in brief.render(current())
+
+
+def test_golden_brief_changes_only_by_the_home_line():
+    md = brief.render(_with_home(HOME_OFF), previous(), previous_as_of="2026-10-06")
+    lines = md.splitlines()
+    home = [x for x in lines if x.startswith("- Home regime (IDN)")]
+    assert len(home) == 1
+    lines.remove(home[0])
+    assert "\n".join(lines) + ("\n" if md.endswith("\n") else "") == EXPECTED.read_text(
+        encoding="utf-8")
