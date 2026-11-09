@@ -18,8 +18,11 @@ reason), the 10Y source, the regime, the numbers behind the call, the stale inpu
 forward return over `HORIZON` month ends (null until the target month is complete):
 - stocks: JCI month-end close to the close `HORIZON` months later (`jci()`, stitched P51);
 - bonds: `bond_returns` (carry − duration × Δyield) on the month-end 10Y, IGSYC where present,
-  else dbnomics' OECD proxy (as `pipeline._ten_year_months`), only between months exactly
-  `HORIZON` apart, never across the 2025-01 → 2026-09 hole.
+  else dbnomics' OECD proxy (`ten_year_months`), only between months exactly `HORIZON` apart,
+  never across the 2025-01 → 2026-09 hole. The proxy is a monthly average, centred mid-month:
+  a month-end call is priced from the *next* month's average to the one `HORIZON` months after
+  it (lagged one month, P74), so the measured return never starts before the call. The IGSYC
+  month-end close is on the call date and is used as it stands.
 
 Dates: every calendar month end from `START` (factor_series begins 2016-11-07) to the last one
 before `today`. The first month with every input and the last with a forward return are the gate's
@@ -69,8 +72,10 @@ __all__ = [
     "build",
     "held_score",
     "history",
+    "lag_monthly_averages",
     "last_month_end",
     "month_ends",
+    "ten_year_months",
 ]
 
 SUBJECT = "IDN"
@@ -346,10 +351,33 @@ def stock_forward(jci_rows: Iterable[Row], horizon: int, today: date) -> dict[Mo
     return _forward(_complete(month_end_closes(jci_rows), today), horizon, forward_returns)
 
 
+def lag_monthly_averages(tens: Iterable[tuple[date, float]]) -> list[tuple[date, float]]:
+    """The 10Y points a month-end call is priced from, at or after the call (P74).
+
+    A point dated the 1st of its month is a period-dated monthly average (dbnomics' OECD
+    `idn.rate.long`; a daily month-end close is never dated the 1st): it is centred mid-month,
+    so it stands for the *previous* month's end, re-dated there. The call on month end M thus
+    starts on M+1's average and ends on M+1+horizon's: lagged one month, never before the call.
+    Any other point is a daily month-end close (IGSYC), on the call date, kept as it stands and
+    preferred over a lagged average for the same month."""
+    out: dict[Month, tuple[date, float]] = {}
+    pts = list(tens)
+    for d, v in pts:
+        if d.day == 1:
+            prev = d - timedelta(days=1)
+            out.setdefault(_key(prev), (prev, v))
+    for d, v in pts:
+        if d.day != 1:
+            out[_key(d)] = (d, v)
+    return [out[k] for k in sorted(out)]
+
+
 def bond_forward(tens: Iterable[tuple[date, float]], horizon: int,
                  today: date | None = None) -> dict[Month, float]:
-    """`bond_returns` on month-end 10Y yields, only between months exactly `horizon` apart."""
-    pts = list(tens)
+    """`bond_returns` on month-end 10Y yields, only between months exactly `horizon` apart;
+    monthly averages are lagged one month first (`lag_monthly_averages`), so each return starts
+    at or after its call."""
+    pts = lag_monthly_averages(tens)
     keyed = _complete(pts, today) if today is not None else {_key(d): (d, v) for d, v in pts}
     return _forward(keyed, horizon, lambda run, h: bond_returns(run, h))
 
@@ -361,8 +389,10 @@ def _rows(source: Any, sid: str, end: date) -> list[Row]:
         return []
 
 
-def _ten_year_months(idn: Any, end: date) -> list[tuple[date, float]]:
-    """Month-end 10Y: IGSYC where it exists, the OECD proxy elsewhere (as the live gate)."""
+def ten_year_months(idn: Any, end: date) -> list[tuple[date, float]]:
+    """Month-end 10Y as stored: IGSYC month-end closes where they exist, the OECD proxy (monthly
+    averages dated the 1st) elsewhere. `bond_forward` lags the averages one month (P74); this is
+    the series `pipeline.rule_prices` should take for bonds instead of its own copy."""
     out: dict[Month, tuple[date, float]] = {}
     for source, sid in ((idn.dbnomics, PROXY_10Y), (idn.phei, IGSYC_10Y)):
         for d, v in month_end_closes(_rows(source, sid, end)):
@@ -395,7 +425,7 @@ def build(src: HistorySources, dates: Sequence[date], *, today: date,
     dates = sorted(dates)
     horizon_end = today - timedelta(days=1)
     stock_fwd = stock_forward(_rows(src.idn.idxmethod, JCI, horizon_end), horizon, today)
-    bond_fwd = bond_forward(_ten_year_months(src.idn, horizon_end), horizon, today)
+    bond_fwd = bond_forward(ten_year_months(src.idn, horizon_end), horizon, today)
     rows: dict[str, list[HistoryRow]] = {a: [] for a in ASSETS}
     for day in dates:
         if progress is not None:

@@ -153,6 +153,14 @@ def _print_gate(doc: dict) -> None:
     print(f"  effective: {_fmt_verdict(doc['verdict'])}")
     print(f"  why on: {doc['why']['on']}")
     print(f"  why off: {doc['why']['off']}")
+    red = doc.get("reduce")
+    if red is not None:  # P74: reduce (on) vs enter / hold (off), its own gate
+        rh, rd = red["sample"].get("historical"), red["distance"].get("historical")
+        hist = (f"historical on {rh['on']} / off {rh['off']} (short on {rd['on']}, off "
+                f"{rd['off']})" if rh is not None else "no historical sample")
+        print(f"  reduce side: {red['state']}: {hist}; live on {red['sample']['live']['on']} /"
+              f" off {red['sample']['live']['off']}")
+        print(f"  reduce effective: {_fmt_verdict(red['verdict'])}")
     missing: dict[str, int] = {}
     for n in doc["no_call"]:
         for m in n["missing"]:

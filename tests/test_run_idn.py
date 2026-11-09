@@ -406,6 +406,52 @@ def test_cli_run_prints_the_idn_rules_and_candidates(tmp_path, sources, monkeypa
     assert "layer 4: 0 IDN stock candidate(s)" in out
 
 
+def _gate_with_reduce(passed: bool):
+    import dataclasses as dc
+
+    g = gate.evaluate_gate("bonds", (), records=[], prices=[], day=DAY,
+                           fingerprint=gate.rule_fingerprint("bonds"), since=DAY)
+    rv = dc.replace(verdict(passed), reason=f"reduce side: gate {'passed' if passed else 'failed'}")
+    return dc.replace(g, reduce=dc.replace(g.reduce, verdict=rv))
+
+
+def test_rule_view_never_applies_a_reduce_on_the_enter_verdict():
+    # P74: a passing enter-side verdict backs only an enter; a reduce needs its own side
+    lay = layers_with(idn_layers(bonds=bonds_rule("reduce", "underweight"),
+                                 verdicts={"bonds": verdict(True)}))
+    rv = pipeline.rule_view(score(), lay)
+    assert rv.stance is None and rv.entry is None
+    assert "not applied: reduce side untested" in rv.note
+    g = _gate_with_reduce(False)
+    lay.idn.gates = {"bonds": g}
+    rv = pipeline.rule_view(score(), lay)
+    assert rv.stance is None and "not applied: reduce side gate failed" in rv.note
+
+
+def test_rule_view_applies_a_reduce_on_a_passing_reduce_side():
+    g = _gate_with_reduce(True)
+    lay = layers_with(idn_layers(bonds=bonds_rule("reduce", "underweight"),
+                                 verdicts={"bonds": verdict(False)}))
+    lay.idn.gates = {"bonds": g}
+    rv = pipeline.rule_view(score(), lay)
+    assert rv.stance == "underweight"
+    assert rv.note.startswith("bonds rule applied: underweight (reduce side: gate passed")
+
+
+def test_rule_view_never_applies_a_hold():
+    lay = layers_with(idn_layers(bonds=bonds_rule("hold", "neutral"),
+                                 verdicts={"bonds": verdict(True)}))
+    rv = pipeline.rule_view(score(), lay)
+    assert rv.stance is None and "a hold claims no edge" in rv.note
+
+
+def test_rule_prices_for_bonds_are_the_history_ten_year_series(tmp_path):
+    from assist import history
+
+    src = missing_idn(tmp_path)
+    assert pipeline.rule_prices(src, DAY)["bonds"] == history.ten_year_months(src, DAY)
+
+
 def test_run_writes_out_rules_and_journals_the_rule_fingerprint(tmp_path, sources):
     sources.rule_history = build = FakeBuild()
     paths = pipeline.Paths.under(tmp_path / "repo")

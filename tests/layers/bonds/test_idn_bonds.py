@@ -348,6 +348,21 @@ def test_gate_with_no_call_keeps_base():
     assert gated_stance("underweight", out, _verdict(True))[0] == "underweight"
 
 
+def test_gate_applies_a_reduce_only_on_a_passed_reduce_verdict():
+    # P74: a passed enter verdict never moves a reduce proposal
+    import dataclasses
+    red = dataclasses.replace(run(), call="reduce", proposed_stance="underweight")
+    stance, note = gated_stance("neutral", red, _verdict(True))
+    assert (stance, note) == ("neutral",
+                              "bonds rule proposes underweight; not applied: reduce side untested")
+    stance, note = gated_stance("neutral", red, _verdict(True), reduce_verdict=_verdict(False))
+    assert stance == "neutral" and "reduce side t-stat 0.50 below 2.0" in note
+    stance, _ = gated_stance("neutral", red, _verdict(False), reduce_verdict=_verdict(True))
+    assert stance == "underweight"
+    hold = dataclasses.replace(run(), call="hold", proposed_stance="neutral")
+    assert gated_stance("underweight", hold, _verdict(True))[0] == "underweight"
+
+
 def test_bond_returns_carry_minus_duration():
     ys = [(date(2024, m, 1), y) for m, y in ((1, 7.0), (2, 7.0), (3, 7.0), (4, 6.5))]
     out = dict(bond_returns(ys, horizon=3, duration=7.0))

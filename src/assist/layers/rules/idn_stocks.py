@@ -28,8 +28,9 @@ nor macro are against it; **reduce** (underweight) when it is rich and flows or 
 it; **hold** (neutral) otherwise; **no_call** when an input is missing. An enter is laddered when
 the regime is risk-off (or not given). The JCI level (`JciSource`: idxscape index_daily,
 idx-method CSV before 2021-10) is context and the placebo's return series; its age is named in
-stale_inputs. The thresholds are hand-set: `gated_stance` lets the call change a stance only with
-a passing placebo verdict (`rule_verdict`, P9 harness).
+stale_inputs. The thresholds are hand-set: `gated_stance` lets an enter change a stance only with
+a passing placebo verdict (`rule_verdict`, P9 harness), a reduce only with a passing reduce-side
+verdict (P74), a hold never.
 
 PHEI is for the owner's local use only: drivers and details carry derived numbers (EY − 10Y, the
 real yield, the implied ERP), never the raw IGSYC 10Y.
@@ -146,12 +147,24 @@ def decide(valuation: int | None, flows: int | None,
     return call, CALL_STANCE[call]
 
 
-def gated_stance(base: str, stocks: IdnStocks, verdict: Verdict | None) -> tuple[str, str]:
-    """The stance after the rule: `base` unless the rule made a call and its placebo verdict
-    passed. The note says which, for the journal."""
-    p = stocks.proposed_stance
+def gated_stance(base: str, stocks: IdnStocks, verdict: Verdict | None, *,
+                 reduce_verdict: Verdict | None = None) -> tuple[str, str]:
+    """The stance after the rule: `base` unless the rule made a call that its own side's
+    placebo verdict backs. `verdict` (enter vs hold + reduce) backs only an enter; a reduce needs
+    `reduce_verdict` (reduce vs enter + hold, P74), and a hold claims no edge, so it never moves
+    `base`. The note says which, for the journal."""
+    p, call = stocks.proposed_stance, stocks.call
     if p is None:
-        return base, f"stocks rule: no call ({stocks.call})"
+        return base, f"stocks rule: no call ({call})"
+    if call == "hold":
+        return base, f"stocks rule proposes {p}; not applied: a hold claims no edge"
+    if call == "reduce":
+        if reduce_verdict is None:
+            return base, f"stocks rule proposes {p}; not applied: reduce side untested"
+        if not reduce_verdict.passed:
+            reason = reduce_verdict.reason.removeprefix("reduce side: ")
+            return base, f"stocks rule proposes {p}; not applied: reduce side {reason}"
+        return p, f"stocks rule applied: {p} ({reduce_verdict.reason})"
     if verdict is None:
         return base, f"stocks rule proposes {p}; not applied: no placebo verdict"
     if not verdict.passed:
