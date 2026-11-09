@@ -1065,7 +1065,7 @@ slices:
       P68/P69 report. Tests first: pass, insufficient, revoked, fingerprint mismatch, rebuild.
   - id: P68-stocks-history
     title: "PLAN S49: IDN stocks rule walk-forward on the real stores: calls per month, verdict, distance to 10/10, EY seam, diagnostic variants"
-    depends_on: [P67-rule-gate]
+    depends_on: [P67-rule-gate, P74-reduce-side]
     owns: ["docs/results/P68-stocks-history.md"]
     accept: uv run pytest -q && uv run ruff check .
     estimate: 0.5
@@ -1078,7 +1078,7 @@ slices:
       (slicer invalidate), not fixed here. No threshold changes.
   - id: P69-bonds-history
     title: "PLAN S50: IDN bonds rule walk-forward on the real stores (2021-02 -> 2025-02 on the OECD proxy, IGSYC months from 2026-10); a plain 'not yet' if it cannot reach the gate"
-    depends_on: [P67-rule-gate]
+    depends_on: [P67-rule-gate, P74-reduce-side]
     owns: ["docs/results/P69-bonds-history.md"]
     accept: uv run pytest -q && uv run ruff check .
     estimate: 0.5
@@ -1147,10 +1147,27 @@ slices:
       from regime.json `home`, a missing block a notice; .json twin includes it. Telegram: one
       line when home is risk_off. regime_check / regime_message (pipeline.py) compare the home
       state too and send once on a change; the first check with no home record is a baseline.
+  - id: P74-reduce-side
+    title: "PLAN S56: the reduce side gets its own gate (reduce vs enter / hold, direction -1); a hold never moves a stance; bond returns from the OECD monthly averages start after the call (review/phase-k, 2026-11-07)"
+    depends_on: [P67-rule-gate]
+    owns: ["src/assist/eval/gate.py", "tests/eval/test_gate.py", "schema/rules.schema.json", "src/assist/history.py", "tests/test_history.py", "src/assist/layers/bonds/idn.py", "tests/layers/bonds/test_idn_bonds.py", "src/assist/layers/rules/idn_stocks.py", "tests/layers/rules/test_idn_stocks.py", "src/assist/pipeline.py", "tests/test_run_idn.py", "src/assist/cli.py", "docs/results/P74-reduce-side.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 1
+    notes: >-
+      Two flaws the phase K review found (none of the ten numbers changes). (1) The gate tested
+      enter against hold + reduce, yet gated_stance would also apply a reduce (underweight) on
+      that verdict: reduce calls would move stances untested. Now the gate also runs the reduce
+      side (same window, horizon, stride, block, MIN_N, placebo, control, revocation; direction
+      -1), rules.schema 1.1.0 `reduce`; gated_stance(..., reduce_verdict=) applies an enter only
+      on the enter verdict, a reduce only on the reduce verdict, a hold never. (2) The bonds
+      forward return used the OECD proxy's monthly averages (dated the 1st, centred mid-month),
+      so a month-end call's return started before the call: averages are lagged one month
+      (history.lag_monthly_averages), IGSYC month-end closes kept; pipeline.rule_prices takes
+      history.ten_year_months. New rule fingerprints, so out/rules/ rebuilds.
   - id: F10-phase-k
     kind: integration
     title: "PLAN S55: phase K fan-in: merge phase-k to main, one live assist run (one new journal segment), Progress rows S45-S54, STATUS, README, Open data gaps"
-    depends_on: [P68-stocks-history, P69-bonds-history, P73-home-pages, P45-start]
+    depends_on: [P68-stocks-history, P69-bonds-history, P73-home-pages, P74-reduce-side, P45-start]
     owns: ["PLAN.md", "README.md", "CLAUDE.md", "docs/results/F10-phase-k.md"]
     accept: uv run pytest -q && uv run ruff check .
     estimate: 0.5

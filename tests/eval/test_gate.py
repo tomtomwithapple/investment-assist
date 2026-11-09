@@ -210,8 +210,86 @@ def test_no_call_months_are_listed_with_their_reason():
 
 
 def test_gated_stance_keeps_its_signature():
-    assert list(inspect.signature(bonds_gate).parameters) == ["base", "bonds", "verdict"]
-    assert list(inspect.signature(stocks_gate).parameters) == ["base", "stocks", "verdict"]
+    # P74 adds an optional keyword: the existing three-argument call still works
+    assert list(inspect.signature(bonds_gate).parameters) == ["base", "bonds", "verdict",
+                                                              "reduce_verdict"]
+    assert list(inspect.signature(stocks_gate).parameters) == ["base", "stocks", "verdict",
+                                                               "reduce_verdict"]
+    for fn in (bonds_gate, stocks_gate):
+        p = inspect.signature(fn).parameters["reduce_verdict"]
+        assert p.kind is inspect.Parameter.KEYWORD_ONLY and p.default is None
+
+
+# ---------------- the reduce side (P74) ----------------
+
+
+def reduce_rows(n=72, seed=3) -> tuple[HistoryRow, ...]:
+    """Windows alternate reduce / hold; reduces precede −5%, holds +2%. No enter at all."""
+    rng = random.Random(seed)
+    calls = ["reduce" if (i // 3) % 2 == 0 else "hold" for i in range(n)]
+    rets = [(-0.05 if c == "reduce" else 0.02) + rng.gauss(0, 0.01) for c in calls]
+    return rows_from(calls, rets)
+
+
+def test_the_enter_verdict_says_nothing_about_reduce():
+    g = run_gate(good_rows())
+    assert g.state == "passed"
+    assert g.reduce.state == "insufficient"  # no reduce call: 0 on the reduce side
+    assert g.reduce.sample["historical"]["on"] == 0
+    assert g.reduce.distance["historical"]["on"] == MIN_N
+    assert g.reduce_verdict is not None and not g.reduce_verdict.passed
+    assert g.reduce_verdict.reason.startswith("reduce side: insufficient sample")
+
+
+def test_a_reduce_side_that_beats_its_placebo_passes_on_its_own():
+    g = run_gate(reduce_rows())
+    assert g.state == "insufficient"  # no enter: the enter side cannot pass
+    r = g.reduce
+    assert r.state == "passed" and r.historical.direction == -1
+    assert r.historical.rule.n_on >= MIN_N and r.historical.rule.n_off >= MIN_N
+    assert r.historical.score_t >= 2.0
+    assert g.reduce_verdict.passed
+    assert g.reduce_verdict.reason.startswith("reduce side: gate passed")
+    assert r.historical.stride == g.horizon and r.historical.block == g.horizon
+
+
+def test_a_reduce_with_no_edge_fails():
+    rng = random.Random(9)
+    calls = ["reduce" if (i // 3) % 2 == 0 else "hold" for i in range(72)]
+    g = run_gate(rows_from(calls, [rng.gauss(0, 0.03) for _ in calls]))
+    assert g.reduce.state == "failed" and not g.reduce_verdict.passed
+
+
+def test_no_history_is_no_reduce_verdict():
+    g = run_gate(None)
+    assert g.reduce.state == "none" and g.reduce_verdict is None
+
+
+def test_the_reduce_verdict_reaches_gated_stance_through_the_gate():
+    import dataclasses as dc
+
+    from assist.layers.rules.idn_stocks import IdnStocks
+    g = run_gate(reduce_rows())
+    rule = IdnStocks(DAY, "reduce", "underweight", {}, (), None, None, None, None, None, None,
+                     None, None, None, None, (), ())
+    assert stocks_gate("neutral", rule, g.verdict)[0] == "neutral"
+    assert stocks_gate("neutral", rule, g.verdict,
+                       reduce_verdict=g.reduce_verdict)[0] == "underweight"
+    failed = run_gate(good_rows())
+    assert stocks_gate("neutral", dc.replace(rule), failed.verdict,
+                       reduce_verdict=failed.reduce_verdict)[0] == "neutral"
+
+
+def test_rules_json_carries_the_reduce_side(tmp_path):
+    g = run_gate(reduce_rows())
+    doc = g.to_dict()
+    gate.validator().validate(doc)
+    assert doc["schema_version"] == "1.1.0"
+    red = doc["reduce"]
+    assert red["state"] == "passed" and red["direction"] == -1
+    assert red["verdict"]["passed"] is True
+    assert set(red["sample"]) == {"historical", "live"}
+    assert "reduce" in g.journal()
 
 
 # ---------------- the rule fingerprint ----------------
@@ -360,6 +438,19 @@ def test_forward_returns_are_refreshed_from_the_prices(tmp_path):
                         date(2017, 2, 28)]
 
 
+def test_bond_returns_from_monthly_averages_start_after_the_call(tmp_path):
+    # P74: pipeline.rule_prices hands the OECD proxy as monthly averages dated the 1st; the
+    # 2016-11-30 call is priced from December's average to March's, not November's to February's
+    ys = {date(2016, 11, 1): 9.0, date(2016, 12, 1): 7.0, date(2017, 1, 1): 7.0,
+          date(2017, 2, 1): 7.0, date(2017, 3, 1): 6.0, date(2017, 4, 1): 6.0}
+    px = {"bonds": sorted(ys.items()), "stocks": prices(date(2016, 11, 30), 60)}
+    gates = gate.refresh(date(2017, 6, 10), tmp_path / "rules", records=[], prices=px,
+                         build=FakeBuild())
+    first = gates["bonds"].rows[0]
+    assert first.as_of == date(2016, 11, 30)
+    assert first.forward_return == pytest.approx(0.07 * 3 / 12 - 7.0 * (6.0 - 7.0) / 100)
+
+
 # ---------------- diagnostics ----------------
 
 
@@ -374,3 +465,12 @@ def test_diagnostic_valuation_only_counts_cheap_months_as_on():
     assert d["gates"] is False and d["horizon"] == 1 and d["variant"] == "valuation-only"
     assert d["sample"]["on"] + d["sample"]["off"] == 30
     assert d["sample"]["on"] == 15
+
+
+def test_assist_rules_prints_the_reduce_side(capsys):
+    from assist import cli
+
+    cli._print_gate(run_gate(reduce_rows()).to_dict())
+    out = capsys.readouterr().out
+    assert "  reduce side: passed: historical on " in out
+    assert "  reduce effective: passed: " in out

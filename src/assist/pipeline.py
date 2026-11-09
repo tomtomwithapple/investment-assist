@@ -102,11 +102,11 @@ from assist.candidates import tiers_replay
 from assist.eval import gate as rule_gate
 from assist.eval.placebo import Verdict
 from assist.fx import FxEdge, fx_edge
+from assist.history import ten_year_months
 from assist.layers import candidates_foreign as cf
 from assist.layers import home_regime, portfolio, regime, undervalued
 from assist.layers.bonds import IdnBonds, idn_bonds
 from assist.layers.bonds import gated_stance as bonds_gate
-from assist.layers.bonds.idn import PROXY_10Y
 from assist.layers.candidates import IdnCandidates, idn_candidates
 from assist.layers.candidates_foreign import ForeignCandidates, IndexValuation, foreign_candidates
 from assist.layers.home_inputs import HomeSources
@@ -127,7 +127,6 @@ from assist.layers.types import (
 )
 from assist.sources.base import SourceUnavailable
 from assist.sources.idxmethod import JCI
-from assist.sources.idxscape_phei import IGSYC_10Y
 from assist.sources.worldbankscape import Layer1
 
 __all__ = [
@@ -646,24 +645,12 @@ def _jci_months(src: IdnSources, day: date) -> list[tuple[date, float]]:
         return []
 
 
-def _ten_year_months(src: IdnSources, day: date) -> list[tuple[date, float]]:
-    """Month-end 10Y: IGSYC 10Y (PHEI) where it exists, dbnomics' OECD proxy elsewhere, spliced
-    as the bonds rule's percentile window splices them."""
-    out: dict[tuple[int, int], tuple[date, float]] = {}
-    for source, sid in ((src.dbnomics, PROXY_10Y), (src.phei, IGSYC_10Y)):
-        try:
-            rows = source.rows([sid], end=day)
-        except SourceUnavailable:
-            continue
-        for d, v in month_end_closes(rows):
-            out[_month(d)] = (d, v)
-    return [out[k] for k in sorted(out)]
-
-
 def rule_prices(src: IdnSources, day: date) -> dict[str, list[tuple[date, float]]]:
     """Month-end prices each rule's calls are judged on, as known on `day`: the 10Y (bonds) and
-    the JCI close (stocks)."""
-    return {"bonds": _ten_year_months(src, day), "stocks": _jci_months(src, day)}
+    the JCI close (stocks). The 10Y is `history.ten_year_months` as stored (IGSYC month-end
+    closes, the OECD proxy's monthly averages dated the 1st); the gate lags the averages so a
+    return never starts before its call (P74)."""
+    return {"bonds": ten_year_months(src, day), "stocks": _jci_months(src, day)}
 
 
 def rule_gates(day: date, history: Sequence[Mapping],
@@ -755,12 +742,15 @@ def _idn_view(score: AssetScore, layers: Layers) -> stance.RuleView | None:
         return None
     rule, verdict = idn.rule(score.asset), idn.verdicts.get(score.asset)
     gate = bonds_gate if score.asset == "bonds" else stocks_gate
-    gated, note = gate(stance.base_stance(score, layers.regime, layers.home), rule, verdict)
     g = idn.gates.get(score.asset)
+    # P74: the enter verdict backs only an enter; a reduce needs the gate's reduce side
+    reduce_verdict = g.reduce_verdict if g is not None else None
+    gated, note = gate(stance.base_stance(score, layers.regime, layers.home), rule, verdict,
+                       reduce_verdict=reduce_verdict)
     if rule.proposed_stance is not None:
         note += (f" (rule gate {g.line()})" if g is not None
                  else f" (verdict: {_verdict_text(verdict)})")
-    applied = rule.proposed_stance is not None and verdict is not None and verdict.passed
+    applied = note.startswith(f"{score.asset} rule applied:")
     drivers, watch = list(rule.drivers), []
     stale, sources = list(rule.stale_inputs), list(rule.sources)
     if score.asset == "stocks":

@@ -259,9 +259,43 @@ def test_stocks_forward_return_is_jci_over_3_month_ends(base):
 
 def test_bonds_forward_return_on_month_end_10y(base):
     # flat 7.0% proxy: carry only, 7% × 3/12
-    assert base["bonds"].row(D("2022-03-31")).forward_return == pytest.approx(0.07 * 3 / 12)
-    # the proxy ends 2022-06, so 2022-04 → 2022-07 has no forward point
-    assert base["bonds"].row(D("2022-04-30")).forward_return is None
+    assert base["bonds"].row(D("2022-02-28")).forward_return == pytest.approx(0.07 * 3 / 12)
+    # the proxy is a monthly average: a month-end call starts on the next month's average
+    # (P74), and the proxy ends with June 2022, so 2022-03 (April → July) has no forward point
+    assert base["bonds"].row(D("2022-03-31")).forward_return is None
+
+
+def test_a_monthly_average_10y_starts_after_the_call():
+    # P74: OECD averages dated the 1st. The call on 2024-01-31 must not be scored from
+    # January's average (centred mid-January, before the call): it starts on February's.
+    avg = [(D("2024-01-01"), 7.0), (D("2024-02-01"), 6.0), (D("2024-03-01"), 6.0),
+           (D("2024-04-01"), 6.0), (D("2024-05-01"), 5.0)]
+    out = H.bond_forward(avg, H.HORIZON)
+    assert out[(2024, 1)] == pytest.approx(0.06 * 3 / 12 - 7.0 * (5.0 - 6.0) / 100)
+    assert (2024, 2) not in out  # March → June: no June average
+    assert H.lag_monthly_averages(avg)[0] == (D("2023-12-31"), 7.0)
+
+
+def test_a_month_end_daily_10y_is_used_as_it_stands():
+    # IGSYC month-end closes are on (or just before) the call date: no lag
+    daily = [(D("2026-10-30"), 7.0), (D("2026-11-28"), 7.0), (D("2026-12-31"), 7.0),
+             (D("2027-01-29"), 6.0)]
+    out = H.bond_forward(daily, H.HORIZON)
+    assert out[(2026, 10)] == pytest.approx(0.07 * 3 / 12 - 7.0 * (6.0 - 7.0) / 100)
+    assert H.lag_monthly_averages(daily) == daily
+
+
+def test_a_month_end_daily_10y_wins_over_a_lagged_average():
+    # 2026-10: the next month's average (dated 11-01, lagged to 10-31) loses to the IGSYC close
+    pts = [(D("2026-11-01"), 9.9), (D("2026-10-30"), 7.0)]
+    assert H.lag_monthly_averages(pts) == [(D("2026-10-30"), 7.0)]
+
+
+def test_ten_year_months_exports_the_series_the_gate_prices_bonds_on():
+    idn = sources().idn
+    pts = H.ten_year_months(idn, D("2023-02-09"))
+    assert pts[0][0].day == 1  # the averages keep their own date; bond_forward lags them
+    assert H.lag_monthly_averages(pts)[-1][0] == D("2022-05-31")
 
 
 def test_bond_forward_never_spans_a_gap():

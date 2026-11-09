@@ -19,7 +19,7 @@
     "since": {"$ref": "#/$defs/date", "description": "First date this rule fingerprint's gate was written: the live monitor counts journalled calls from here."},
     "state": {"enum": ["passed", "insufficient", "failed", "revoked", "live-passed", "none"]},
     "line": {"type": "string"},
-    "verdict": {"anyOf": [{"$ref": "#/$defs/verdict"}, {"type": "null"}], "description": "The effective verdict handed to the rule's gated_stance; null = no verdict."},
+    "verdict": {"anyOf": [{"$ref": "#/$defs/verdict"}, {"type": "null"}], "description": "The effective enter-side verdict handed to the rule's gated_stance (enter vs hold / reduce): it backs only an enter; null = no verdict."},
     "params": {
       "type": "object",
       "additionalProperties": false,
@@ -87,6 +87,38 @@
     "live_edge": {"$ref": "#/$defs/edge"},
     "stale_inputs": {"$ref": "#/$defs/texts"},
     "rows": {"type": ["array", "null"], "items": {"$ref": "#/$defs/row"}},
+    "reduce": {
+      "type": "object",
+      "description": "Schema 1.1.0 (P74): the reduce side's own gate, reduce (on) vs enter / hold (off), direction -1, on the same window, journal and numbers as the enter side. Its verdict is the only one that may apply a reduce proposal; the top-level verdict backs only an enter. Absent = reduce untested.",
+      "additionalProperties": false,
+      "required": ["side", "direction", "state", "verdict", "historical", "live", "live_edge", "sample", "distance", "why"],
+      "properties": {
+        "side": {"const": "reduce"},
+        "direction": {"const": -1},
+        "state": {"enum": ["passed", "insufficient", "failed", "revoked", "live-passed", "none"]},
+        "verdict": {"anyOf": [{"$ref": "#/$defs/verdict"}, {"type": "null"}]},
+        "historical": {"anyOf": [{"$ref": "#/$defs/verdict"}, {"type": "null"}]},
+        "live": {"$ref": "#/$defs/verdict"},
+        "live_edge": {"$ref": "#/$defs/edge"},
+        "sample": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["live"],
+          "properties": {"historical": {"$ref": "#/$defs/counts"}, "live": {"$ref": "#/$defs/counts"}}
+        },
+        "distance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["live", "revoke"],
+          "properties": {
+            "historical": {"$ref": "#/$defs/sides"},
+            "live": {"$ref": "#/$defs/sides"},
+            "revoke": {"$ref": "#/$defs/sides"}
+          }
+        },
+        "why": {"type": "string"}
+      }
+    },
     "disclaimer": {"type": "string", "pattern": "[Nn]ot investment advice"}
   },
   "$defs": {

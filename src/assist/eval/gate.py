@@ -16,6 +16,12 @@
   whose fingerprint differs counts as no verdict); else `insufficient` (fewer than 10 windows on
   a side) or `failed`. The effective `Verdict` goes to the rule's `gated_stance` unchanged in
   shape; `none` hands it None.
+- **Reduce side (P74).** The verdict above tests enter against the rest, so it backs only an
+  enter. `reduce` is the same machinery on the other side: reduce (on) against enter / hold
+  (off), `direction` −1 (a reduce claims weaker returns), the same window, horizon, stride,
+  block, `MIN_N`, placebo, control and revocation. Its effective verdict
+  (`Gate.reduce_verdict`) goes to `gated_stance(..., reduce_verdict=)`; without it a reduce
+  proposal never moves a stance.
 
 The **rule fingerprint** (`rule_fingerprint`) hashes, docstrings and formatting aside
 (`journal.code_digest`), the modules that make the rule's calls (the rule, regime, overrides,
@@ -48,7 +54,7 @@ import jsonschema
 
 from assist import journal
 from assist.eval import placebo
-from assist.eval.placebo import MIN_N, Edge, Verdict, align, edge, evaluate, forward_returns
+from assist.eval.placebo import MIN_N, Edge, Verdict, edge, evaluate, forward_returns
 from assist.history import (
     HORIZON,
     START,
@@ -59,7 +65,6 @@ from assist.history import (
     month_ends,
     stock_forward,
 )
-from assist.layers.bonds.idn import bond_returns
 from assist.layers.rules.idn_stocks import ERP_BAND
 from assist.layers.types import DISCLAIMER, SCHEMA_DIR
 from assist.sources.base import Row
@@ -70,8 +75,10 @@ __all__ = [
     "REVOKE_N",
     "REVOKE_T",
     "RULE_FILES",
+    "SIDES",
     "STATES",
     "Gate",
+    "SideGate",
     "diagnostic",
     "evaluate_gate",
     "live_build",
@@ -83,13 +90,14 @@ __all__ = [
 
 SUBJECT = "IDN"
 ASSETS = ("bonds", "stocks")
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"  # 1.1.0: the `reduce` side (P74)
 RULES_SCHEMA = SCHEMA_DIR / "rules.schema.json"
 REVOKE_N = 5  # live windows per side before the monitor may revoke (open question 3)
 REVOKE_T = -1.0  # signed t at or below this revokes
 STATES = ("passed", "insufficient", "failed", "revoked", "live-passed", "none")
 FINGERPRINT_RE = journal.FINGERPRINT_RE
 VARIANTS = ("valuation-only",)
+SIDES = {"enter": 1, "reduce": -1}  # the call tested as on, and the sign of its claimed edge
 
 _COMMON = ("history.py", "layers/regime.py", "layers/overrides.py", "layers/signals.py",
            "layers/types.py")
@@ -146,24 +154,34 @@ def live_calls(records: Sequence[Mapping], asset: str, fingerprint: str, *, sinc
     return calls
 
 
-def _returns(asset: str, prices: Sequence[tuple[date, float]], horizon: int):
-    return bond_returns(prices, horizon) if asset == "bonds" else forward_returns(prices, horizon)
+def _feat(call: str, side: str = "enter") -> bool | None:
+    return None if call == "no_call" else call == side
+
+
+def _live_returns(asset: str, prices: Sequence[tuple[date, float]], horizon: int,
+                  day: date) -> dict[Month, float]:
+    """Forward return per call month: bonds through `bond_forward` (monthly averages lagged to
+    start after the call, P74; never across a gap), stocks on the month-end closes."""
+    if asset == "bonds":
+        return bond_forward(prices, horizon, day)
+    return {_month(d): r for d, r in forward_returns(prices, horizon)}
 
 
 def _live_series(asset: str, calls: Mapping[Month, str], prices: Sequence[tuple[date, float]],
-                 horizon: int) -> tuple[list, list[float]]:
-    feats = {d: None if calls[_month(d)] == "no_call" else calls[_month(d)] == "enter"
-             for d, _ in prices if _month(d) in calls}
-    _, f, r = align(feats, _returns(asset, prices, horizon))
-    return f, r
+                 horizon: int, day: date, side: str = "enter") -> tuple[list, list[float]]:
+    fwd = _live_returns(asset, prices, horizon, day)
+    months = sorted(calls.keys() & fwd.keys())
+    return [_feat(calls[m], side) for m in months], [fwd[m] for m in months]
 
 
 def _identity(fs, _rs):
     return list(fs)
 
 
-def _verdict(feats: Sequence, rets: Sequence[float], horizon: int) -> Verdict:
-    return evaluate(_identity, list(feats), list(rets), stride=horizon, block=horizon)
+def _verdict(feats: Sequence, rets: Sequence[float], horizon: int,
+             direction: int = 1) -> Verdict:
+    return evaluate(_identity, list(feats), list(rets), stride=horizon, block=horizon,
+                    direction=direction)
 
 
 # ---------------- the gate ----------------
@@ -179,10 +197,9 @@ def window(rows: Sequence[HistoryRow]) -> tuple[HistoryRow, ...]:
     return tuple(rows[first:last + 1])
 
 
-def _sample(rows: Sequence[HistoryRow]) -> tuple[list, list[float]]:
+def _sample(rows: Sequence[HistoryRow], side: str = "enter") -> tuple[list, list[float]]:
     rs = [r for r in rows if r.forward_return is not None]
-    return ([None if r.call == "no_call" else r.call == "enter" for r in rs],
-            [r.forward_return for r in rs])
+    return [_feat(r.call, side) for r in rs], [r.forward_return for r in rs]
 
 
 def _counts(feats: Sequence, horizon: int) -> dict[str, int]:
@@ -198,6 +215,39 @@ def _short(n: int, need: int) -> int:
 
 def _ym(d: date | None) -> str | None:
     return None if d is None else f"{d:%Y-%m}"
+
+
+@dataclass(frozen=True)
+class SideGate:
+    """The reduce side of one rule's gate (P74): reduce (on) vs enter / hold (off), direction
+    −1, on the same window, journal and numbers as the enter side. `verdict` is what
+    `gated_stance` gets as `reduce_verdict` (None = none)."""
+
+    side: str
+    state: str
+    verdict: Verdict | None
+    historical: Verdict | None
+    live: Verdict
+    live_edge: Edge
+    sample: Mapping[str, Mapping[str, int]]
+    distance: Mapping[str, Mapping[str, int]]
+    why: str
+
+    def journal(self) -> dict:
+        return {"state": self.state,
+                "sample": {k: dict(v) for k, v in self.sample.items()},
+                "distance": {k: dict(v) for k, v in self.distance.items()}}
+
+    def to_dict(self) -> dict:
+        def vd(v: Verdict | None) -> dict | None:
+            return None if v is None else v.to_dict()
+
+        return {"side": self.side, "direction": SIDES[self.side], "state": self.state,
+                "verdict": vd(self.verdict), "historical": vd(self.historical),
+                "live": vd(self.live), "live_edge": dataclasses.asdict(self.live_edge),
+                "sample": {k: dict(v) for k, v in self.sample.items()},
+                "distance": {k: dict(v) for k, v in self.distance.items()},
+                "why": self.why}
 
 
 @dataclass(frozen=True)
@@ -221,6 +271,12 @@ class Gate:
     no_call: tuple[dict, ...]
     horizon: int = HORIZON
     stale_inputs: tuple[str, ...] = ()
+    reduce: SideGate | None = None
+
+    @property
+    def reduce_verdict(self) -> Verdict | None:
+        """What `gated_stance` gets as `reduce_verdict`: None when there is no reduce side."""
+        return None if self.reduce is None else self.reduce.verdict
 
     def line(self) -> str:
         h, lv = self.sample.get("historical"), self.sample["live"]
@@ -232,9 +288,12 @@ class Gate:
 
     def journal(self) -> dict:
         """What a `rule` journal record carries (its rule fingerprint feeds the live monitor)."""
-        return {"state": self.state, "since": self.since.isoformat(),
-                "sample": {k: dict(v) for k, v in self.sample.items()},
-                "distance": {k: dict(v) for k, v in self.distance.items()}}
+        out = {"state": self.state, "since": self.since.isoformat(),
+               "sample": {k: dict(v) for k, v in self.sample.items()},
+               "distance": {k: dict(v) for k, v in self.distance.items()}}
+        if self.reduce is not None:
+            out["reduce"] = self.reduce.journal()
+        return out
 
     def to_dict(self) -> dict:
         rows = self.rows or ()
@@ -264,6 +323,7 @@ class Gate:
             "live_edge": dataclasses.asdict(self.live_edge),
             "stale_inputs": list(self.stale_inputs),
             "rows": None if self.rows is None else [r.to_dict() for r in self.rows],
+            **({} if self.reduce is None else {"reduce": self.reduce.to_dict()}),
             "disclaimer": DISCLAIMER,
         })
 
@@ -335,7 +395,7 @@ def evaluate_gate(asset: str, rows: Sequence[HistoryRow] | None, *, records: Seq
         hist = _verdict(feats, rets, horizon)
         hcounts = _counts(feats, horizon)
     calls = live_calls(records, asset, fingerprint, since=since, before=day)
-    lf, lr = _live_series(asset, calls, prices, horizon)
+    lf, lr = _live_series(asset, calls, prices, horizon, day)
     live = _verdict(lf, lr, horizon)
     live_edge = edge(lf, lr, stride=horizon, min_n=REVOKE_N)
     lcounts = _counts(lf, horizon)
@@ -354,25 +414,62 @@ def evaluate_gate(asset: str, rows: Sequence[HistoryRow] | None, *, records: Seq
              sample, distance, _why(asset, rows, win, hcounts, horizon),
              tuple({"month": _ym(r.as_of), "missing": list(r.missing)}
                    for r in rows or () if r.call == "no_call"),
-             horizon, tuple(dict.fromkeys(stale_inputs)))
-    return dataclasses.replace(g, verdict=_effective(g))
+             horizon, tuple(dict.fromkeys(stale_inputs)),
+             _side_gate("reduce", rows, win, calls, asset, prices, horizon, day, since))
+    return dataclasses.replace(
+        g, verdict=_effective(state, hist, live, live_edge, since, sample.get("historical")))
 
 
-def _effective(g: Gate) -> Verdict | None:
-    hist, live, e = g.historical, g.live, g.live_edge
-    if g.state == "none":
+def _side_gate(side: str, rows: Sequence[HistoryRow] | None, win: Sequence[HistoryRow],
+               calls: Mapping[Month, str], asset: str, prices: Sequence[tuple[date, float]],
+               horizon: int, day: date, since: date) -> SideGate:
+    """The gate of `side` (on) against every other call (off), signed by `SIDES[side]`."""
+    direction = SIDES[side]
+    hist = hcounts = None
+    if rows is not None:
+        feats, rets = _sample(win, side)
+        hist = _verdict(feats, rets, horizon, direction)
+        hcounts = _counts(feats, horizon)
+    lf, lr = _live_series(asset, calls, prices, horizon, day, side)
+    live = _verdict(lf, lr, horizon, direction)
+    live_edge = edge(lf, lr, stride=horizon, min_n=REVOKE_N, direction=direction)
+    lcounts = _counts(lf, horizon)
+    state = _state(hist, live, live_edge)
+    sample = {"live": lcounts}
+    distance = {"live": {"on": _short(lcounts["on"], MIN_N), "off": _short(lcounts["off"], MIN_N)},
+                "revoke": {"on": _short(lcounts["on"], REVOKE_N),
+                           "off": _short(lcounts["off"], REVOKE_N)}}
+    if hcounts is not None:
+        sample["historical"] = hcounts
+        distance["historical"] = {"on": _short(hcounts["on"], MIN_N),
+                                  "off": _short(hcounts["off"], MIN_N)}
+    if hcounts is None:
+        why = f"no historical verdict for this rule fingerprint ({side} side)"
+    else:
+        n_side = sum(r.call == side for r in win)
+        why = (f"{side} side: {n_side} {side} month(s) in the window; {hcounts['on']} on / "
+               f"{hcounts['off']} off on the stride-{horizon} windows, short on "
+               f"{_short(hcounts['on'], MIN_N)}, off {_short(hcounts['off'], MIN_N)} of {MIN_N}")
+    verdict = _effective(state, hist, live, live_edge, since, hcounts)
+    if verdict is not None:
+        verdict = dataclasses.replace(verdict, reason=f"{side} side: {verdict.reason}")
+    return SideGate(side, state, verdict, hist, live, live_edge, sample, distance, why)
+
+
+def _effective(state: str, hist: Verdict | None, live: Verdict, e: Edge, since: date,
+               h: Mapping[str, int] | None) -> Verdict | None:
+    if state == "none":
         return None
-    if g.state == "passed":
+    if state == "passed":
         return dataclasses.replace(hist, reason=f"gate passed: historical {hist.reason}")
-    if g.state == "live-passed":
+    if state == "live-passed":
         return dataclasses.replace(live, reason=f"gate live-passed: journal {live.reason}")
-    if g.state == "revoked":
+    if state == "revoked":
         base = hist if hist is not None and hist.passed else live
         return dataclasses.replace(base, passed=False, reason=(
             f"gate revoked: live t {e.t:.2f} <= {REVOKE_T} on {e.n_on} on / {e.n_off} off"
-            f" since {g.since}"))
-    if g.state == "insufficient":
-        h = g.sample["historical"]
+            f" since {since}"))
+    if state == "insufficient":
         return dataclasses.replace(hist, reason=(
             f"insufficient sample (historical on {h['on']}/{MIN_N}, off {h['off']}/{MIN_N})"))
     return dataclasses.replace(hist, reason=f"gate failed: historical {hist.reason}")
