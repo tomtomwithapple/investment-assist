@@ -8,6 +8,7 @@ that no row up to the cut-off moves."""
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import math
 from datetime import date, timedelta
@@ -576,3 +577,101 @@ def test_the_foreign_preload_starts_at_the_first_date_less_the_read_back():
         assert (w[key].calls[0]["start"], w[key].calls[0]["end"]) == (first, F_DATES[-1]), key
     fred = [c for c in w["fred"].calls if "as_of" not in c]
     assert fred[0]["start"] == first
+
+
+# ---------------- foreign forward returns (P82, PLAN S64) ----------------
+
+from types import SimpleNamespace as NS  # noqa: E402
+
+from assist.sources import jquantster as JQ  # noqa: E402
+from assist.sources.ausdata import AGS_10Y  # noqa: E402
+
+
+def _month_end_rows(sid, src, first, last, value, *, day1=False):
+    out = []
+    for i, d in enumerate(OH.month_ends(first, last)):
+        out.append(Row(sid, d.replace(day=1) if day1 else d, value(i), None, src))
+    return out
+
+
+class FakeStocks:
+    def __init__(self, closes):
+        self.closes = closes
+
+    def bars(self, symbol):
+        assert symbol == "SPY"
+        return [NS(date=d, close=v, split_factor=1.0) for d, v in self.closes]
+
+
+def foreign_return_stores(*, usd=lambda i: 1.30, idr=lambda i: 1.30 / 16_000, spy=None,
+                          dgs10=lambda i: 4.0):
+    first, last = D("2018-01-31"), D("2019-12-31")
+    sg = []
+    for ccy, f in (("USD", usd), ("JPY", lambda i: 0.012), ("EUR", lambda i: 1.5),
+                   ("AUD", lambda i: 0.95), ("IDR", idr)):
+        sg += _month_end_rows(SG.fx_id(ccy), "singstat", first, last, f)
+    sg += _month_end_rows(SG.SGS_10Y, "singstat", first, last, lambda i: 2.5)
+    spy = spy if spy is not None else [(d, 400.0) for d in OH.month_ends(first, last)]
+    return OH.ForeignReturnSources(
+        fred=Fake("sec-edgar", _month_end_rows("DGS10", "sec-edgar", first, last, dgs10)),
+        jquantster=Fake("jquantster", _month_end_rows(JQ.JGB_10Y, "jquantster", first, last,
+                                                       lambda i: 1.0)),
+        dbnomics=Fake("dbnomics", _month_end_rows("ea.bund.10y", "dbnomics", first, last,
+                                                   lambda i: 2.0, day1=True)),
+        ausdata=Fake("ausdata", _month_end_rows(AGS_10Y, "ausdata", first, last,
+                                                 lambda i: 4.0)),
+        singstat=Fake("singstat", sg), stocks=FakeStocks(spy))
+
+
+def test_foreign_currency_return_is_the_move_in_idr_per_local_unit():
+    # IDR per USD = (S$ per USD) / (S$ per IDR): 16,000 then 16,800 from 2018-04 on
+    src = foreign_return_stores(idr=lambda i: 1.30 / (16_000 if i < 3 else 16_800))
+    idr, _local = OH.foreign_returns(src, today=D("2020-01-15"), horizon=3)
+    assert idr["USA"]["currency"][(2018, 1)] == pytest.approx(16_800 / 16_000 - 1)  # USD up
+    assert idr["USA"]["currency"][(2018, 5)] == pytest.approx(0.0)
+    # every other currency is quoted in S$, so it gains on the rupiah by the same move
+    assert idr["JPN"]["currency"][(2018, 1)] == pytest.approx(16_800 / 16_000 - 1)
+    assert idr["SGP"]["currency"][(2018, 1)] == pytest.approx(16_800 / 16_000 - 1)
+
+
+def test_foreign_bonds_are_the_local_bond_return_times_the_fx_move():
+    src = foreign_return_stores(idr=lambda i: 1.30 / (16_000 if i < 3 else 16_800))
+    idr, local = OH.foreign_returns(src, today=D("2020-01-15"), horizon=3)
+    carry = 0.04 * 3 / 12
+    assert local["USA"]["bonds"][(2018, 1)] == pytest.approx(carry)
+    assert idr["USA"]["bonds"][(2018, 1)] == pytest.approx((1 + carry) * 16_800 / 16_000 - 1)
+    assert idr["AUS"]["bonds"][(2018, 5)] == pytest.approx(carry)  # fx flat by then
+    # the euro-area 10Y is a monthly average dated the 1st: lagged a month as the IDN proxy
+    assert (2019, 8) in idr["EMU"]["bonds"] and (2019, 9) not in idr["EMU"]["bonds"]
+    assert (2019, 9) in idr["USA"]["bonds"]
+
+
+def test_only_usa_stocks_have_a_return_and_it_is_spy_in_idr():
+    spy = [(d, 400.0 * (1.1 if i >= 3 else 1.0))
+           for i, d in enumerate(OH.month_ends(D("2018-01-31"), D("2019-12-31")))]
+    src = foreign_return_stores(spy=spy, idr=lambda i: 1.30 / (16_000 if i < 3 else 16_800))
+    idr, local = OH.foreign_returns(src, today=D("2020-01-15"), horizon=3)
+    assert local["USA"]["stocks"][(2018, 1)] == pytest.approx(0.1)
+    assert idr["USA"]["stocks"][(2018, 1)] == pytest.approx(1.1 * 16_800 / 16_000 - 1)
+    assert all("stocks" not in idr[s] for s in ("JPN", "EMU", "AUS", "SGP"))
+
+
+def test_no_foreign_return_from_a_running_month_or_across_a_gap():
+    src = foreign_return_stores(dgs10=lambda i: 4.0)
+    src = dataclasses.replace(src, fred=Fake("sec-edgar", [
+        r for r in src.fred._rows if r.date != D("2018-06-30")]))
+    idr, _ = OH.foreign_returns(src, today=D("2019-12-15"), horizon=3)
+    usa = idr["USA"]["bonds"]
+    assert (2018, 2) in usa and not any((2018, m) in usa for m in (3, 4, 5, 6))
+    assert (2019, 8) in usa and (2019, 9) not in usa  # December still running
+    assert (2019, 8) in idr["USA"]["currency"] and (2019, 9) not in idr["USA"]["currency"]
+
+
+def test_foreign_with_returns_joins_each_market_and_leaves_ungated_stocks_empty():
+    hs = OH.foreign_replay(F_DATES, foreign_world())
+    fwd = {s: {"bonds": {(d.year, d.month): 0.01 for d in F_DATES},
+               "currency": {(d.year, d.month): -0.02 for d in F_DATES}} for s in OH.FOREIGN}
+    fwd["USA"]["stocks"] = {(d.year, d.month): 0.03 for d in F_DATES}
+    joined = {s: OH.with_returns(h, fwd[s]) for s, h in hs.items()}
+    assert joined["USA"].rows[0].forward == {"stocks": 0.03, "bonds": 0.01, "currency": -0.02}
+    assert joined["JPN"].rows[0].forward["stocks"] is None

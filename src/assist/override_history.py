@@ -74,7 +74,10 @@ __all__ = [
     "ASSETS",
     "COMPONENTS",
     "FOREIGN",
+    "ForeignReturnSources",
     "FredVintage",
+    "foreign_build",
+    "foreign_returns",
     "DURATION",
     "HORIZON",
     "ReturnSources",
@@ -116,6 +119,9 @@ STORES = {"growth": ("bps-looker",), "cli": ("dbnomics",),
           "bi_rate": ("bisfetcher",)}
 IDS = {"bps": [CPI_YOY, GDP_YOY, TRADE_BALANCE], "bisfetcher": [BI_RATE_M],
        "dbnomics": [CLI, DBN_CPI], "satudatascape": None}
+
+
+Month = tuple[int, int]
 
 
 # ---------------- one read per store ----------------
@@ -353,9 +359,6 @@ def replay(dates: Iterable[date], *, bps: Source, bisfetcher: Source, dbnomics: 
 
 # ---------------- forward returns (S58) ----------------
 
-Month = tuple[int, int]
-
-
 @dataclass(frozen=True)
 class ReturnSources:
     """The price stores the IDN forward returns read (read-only): the JCI (`JciSource`, the P51
@@ -526,6 +529,135 @@ def foreign_replay(dates: Iterable[date], sources: Mapping[str, Source], *,
     return {s: OverrideHistory(s, tuple(rows[s]), dict(store_dates or {})) for s in FOREIGN}
 
 
+# ---------------- foreign forward returns (S64) ----------------
+
+CURRENCY = {"USA": "USD", "JPN": "JPY", "EMU": "EUR", "AUS": "AUD", "SGP": "SGD"}
+
+
+@dataclass(frozen=True)
+class ForeignReturnSources:
+    """The stores the foreign forward returns read (read-only): the local 10Y per market (FRED
+    `DGS10`, jquantster JGB 10Y, dbnomics `ea.bund.10y`, ausdata `FCMYGBAG10D`, singstat SGS
+    10Y), the MAS crosses (singstat) and sec-edgar's Alpaca SPY bars (`stocks.bars`)."""
+
+    fred: Source
+    jquantster: Source
+    dbnomics: Source
+    ausdata: Source
+    singstat: Source
+    stocks: Any
+
+    def local_10y(self) -> dict[str, tuple[Source, str]]:
+        from assist.sources import ausdata, jquantster, singstat
+
+        return {"USA": (self.fred, "DGS10"), "JPN": (self.jquantster, jquantster.JGB_10Y),
+                "EMU": (self.dbnomics, "ea.bund.10y"), "AUS": (self.ausdata, ausdata.AGS_10Y),
+                "SGP": (self.singstat, singstat.SGS_10Y)}
+
+    @classmethod
+    def default(cls, sources: Mapping[str, Source] | None = None) -> ForeignReturnSources:
+        from assist.layers.overrides_foreign import default_sources
+        from assist.sources.usfin import US_HTTP_TIMEOUT
+        from assist.sources.usfin_stocks import UsStocks
+
+        src = sources if sources is not None else default_sources()
+        stocks = UsStocks()
+        stocks.usfin.timeout = US_HTTP_TIMEOUT
+        return cls(src["fred"], src["jquantster"], src["dbnomics"], src["ausdata"],
+                   src["singstat"], stocks)
+
+
+def _ret_runs(points: Iterable[tuple[date, float]], horizon: int, today: date,
+              fn: Callable[[list[tuple[date, float]], int], list[tuple[date, float]]]
+              ) -> dict[Month, float]:
+    return _forward(_complete(points, today), horizon, fn)
+
+
+def _ratio(run: Sequence[tuple[date, float]], h: int) -> list[tuple[date, float]]:
+    """p(t+h) / p(t) − 1."""
+    return [(d, run[i + h][1] / v - 1.0) for i, (d, v) in enumerate(run[:max(0, len(run) - h)])]
+
+
+def idr_per(ccy: str, sg_rows: Sequence[Row]) -> list[tuple[date, float]]:
+    """Daily IDR per one `ccy` from the MAS crosses (S$ per unit, same day): (S$ per ccy) /
+    (S$ per IDR); IDR per S$ is 1 / (S$ per IDR)."""
+    from assist.sources.singstat import fx_id
+
+    by: dict[str, dict[date, float]] = {}
+    for r in sg_rows:
+        if r.value:
+            by.setdefault(r.series_id, {})[r.date] = r.value
+    idr = by.get(fx_id("IDR"), {})
+    if ccy == "SGD":
+        return sorted((d, 1.0 / v) for d, v in idr.items())
+    leg = by.get(fx_id(ccy), {})
+    return sorted((d, v / idr[d]) for d, v in leg.items() if d in idr)
+
+
+def _rows_of(source: Source, ids: Sequence[str], start: date, end: date) -> list[Row]:
+    try:
+        return Preloaded(source, ids, end=end, start=start).rows()
+    except SourceUnavailable:
+        return []
+
+
+def foreign_returns(src: ForeignReturnSources, *, today: date, horizon: int = HORIZON
+                    ) -> tuple[dict[str, dict[str, dict[Month, float]]],
+                               dict[str, dict[str, dict[Month, float]]]]:
+    """(in IDR unhedged, local) forward returns per foreign market and asset (choices 2, 13):
+
+    - currency: the move in IDR per local unit (MAS crosses), + = the local currency gained;
+    - bonds: `bond_returns` on the month-end local 10Y (a monthly average dated the 1st, the
+      euro-area 10Y, lagged a month as the IDN proxy), × the IDR-per-local move: (1 + r) ×
+      (1 + fx) − 1;
+    - stocks (USA only): Alpaca SPY price index (close × split factor), × the IDR-per-USD move.
+
+    Never across a gap or from a month still running on `today`. The local returns are a
+    diagnostic only."""
+    from assist.paper import us_index
+    from assist.sources.singstat import fx_id
+
+    end = today - timedelta(days=1)
+    start = START - timedelta(days=31)
+    sg_ids = [fx_id(c) for c in ("USD", "JPY", "EUR", "AUD", "IDR")]
+    sg = _rows_of(src.singstat, sg_ids, start, end)
+    idr: dict[str, dict[str, dict[Month, float]]] = {}
+    local: dict[str, dict[str, dict[Month, float]]] = {}
+    for subject, ccy in CURRENCY.items():
+        fx = _ret_runs(month_end_closes([Row("fx", d, v, None, "singstat")
+                                         for d, v in idr_per(ccy, sg)]), horizon, today, _ratio)
+        source, sid = src.local_10y()[subject]
+        tens = month_end_closes(_rows_of(source, [sid], start, end))
+        lb = bond_forward(tens, horizon, today)
+        local[subject] = {"bonds": lb, "currency": dict(fx)}
+        idr[subject] = {"currency": dict(fx),
+                        "bonds": {m: (1 + r) * (1 + fx[m]) - 1 for m, r in lb.items()
+                                  if m in fx}}
+        if subject == "USA":
+            spy, _stale = us_index(src.stocks)
+            ls = _ret_runs(month_end_closes([Row("SPY", d, v, None, "sec-edgar")
+                                             for d, v in spy if d >= start]),
+                           horizon, today, _ratio)
+            local[subject]["stocks"] = ls
+            idr[subject]["stocks"] = {m: (1 + r) * (1 + fx[m]) - 1 for m, r in ls.items()
+                                      if m in fx}
+    return idr, local
+
+
+def foreign_build(sources: Mapping[str, Source], day: date, *,
+                  returns: ForeignReturnSources | None = None,
+                  progress: Callable[[date], None] | None = None) -> dict[str, OverrideHistory]:
+    """Every foreign market's override history on `START` → `last_month_end(day)` with its IDR
+    forward returns as known on `day` (read-only)."""
+    hs = foreign_replay(month_ends(START, last_month_end(day)), sources, progress=progress)
+    ret = returns if returns is not None else ForeignReturnSources.default(sources)
+    fwd, _local = foreign_returns(ret, today=day)
+    return {s: with_returns(h, fwd[s]) for s, h in hs.items()}
+
+
+_FOREIGN_BUILT: dict[date, dict[str, OverrideHistory]] = {}
+
+
 def idn_build(src, day: date) -> OverrideHistory:
     """The IDN override history on every month end `START` → `last_month_end(day)` with its
     forward returns as known on `day`, from a `pipeline.IdnSources` (read-only)."""
@@ -538,8 +670,15 @@ def idn_build(src, day: date) -> OverrideHistory:
 
 def live_build(subject: str, day: date) -> OverrideHistory:
     """The override history of `subject` on the real stores (read-only), for the gate."""
+    if subject in FOREIGN:
+        if day not in _FOREIGN_BUILT:  # one replay serves all five markets
+            from assist.layers.overrides_foreign import default_sources
+
+            _FOREIGN_BUILT.clear()
+            _FOREIGN_BUILT[day] = foreign_build(default_sources(), day)
+        return _FOREIGN_BUILT[day][subject]
     if subject != SUBJECT:
-        raise ValueError(f"no override history for {subject} yet")
+        raise ValueError(f"no override history for {subject}")
     from assist.pipeline import IdnSources
 
     return idn_build(IdnSources.default(), day)
