@@ -1404,7 +1404,7 @@ brackets and its reason.
   history; coverage per market and component.
 - [x] **S64 Foreign forward returns** (P82-foreign-returns). Choices 2, 3, 13. Bonds on the
   local 10Y, currency on IDR per local unit, USA stocks on SPY, all in IDR unhedged.
-- [ ] **S65 Foreign walk-forward, live** (P83-foreign-walk). As S60 per market.
+- [x] **S65 Foreign walk-forward, live** (P83-foreign-walk). As S60 per market.
 - [ ] **S66 Phase L fan-in** (F11-phase-l). Merge `phase-l`, one live run (new segment),
   Progress rows, STATUS, README, *Open data gaps*; CLAUDE.md lines only with your OK.
 
@@ -1436,6 +1436,13 @@ Parallel groups: S57 → {S58, S61b, S62} → {S59, S63} → {S60, S64} → {S61
   - *JCI P/E level.* The cap-weighted EY over idx-method's snapshot and `factor_series` agree
     with each other (+0.06pt mean, P68), but nothing outside idx-method checks the level (an
     IDX or index-provider P/E).
+- **AUS currency weights look inverted** (P83, 2026-11-09, evidence only). The P28 AUS currency
+  shift preceded the opposite AUD/IDR move on both sides (3-month t −1.50 / −0.84; 1-month
+  −2.39 / −2.51); the `fx` component (+3, AUD's own 3-month move) dominates, and AUD/IDR looks
+  mean-reverting over 1–3 months. Weights stay as written until an agent review says otherwise.
+- **Bonds weights lean the wrong way across markets** (P83, evidence only): signed t below zero on
+  both bonds sides for IDN, USA and SGP and on EMU up (P17 / P28 inflation −3, policy −3). Weak
+  per market, consistent across them. See also the P17 line below.
 - **P17 bonds weights may be wrong-signed** (P78, 2026-11-09, evidence only). On the IDN
   override history 2017-07 → 2024-08 an up bonds shift preceded lower 3-month 10Y returns and a
   down shift higher (t −0.99 / −1.03, 29 windows); `bi_rate` (bonds −3) down-push reads t −1.09.
@@ -1508,6 +1515,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S63 Foreign override input history (P81-foreign-override-inputs) | done | 2026-11-09 | this commit (branch `phase-l`) | 9 override_history (1896 total) | `foreign_replay`: P28 on 262 month ends in 86 s, stores read once, GDPC1 at its vintage per date, ausdata per date, AUS fx on the MAS cross until RBA AUD/IDR has 3 months (2023-04); complete months USA 259, JPN 259, EMU 259 (from 2005-04), AUS 155 (from 2013-12, the AGS curve), SGP 247 (2006-04); GDP read at today's revision would flip USA growth in 64 of 262 months; locked reads retried |
 | S64 Foreign forward returns (P82-foreign-returns) | done | 2026-11-09 | this commit (branch `phase-l`) | 5 override_history (1901 total) | `foreign_returns`: currency = IDR per local unit (MAS crosses), bonds = local 10Y `bond_returns` × the FX move, USA stocks = SPY × IDR per USD; complete months with a 3-month IDR return: USA bonds and currency 256 (2005-04 → 2026-07), stocks 127 (2016-01 →), JPN 256, EMU 254 / 256, AUS 152 (2013-12 →), SGP 244 |
 | S61 A passed side crosses a band (P79-override-stance) | done | 2026-11-09 | this commit (branch `phase-l`) | 7 stance, 4 run_foreign, 3 brief, 3 view_signals (1918 total) | `build_stance(override_gate=)`: a shift crosses a band only in the direction of a passed side, else held and named; `layer2` block (stance schema 1.3.0), MODEL_VERSION 0.6.0, `override_moves_stance` "passed_side_only"; foreign gates in the run, EMU's reaching its five members; journal `moves_band` per stance; brief line and `/signals` gate column; IDN: no side passed, nothing moves |
+| S65 Foreign walk-forward (P83-foreign-walk) | done | 2026-11-09 | this commit (branch `phase-l`) | docs only (1918 total) | all 20 foreign sides failed, none insufficient (USA 6 incl. stocks on SPY 22/21 and 16/27; JPN, EMU, AUS, SGP bonds and currency); best placebo p USA stocks down 0.078, JPN bonds up 0.087; control t −0.21..+0.21; no override may cross a band anywhere; suspect: AUS currency inverted (1-month t −2.39 / −2.51), bonds wrong-signed in IDN, USA, SGP, EMU up (Open questions) |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`
