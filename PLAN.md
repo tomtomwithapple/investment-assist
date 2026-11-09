@@ -43,7 +43,7 @@ tracking scores its first week (2026-10-09 → 10-16, benchmark −9.4%). PHEI c
 this Mac (idxscape, 2026-11-06), but IGSYC has a hole 2026-10-22 → 11-03 here; since P52 a week
 whose mark falls in a capture gap is left unscored rather than priced on an old yield.
 
-**Next up:** the user decides the 13 phase L choices; then S58 → S66 (Phase L). The phase K
+**Next up:** S58 → S66 (Phase L; the user accepted all 13 phase L defaults 2026-11-09). The phase K
 review findings still open are listed in *Open questions*, and any change to a phase K number goes
 through an agent review the user decides. Fetcher asks: the IDN 10Y for 2025-01 → 2026-09
 (dbnomics, then idxscape) and AVIA's listing P/E (idx-method), *Open data gaps*. Each Monday's
@@ -1285,7 +1285,9 @@ Australian or Singapore index price, so those stocks overrides cannot be gated.
 - Slices land on branch `phase-l`; live checks use scratch paths; the fan-in merges to main and
   makes the one run that opens the new journal segment.
 
-**Phase L choices (proposed 2026-11-09, open for the user).** Each has a proposed default in
+**Phase L choices: decided by the user (2026-11-09): all 13 proposed defaults, as bracketed below.**
+These numbers are fixed: like phase K's, they change only through an agent review the user
+decides. A slice that finds one wrong reports the evidence and leaves it. Each has its default in
 brackets and its reason.
 1. What is tested. [The sign of each asset's capped shift, P17 and P28 exactly as written
    (weights, bands, windows, ±10 cap): an **up** side, shift > 0 (on) against shift ≤ 0 (off),
@@ -1434,9 +1436,8 @@ Parallel groups: S57 → {S58, S61b, S62} → {S59, S63} → {S60, S64} → {S61
   - *JCI P/E level.* The cap-weighted EY over idx-method's snapshot and `factor_series` agree
     with each other (+0.06pt mean, P68), but nothing outside idx-method checks the level (an
     IDX or index-provider P/E).
-- **Phase L choices 1–13** (layer-2 overrides on their history, planned 2026-11-09): open for
-  the user, defaults in the Phase L section. S58 onward waits for them; S57 (input history)
-  is built.
+- ~~**Phase L choices 1–13**~~ (layer-2 overrides on their history): all 13 defaults accepted by
+  the user 2026-11-09; S58 onward is unblocked.
 
 ## Progress
 
