@@ -275,15 +275,28 @@ def _brief(args: argparse.Namespace) -> int:
     return 0
 
 
+def _home_source(sources: pipeline.Sources):
+    """The home regime's stores for the daily check (S54), None without IDN sources."""
+    return pipeline.home_sources(sources.idn) if sources.idn is not None else None
+
+
 def _regime_check(args: argparse.Namespace) -> int:
-    """Daily job: Telegram only when the regime or the dollar direction changed."""
+    """Daily job: Telegram only when the regime, the dollar direction or the home (IDN) regime
+    changed."""
     day = _today(args)
-    chk = pipeline.regime_check(day, paths=pipeline.Paths.default(),
-                                source=pipeline.Sources.default().fred, send=not args.no_send)
+    sources = pipeline.Sources.default()
+    chk = pipeline.regime_check(day, paths=pipeline.Paths.default(), source=sources.fred,
+                                send=not args.no_send, home_source=_home_source(sources))
     reg = chk.regime
     print(f"regime check {day}: {reg.state}, dollar {reg.dollar}")
     for s in reg.stale_inputs:
         print(f"  stale: {s}")
+    if chk.home is not None:
+        h = chk.home
+        print(f"home (IDN) regime: {h.state} ({h.points} points)"
+              + (": " + "; ".join(h.drivers) if h.drivers else ""))
+        for s in h.stale_inputs:
+            print(f"  home stale: {s}")
     if not chk.available:
         print("regime unreadable (no FRED source): nothing compared, nothing sent")
         return 0
@@ -292,7 +305,8 @@ def _regime_check(args: argparse.Namespace) -> int:
         print("no regime journalled yet: " + ("baseline journalled" if chk.journalled
                                               else "nothing written (--no-send)"))
         return 0
-    print(f"last journalled {prev['as_of']}: {prev['state']}, dollar {prev['dollar']}")
+    print(f"last journalled {prev['as_of']}: {prev['state']}, dollar {prev['dollar']}"
+          + (f", home {prev['home']}" if prev.get("home") else ""))
     if not chk.changed:
         print("unchanged: nothing sent")
         return 0
