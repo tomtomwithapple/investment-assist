@@ -50,8 +50,11 @@ through an agent review the user decides. Fetcher asks: the IDN 10Y for 2025-01 
 weekly run now extends `out/rules/` by a month end when one has passed (a new rule fingerprint
 rebuilds it cold, about 45 min). Meanwhile let the jobs and this Mac's PHEI history build a record; backfilling 10-22 → 11-03 from the Windows machine's raw captures stays deferred.
 Open ops question: of the fetchers, only bisfetcher.refresh, dbnomics.refresh/serve,
-worldbankscape.daily and idxscape.phei are launchd agents on this Mac; the other stores are fresh
-but what refreshes them here is not traced.
+worldbankscape.daily, idxscape.phei and (since 2026-11-09, the other Mac's uninstalled)
+idx-method's four `com.tommy.stockbiter.*` jobs are launchd agents on this Mac; the other stores
+are fresh but what refreshes them here is not traced. The stockbiter jobs need a live Stockbit
+session (`../idx-method/run.sh login`); its close job (16:30) fills `api_raw`, which S31's live
+tiers wait on.
 
 | Phase | Slices | Done |
 |---|---|---|

@@ -820,6 +820,19 @@ slices:
       today's membership back-filled and flagged (survivorship until idx-method V2). Uses
       assist.eval.placebo; weights frozen before the run, per-pillar results are diagnostics only.
       A failing or insufficient verdict leaves the tiers context only.
+  - id: P50b-replay-membership
+    title: "PLAN S31: the replay of record reads industry membership from idx-method industry_membership (33 sub-sectors) instead of out/industries/IDN.json, so it no longer needs api_raw"
+    depends_on: [P50-tier-replay]
+    owns: ["src/assist/candidates/tiers_replay.py", "tests/candidates/test_tiers_replay.py", "docs/results/P50-tier-replay.md"]
+    accept: uv run pytest -q tests/candidates/test_tiers_replay.py && uv run ruff check .
+    estimate: 1
+    notes: >-
+      User approved 2026-11-09 (S31 options #2 and #3). Latest snapshot on or before each quarter
+      end, else the first snapshot back-filled and flagged (the table starts 2026-11-06, so every
+      scored quarter is back-filled today). CONFIG, weights and fingerprints unchanged. Live: fails
+      (t 0.02, p 0.508, control t -0.17, 15 quarters 2022-12 to 2026-06). #3 (bars back to
+      2016-11) stopped: factor_series has price from 2016-11 but no store has traded value or
+      volume before 2021-10, so the liquidity gate cannot run earlier.
   - id: P51-jci-idxscape
     title: "Gap 2b closed: JCI from idxscape index_daily COMPOSITE (stitched to idx-method's frozen CSV before 2021-10-01); IDX.<code> index series in the idxscape adapter"
     depends_on: [P3-idn-prices, P30-paper]
