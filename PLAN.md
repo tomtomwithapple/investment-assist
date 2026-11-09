@@ -8,7 +8,7 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 
 ## STATUS — read this first in a new session
 
-**Last updated:** 2026-11-09 (**phase K done**, S45–S56, merged to main `32eb850`, F10 run opened model `sha256:7c387d7b4148…`; 1832 tests). What phase K delivered: the fingerprint hashes every rule module under `layers/` (S45); the IDN bonds rule reads USD/IDR as JISDOR spliced on the MAS cross, so it calls again (S46); `assist.history` reruns both IDN rules point in time on 120 month ends 2016-11 → 2026-10 (S47); `eval/gate.py` gates each rule on that history plus a live journal monitor, enter and reduce sides tested separately, written to `out/rules/` (S48, S56); the walk-forwards show neither rule near its gate (stocks enter 0/14, unreachable as valuation always reads rich, reduce 7/7; bonds "not yet", enter 3/11, reduce 1/13; S49, S50); an IDN home regime on four inputs (JCI 20d drawdown, IDX foreign flow z, USD/IDR, non-resident SBN) ladders IDN stocks and bonds on home risk_off, its −5pt shift not adopted (walk-forward insufficient), shown in the brief, `/regime`, Telegram and the daily check (S51–S54). Live 2026-11-09: global and home risk_off, every IDN stance neutral and laddered, no rule applied. Earlier: 2026-11-07 (**phase K planned**; **phase J done**: S44 P63-us-universe, a read timeout from `usfin serve` is `locked`, not a down server, US reads use one 60 s timeout and all bars come in one ATTACH query, so the USA list has a pool again (576 dividend / 370 GARP) but names no one, both replays failing the placebo; model `sha256:8c6a886f278d…`, run 7 m 23 s; S41 P61-fingerprint-scope, the fingerprint hashes each rule module's AST without docstrings, so comments and formatting no longer segment the journal, and the paper track shows only cumulative returns below 12 scored weeks; S42 P62-rebalance-split, each stance's `portfolio` splits the gap into `rebalance_pt` (to the 48/32/20 benchmark) and `tilt_pt` (the model's call), schema 1.1.0, shown in the brief, `/portfolio`, `/stance` and Telegram, which now opens "Paper only, not an order"; live all three legs neutral, so IDN stocks −48.9pt, IDN bonds +30.2, USA stocks +20.0 are all rebalance, tilt 0; S43 F9-docs; model `sha256:b836b881ad37…` on main, no run since, so the next run opens one new journal segment; 1633 tests). Earlier: 2026-11-06 (S40 done, P60-paper-benchmark, **phase I done**: the paper benchmark is 48% JCI / 32% SBN leg / 20% US stocks in IDR (unhedged price index: Alpaca SPY × USD/IDR, JISDOR from 2026-10-22 spliced onto the MAS cross before it), from `stance.BENCHMARK_PCT`; the old 60/40 is reported beside it and still scores every segment journalled before S39; live 1 week scored (10-16, −7.7% vs −9.4% on 60/40), 3 stale on the IGSYC hole and the 11-06 mark). Earlier: 2026-11-06 (S39 done, P59-benchmark: whole-portfolio benchmark IDN stocks 48 / IDN bonds 32 / USA stocks 20; every target is benchmark + tilt, the three legs scaled pro rata to at most 100%, the rest cash; the other 46 stances target 0% outside the 80/20 mandate; live 45.7 / 30.5 / 23.8 = 100%, cash 0%; model 0.4.0, new journal segment). Earlier: 2026-11-06 (**phase H done**, S37 F8-ui-layers: the nav adds Regime, Signals, Portfolio and Flows; the overview banner links `/regime`, a stance's Drivers card links `/signals/<SUBJECT>` (only when that layer file exists) and its Portfolio card `/portfolio`; every page and its `.json` twin is 200 live and in the e2e test). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against Stockbit's industry average and the sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S31 (top tier per industry) is built, P48–P50, but waits for its live run and replay verdict. **Phases H, I and J are done** (layer pages, the 48/32/20 benchmark, review quick fixes). S15 and S22 are open.
+**Last updated:** 2026-11-09 (**phase L planned**, on branch `phase-l`: the layer-2 overrides get a point-in-time history and a placebo gate before a shift may cross a band; **13 choices open for the user** (Phase L section); S57 P75-override-inputs done: P17 replayed on 262 month ends, every component computed on 109 of them, 2017-07 → 2026-10 except 2024-02 → 04 (a CPI fallback hole); the USA and JPN foreign `fx` components are n/a live (JISDOR here starts 2026-10-22); 1849 tests). Earlier: 2026-11-09 (**phase K done**, S45–S56, merged to main `32eb850`, F10 run opened model `sha256:7c387d7b4148…`; 1832 tests). What phase K delivered: the fingerprint hashes every rule module under `layers/` (S45); the IDN bonds rule reads USD/IDR as JISDOR spliced on the MAS cross, so it calls again (S46); `assist.history` reruns both IDN rules point in time on 120 month ends 2016-11 → 2026-10 (S47); `eval/gate.py` gates each rule on that history plus a live journal monitor, enter and reduce sides tested separately, written to `out/rules/` (S48, S56); the walk-forwards show neither rule near its gate (stocks enter 0/14, unreachable as valuation always reads rich, reduce 7/7; bonds "not yet", enter 3/11, reduce 1/13; S49, S50); an IDN home regime on four inputs (JCI 20d drawdown, IDX foreign flow z, USD/IDR, non-resident SBN) ladders IDN stocks and bonds on home risk_off, its −5pt shift not adopted (walk-forward insufficient), shown in the brief, `/regime`, Telegram and the daily check (S51–S54). Live 2026-11-09: global and home risk_off, every IDN stance neutral and laddered, no rule applied. Earlier: 2026-11-07 (**phase K planned**; **phase J done**: S44 P63-us-universe, a read timeout from `usfin serve` is `locked`, not a down server, US reads use one 60 s timeout and all bars come in one ATTACH query, so the USA list has a pool again (576 dividend / 370 GARP) but names no one, both replays failing the placebo; model `sha256:8c6a886f278d…`, run 7 m 23 s; S41 P61-fingerprint-scope, the fingerprint hashes each rule module's AST without docstrings, so comments and formatting no longer segment the journal, and the paper track shows only cumulative returns below 12 scored weeks; S42 P62-rebalance-split, each stance's `portfolio` splits the gap into `rebalance_pt` (to the 48/32/20 benchmark) and `tilt_pt` (the model's call), schema 1.1.0, shown in the brief, `/portfolio`, `/stance` and Telegram, which now opens "Paper only, not an order"; live all three legs neutral, so IDN stocks −48.9pt, IDN bonds +30.2, USA stocks +20.0 are all rebalance, tilt 0; S43 F9-docs; model `sha256:b836b881ad37…` on main, no run since, so the next run opens one new journal segment; 1633 tests). Earlier: 2026-11-06 (S40 done, P60-paper-benchmark, **phase I done**: the paper benchmark is 48% JCI / 32% SBN leg / 20% US stocks in IDR (unhedged price index: Alpaca SPY × USD/IDR, JISDOR from 2026-10-22 spliced onto the MAS cross before it), from `stance.BENCHMARK_PCT`; the old 60/40 is reported beside it and still scores every segment journalled before S39; live 1 week scored (10-16, −7.7% vs −9.4% on 60/40), 3 stale on the IGSYC hole and the 11-06 mark). Earlier: 2026-11-06 (S39 done, P59-benchmark: whole-portfolio benchmark IDN stocks 48 / IDN bonds 32 / USA stocks 20; every target is benchmark + tilt, the three legs scaled pro rata to at most 100%, the rest cash; the other 46 stances target 0% outside the 80/20 mandate; live 45.7 / 30.5 / 23.8 = 100%, cash 0%; model 0.4.0, new journal segment). Earlier: 2026-11-06 (**phase H done**, S37 F8-ui-layers: the nav adds Regime, Signals, Portfolio and Flows; the overview banner links `/regime`, a stance's Drivers card links `/signals/<SUBJECT>` (only when that layer file exists) and its Portfolio card `/portfolio`; every page and its `.json` twin is 200 live and in the e2e test). **Phases A–D are done** (F4-ops); phase F is done up to S21 (F6-us-stocks): one undervalued list per market, IDN and USA, in `out/candidates/`. **Phase G is done** (F7-ui): `assist status` serves the output read-only on 127.0.0.1:8790 (`/` stance grid, `/stance/<SUBJECT>/<asset>`, `/candidates[/<MKT>]`, `/paper`, `/journal`, `/status`, each with a `.json` twin), and `./start.sh` goes from a checkout to those pages in one step (S29: sync, doctor, a run if out/ is stale, serve, open). S30 adds `/industries[/<id>]`: every IDN name against Stockbit's industry average and the sector median in valuation, dividend, profitability and solvency, charted per industry (`out/industries/IDN.json`, context only). S31 (top tier per industry) is built, P48–P50, but waits for its live run and replay verdict. **Phases H, I and J are done** (layer pages, the 48/32/20 benchmark, review quick fixes). S15 and S22 are open.
 
 What `assist run` does:
 - It reads layers 0, 1 and 5 for every subject.
@@ -43,8 +43,8 @@ tracking scores its first week (2026-10-09 → 10-16, benchmark −9.4%). PHEI c
 this Mac (idxscape, 2026-11-06), but IGSYC has a hole 2026-10-22 → 11-03 here; since P52 a week
 whose mark falls in a capture gap is left unscored rather than priced on an old yield.
 
-**Next up:** the next gate to build is the layer-2 overrides (*Open questions*); the phase K
-review findings still open are listed there too, and any change to a phase K number goes
+**Next up:** S58 → S66 (Phase L; the user accepted all 13 phase L defaults 2026-11-09). The phase K
+review findings still open are listed in *Open questions*, and any change to a phase K number goes
 through an agent review the user decides. Fetcher asks: the IDN 10Y for 2025-01 → 2026-09
 (dbnomics, then idxscape) and AVIA's listing P/E (idx-method), *Open data gaps*. Each Monday's
 weekly run now extends `out/rules/` by a month end when one has passed (a new rule fingerprint
@@ -66,6 +66,7 @@ but what refreshes them here is not traced.
 | I. Benchmark and portfolio limits (80% IDN / 20% US stocks) | S39–S40 | 2 / 2 |
 | J. Review quick fixes (fingerprint scope, rebalance vs tilt, docs, USA universe) | S41–S44 | 4 / 4 |
 | K. Rules on their history, home regime (point-in-time rule gate, IDN home regime) | S45–S56 | 12 / 12 |
+| L. Layer-2 overrides on their history (point-in-time override gate; choices open) | S57–S66, S61b | 1 / 11 |
 
 ### Open data gaps (fetcher side)
 
@@ -99,6 +100,24 @@ Each gap is fixed in the repo named, never here. The brief flags each one under 
   (11-30) to 6.47% (12-20). Ask idx-method to report it (and fix or drop P/E rows before the
   first full-year earnings after a listing). Here it touches only the 2021-12-31 history row,
   a reduce either way.
+- **bps-looker: trade balance starts 2017-01** (`BPS_TRADE_BALANCE_USD_MN`, P75, 2026-11-09).
+  It is the last P17 input to start, so the override gate's IDN window opens 2017-07. Trade
+  from 2012 (GDP's first computed month is 2012-05) would add about 20 months, roughly 6
+  windows. Ask bps-looker for the earlier BPS trade years. Also: bps-looker CPI y/y
+  (2022=100, var 2263) starts 2024-01; the earlier base years would let P17 read BPS CPI
+  throughout instead of splicing dbnomics. bps-looker keeps one vintage per variable (every
+  row carries the last update), so GDP and trade revisions are read at today's values.
+- **dbnomics: the OECD CLI has no vintage** (P75). `idn.cli` and every `*.cli` hold today's
+  values only, and the CLI's latest months are revised most, so the override history reads a
+  smoother CLI than was known (phase L choice 10). Ask dbnomics to keep a CLI vintage per
+  refresh from now on, and an original-release history if OECD serves one.
+- **No JP, euro-area, AU or SG equity index price in any store** (P75; jquantster has no
+  TOPIX/Nikkei on the free plan, ausdata no ASX 200, singstat no STI, dbnomics no Euro Stoxx).
+  Those stocks overrides cannot be gated (phase L choice 13). Ask, if wanted: jquantster
+  (TOPIX), ausdata (S&P/ASX 200), singstat (STI), dbnomics (a euro-area index).
+- **ausdata: AUD/IDR (`FXRIR`) starts 2023-01** (P75). The AUS `fx` override component has no
+  history before 2023-04; the MAS cross (singstat, from 2005) stands in for history (phase L
+  choice 13), nothing to ask.
 - **jquantster runs on the J-Quants free plan.** `investor_types` is empty (no TSE flows), and
   daily bars end 2026-08-14 (85 of the doctor's 100 days on 2026-11-07, so stale around
   2026-11-22).
@@ -1214,6 +1233,183 @@ user decides.
 
 Parallel groups: {S45, S46} → {S47, S51} → {S48, S52} → {S53, S56} → {S49, S50} → S54 → S55.
 
+### Phase L — layer-2 overrides on their history (planned 2026-11-09)
+
+**Why.** Phase K left the overrides out (its open question 9). P17 (IDN) and P28 (USA, JPN, EMU,
+AUS, SGP) shift each layer-1 score by a hand-set sum of momentum components, capped at ±10
+(`MAX_OVERRIDE`). Since 2026-10-23 a shift that alone would cross a stance band is held at the
+band (`MODEL_CONFIG.override_moves_stance` False), so today the overrides move scores, never
+stances. Phase K said they need their own point-in-time history and placebo gate first. The
+obstacle phase K named, that layer 1 has no history (worldbankscape scores from 2026-10-12), is
+side-stepped: the gate tests the **direction of the shift** against the asset's forward return,
+which needs no layer-1 level. A crossing is that direction applied to today's level.
+
+**What the stores hold** (read-only checks, 2026-11-09; P75 replays P17 on 262 month ends):
+
+| Input (P17) | Store, series | Range | Vintage / lag |
+|---|---|---|---|
+| growth | bps-looker `BPS_GDP_YOY` (var 104) | 2011-Q1 → 2026-Q2; computed from 2012-05 | one vintage: every row stamped 2026-08-05 (BPS revisions read at today's values); lag 130 d |
+| cli | dbnomics `idn.cli` (OECD) | 1994-01 → 2026-09 | **no vintage**; the CLI's latest months are revised heavily, so history reads a smoother, later CLI than was known; lag 45 d |
+| inflation | bps-looker `BPS_CPI_YOY` (2022=100) from 2024-01, dbnomics `idn.cpi.yoy` before | 1990-01 → 2026-10 | one vintage each; lags 35 / 45 d; **hole 2024-02 → 04**: P17 falls back to dbnomics only when bps-looker has no CPI at all, not when it has under 3 months |
+| trade | bps-looker `BPS_TRADE_BALANCE_USD_MN` | 2017-01 → 2026-09; computed from 2017-07 | one vintage (2026-11-02); lag 50 d; **the binding start** |
+| bi_rate | bisfetcher `WS_CBPOL.M.ID` | 2005-07 → 2026-09; computed from 2006-02 | policy rates are not revised; lag 35 d |
+
+Every P17 component is computed on 109 month ends, 2017-07 → 2026-10 except 2024-02 → 04.
+Forward returns for IDN: JCI month-end closes from 1996 (P51 stitch); the 10Y as P66/P74 (OECD
+proxy 2012-01 → 2024-12, lagged one month; IGSYC from 2026-10; nothing 2025-01 → 2026-09);
+USD/IDR on the P65 splice (MAS cross from 2005-01, JISDOR from 2026-10-22).
+
+The foreign inputs (P28; ranges 2026-11-09): FRED `GDPC1`, `DFF`, `T10Y2Y` (sec-edgar, which has
+`fred_as_of` vintages), TIC from 1990 (one vintage), dbnomics OECD CLI/BCI/CPI and ECB series
+from 1990 (no vintage), BIS policy rates from 1990 (euro area 1999), jquantster BOJ and JGB from
+2000 (Tankan 2000-Q1), ausdata RBA/ABS (CPI monthly only from 2025-04, quarterly y/y from 1990,
+**AUD/IDR only from 2023-01**), singstat MAS from 2005. **The USA and JPN `fx` components are
+n/a live today:** they read idxscape JISDOR, which starts 2026-10-22 here, so the 3-month change
+has no base (checked live 2026-11-09; EMU, AUS and SGP compute theirs). Forward returns abroad:
+local 10Y yields exist for all five (FRED `DGS10`, JGB 10Y, `ea.bund.10y`, RBA `FCMYGBAG10D`,
+SGS 10Y); IDR per local unit from the MAS crosses (2005 on, all five); equity prices only for the
+US (Alpaca SPY from 2016, dbnomics Shiller monthly). No store has a Japanese, euro-area,
+Australian or Singapore index price, so those stocks overrides cannot be gated.
+
+**Decided** (already, by the user or earlier phases):
+- The ten phase K numbers stay as they are; anything that differs from them below is proposed as
+  a choice, not assumed.
+- No change to the stance bands, `TILT_PT`, the 48/32/20 benchmark, the 100% rule, the ladder,
+  the regimes or the phase K rules.
+- Hand-set weights and bands stay as written on 2026-10-23 (P17, P28); none is tuned to a
+  walk-forward. Thresholds and band-crossing rules are committed before any walk-forward judges
+  them (the placebo cannot catch hand-tuned thresholds), so **S58 onward waits for the choices
+  below**; only S57 (input history, no returns, no verdict) is built.
+- A placebo control before an override may move a stance; a procedure that also improves the
+  control is fitting noise.
+- Slices land on branch `phase-l`; live checks use scratch paths; the fan-in merges to main and
+  makes the one run that opens the new journal segment.
+
+**Phase L choices: decided by the user (2026-11-09): all 13 proposed defaults, as bracketed below.**
+These numbers are fixed: like phase K's, they change only through an agent review the user
+decides. A slice that finds one wrong reports the evidence and leaves it. Each has its default in
+brackets and its reason.
+1. What is tested. [The sign of each asset's capped shift, P17 and P28 exactly as written
+   (weights, bands, windows, ±10 cap): an **up** side, shift > 0 (on) against shift ≤ 0 (off),
+   direction +1; a **down** side, shift < 0 (on) against shift ≥ 0 (off), direction −1; each
+   side gated on its own, as phase K's enter and reduce. Not band crossings, which need a
+   layer-1 level the stores do not have before 2026-10-12.] Reason: every non-zero shift is a
+   claim the layer already makes live; a magnitude threshold chosen now would be chosen after
+   seeing the shift counts in P75, which is tuning.
+2. Forward return per asset, for an IDR investor. [IDN stocks: JCI price return (as P66); IDN
+   bonds: `bond_returns` on the month-end 10Y, the OECD proxy lagged one month, IGSYC as it
+   stands (as P66/P74); IDN currency: the rupiah against the US dollar,
+   USD/IDR(t) / USD/IDR(t+h) − 1 on the P65 splice. Foreign stocks and bonds: in IDR unhedged
+   (local return × the move in IDR per local unit, MAS crosses), since P28's weights already
+   carry the `fx` component; foreign currency: the change in IDR per local unit. Local-currency
+   returns are reported as a diagnostic only.] Reason: the user decides in IDR, and the
+   weights claim IDR outcomes (the `fx` component scores stocks and bonds too).
+3. Gate numbers. [Phase K's, unchanged: month ends, horizon 3, stride 3, block 3, `MIN_N` 10 per
+   side, t ≥ 2.0 (`T_MIN`), p ≤ 0.05 (`ALPHA`) before choice 6, 1,000 shuffles, 20 controls,
+   `SEED`.] Reason: one grid for every gate in this repo; no evidence to set others.
+4. Which months count. [Only month ends where every component of that market's spec was
+   computed (`OverrideRow.complete`); a partial month is a no_call. IDN: 2017-07 on.] Reason: a
+   three-component shift is a different claim from the five-component one that runs live.
+5. Window. [First complete month → last month with a full forward return (phase K's open
+   question 1). IDN on today's stores: stocks and currency 2017-07 → 2026-07, about 36
+   windows; bonds 2017-07 → 2024-08 (the 10Y hole), about 28.] Reason: as phase K.
+6. Multiple testing. [Holm over each subject's tests (IDN: 3 assets × 2 sides = 6), family-wise
+   0.05: the smallest p must be ≤ 0.05/6 ≈ 0.0083, the next ≤ 0.01, and so on; each test also
+   keeps the placebo control (mean control t < 2.0) and t ≥ 2.0.] Reason: six tests at 0.05 each
+   pass at least one by luck about 26% of the time; phase K tested one claim per side. 1,000
+   shuffles reach p 0.001, so the bar is reachable.
+7. Live monitor and revocation. [Phase K's: the journal's `overrides` records carrying this
+   override fingerprint since the verdict's date, the last call in a month standing for it,
+   the same test; revoke a passed side at ≥ 5 live windows per side with signed t ≤ −1.0; a
+   verdict whose override fingerprint differs from the running code counts as none.] Reason:
+   as phase K's open question 3.
+8. Fingerprint. [One override fingerprint per subject: the AST (docstrings removed) of
+   `layers/overrides.py` (IDN) or `layers/overrides_foreign.py` (foreign), `layers/types.py`,
+   `override_history.py` and the gate numbers; it keys `out/overrides/<SUBJECT>.json`. The
+   model fingerprint already hashes `layers/**`.] Reason: a weight or band edit then starts a
+   new verdict, as a rule edit does.
+9. The CPI splice hole (2024-02 → 04). [Fix P17's `_inflation` to fall back to dbnomics
+   `idn.cpi.yoy` when bps-looker's CPI is too short for its 3-month window, not only when it is
+   empty. This is a P17 model change: the model fingerprint and both IDN rule fingerprints
+   change (P17 is in their `RULE_FILES`), so `out/rules/` rebuilds cold once, about 45 min, at
+   the fan-in run.] Reason: a fallback bug that blanked live inflation for three months in
+   2024 and costs the gate one window; fixing it before any verdict keeps it from being tuning.
+10. OECD CLI vintages. [Gate on the stored CLI, and count a side as passed only if it also
+   passes with the `cli` component zeroed; report both. Ask dbnomics to keep a CLI vintage per
+   refresh from now on (and an original-release history if OECD serves one).] Reason: the CLI
+   carries 3 of a stocks shift's points and is revised most at its end, so a pass that needs
+   the revised CLI may be look-ahead; zeroing it is the one test that cannot use a revision.
+11. What a pass allows. [A passed side lets that subject × asset's override cross a band in
+   its direction only (an up pass: a positive shift may lift the band stance; a down pass: a
+   negative shift may lower it); the shift keeps its ±10 cap; the other side stays held. The
+   EMU verdict reaches its five members (they share its shift). A passed phase K rule still
+   replaces the band stance after the override.] Reason: the gate tests one direction per side,
+   so it licenses only that direction; no new size cap, because ±10 is what was tested.
+12. Foreign `fx` for USA and JPN. [Read USD/IDR from the P65 splice (JISDOR from its first
+   fixing, MAS cross before), live and in history, so both `fx` components compute again.] A
+   live model change (USA and JPN shifts move by up to ±1/±1/±3), like phase K's choice 10.
+   Reason: the components are n/a today only because idxscape's JISDOR here starts
+   2026-10-22; history needs the splice anyway.
+13. Foreign scope and vintages. [After IDN: bonds and currency for USA, JPN, EMU, AUS, SGP;
+   stocks only for USA (SPY in IDR; no other index price in any store); KOR and TWN none. In
+   history, FRED `GDPC1` through `fred_as_of` (its vintage); TIC, dbnomics, jquantster,
+   ausdata and singstat at their one stored vintage with P28's lags, named in the result.
+   AUS `fx` before 2023 has no AUD/IDR in ausdata: the history reads the MAS cross (AUD and
+   IDR per SGD) there, and live keeps RBA's rate.] Reason: gate what has returns; use the one
+   vintage store that has vintages; keep the AUS fx component from blanking 2017–2022.
+
+**Done when:**
+1. `assist.override_history` replays P17 point in time on every month end with its coverage and
+   missing reasons (S57, done).
+2. Forward returns per IDN asset as choice 2 (S58); the gate writes `out/overrides/IDN.json`
+   (verdict per asset and side, Holm, CLI-zeroed check, live monitor, state, distance to
+   `MIN_N`) and `assist run` reads it (S59).
+3. The IDN walk-forward runs on the real stores, numbers recorded (S60).
+4. A passed side may cross a band (choice 11), journalled, shown on the stance and `/signals`
+   (S61); nothing moves unless a side passed.
+5. Foreign: `fx` splice (S62), input history (S63), returns (S64), walk-forward (S65).
+6. Fan-in: one new journal segment, Progress rows, STATUS, *Open data gaps* (S66).
+
+- [x] **S57 IDN override input history** (P75-override-inputs). `assist.override_history`: P17
+  unchanged on month ends 2005-01 → 2026-10, each store read once (`Preloaded`) and sliced per
+  date under P17's own lags; per row the shift and uncapped sum per asset, each component's
+  value, direction, newest point and series, the missing components with reasons, the stale
+  inputs; `coverage()` per component, `complete_from()`, `summary()` (shift signs on complete
+  months, descriptive). No returns, no verdict. Test first: no row moves when every value not yet
+  known on a cut-off is poisoned; zero lags would leak; each store read once.
+- [x] **S58 IDN override forward returns** (P76-override-returns). Choices 2, 3. Per IDN asset,
+  the forward return per month end as choice 2, never across a gap; joined to the S57 rows.
+  Test first: the currency return's sign (rupiah up = positive), the bonds hole, no return
+  from a month still running.
+- [x] **S59 Override gate** (P77-override-gate). Choices 1, 3–8, 10. `eval/override_gate.py`
+  reusing `placebo.evaluate` and phase K's state logic: per asset and side, Holm per subject,
+  the CLI-zeroed check, live monitor, fingerprint; `schema/overrides.schema.json`;
+  `assist overrides` writes `out/overrides/IDN.json`; `assist run` reads it (rebuilds when stale,
+  never fails). Test first: pass, insufficient, Holm fails a lone p 0.03, CLI-zeroed fail blocks a
+  pass, revoked, fingerprint mismatch.
+- [x] **S60 IDN override walk-forward, live** (P78-override-walk). Docs only: per asset and
+  side on/off, t, p, Holm rank, control t, CLI-zeroed result, distance to 10/10, diagnostics
+  (1-month horizon, local returns). No threshold change.
+- [x] **S61 A passed side crosses a band** (P79-override-stance). Choice 11. `build_stance`
+  reads each override verdict; a passed side's shift may cross in its direction; driver,
+  journal, stance schema minor bump, `/signals` and brief show the gate state; MODEL_VERSION
+  0.6.0. Test first: an up pass lifts neutral to overweight on a +6 shift from 57; a down shift
+  on the same asset stays held; no pass, nothing moves.
+- [x] **S61b P17 CPI fallback** (P85-cpi-fallback). Choice 9, before S59's first verdict. Test
+  first: a bps-looker CPI known for 2 months falls back to dbnomics.
+- [x] **S62 Foreign fx on the USD/IDR splice** (P80-foreign-fx). Choice 12. Test first: 11
+  JISDOR fixings plus MAS history give USA and JPN a 3-month `fx` change.
+- [x] **S63 Foreign override input history** (P81-foreign-override-inputs). Choice 13. S57's
+  replay for P28 per market, `GDPC1` through `fred_as_of`, the AUS fx MAS fallback in
+  history; coverage per market and component.
+- [x] **S64 Foreign forward returns** (P82-foreign-returns). Choices 2, 3, 13. Bonds on the
+  local 10Y, currency on IDR per local unit, USA stocks on SPY, all in IDR unhedged.
+- [x] **S65 Foreign walk-forward, live** (P83-foreign-walk). As S60 per market.
+- [ ] **S66 Phase L fan-in** (F11-phase-l). Merge `phase-l`, one live run (new segment),
+  Progress rows, STATUS, README, *Open data gaps*; CLAUDE.md lines only with your OK.
+
+Parallel groups: S57 → {S58, S61b, S62} → {S59, S63} → {S60, S64} → {S61, S65} → S66.
+
 ## Open questions
 
 - ~~Target weight bands per stance~~: benchmark decided 2026-11-06 (80% IDN as 48 stocks / 32
@@ -1240,10 +1436,19 @@ Parallel groups: {S45, S46} → {S47, S51} → {S48, S52} → {S53, S56} → {S4
   - *JCI P/E level.* The cap-weighted EY over idx-method's snapshot and `factor_series` agree
     with each other (+0.06pt mean, P68), but nothing outside idx-method checks the level (an
     IDX or index-provider P/E).
-- **Next gate to build: the layer-2 overrides** (phase K open question 9). The IDN and
-  foreign overrides are hand-set; they never cross a band and layer 1 has no history to test a
-  crossing, so they stayed out of phase K. They need their own point-in-time history and
-  placebo gate before a shift may cross a band.
+- **AUS currency weights look inverted** (P83, 2026-11-09, evidence only). The P28 AUS currency
+  shift preceded the opposite AUD/IDR move on both sides (3-month t −1.50 / −0.84; 1-month
+  −2.39 / −2.51); the `fx` component (+3, AUD's own 3-month move) dominates, and AUD/IDR looks
+  mean-reverting over 1–3 months. Weights stay as written until an agent review says otherwise.
+- **Bonds weights lean the wrong way across markets** (P83, evidence only): signed t below zero on
+  both bonds sides for IDN, USA and SGP and on EMU up (P17 / P28 inflation −3, policy −3). Weak
+  per market, consistent across them. See also the P17 line below.
+- **P17 bonds weights may be wrong-signed** (P78, 2026-11-09, evidence only). On the IDN
+  override history 2017-07 → 2024-08 an up bonds shift preceded lower 3-month 10Y returns and a
+  down shift higher (t −0.99 / −1.03, 29 windows); `bi_rate` (bonds −3) down-push reads t −1.09.
+  Weak; the weights stay as written (phase L choice 1) unless an agent review says otherwise.
+- ~~**Phase L choices 1–13**~~ (layer-2 overrides on their history): all 13 defaults accepted by
+  the user 2026-11-09; S58 onward is unblocked.
 
 ## Progress
 
@@ -1301,6 +1506,16 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S54 home regime on the pages (P73-home-pages) | done | 2026-11-09 | `d75870c` (merge `cf242bb`) | brief, notify, regime view, ops (1811 at S54) | brief and Telegram "Home regime (IDN): risk_off, 2 points (JCI −17.5% vs 20d high (2))"; `/regime` 200 with the Home regime card (−5pt shift shown as not adopted); `regime --check` journals the home state, dry check unchanged (global and home risk_off) |
 | S56 reduce side and bond-return timing (P74-reduce-side) | done | 2026-11-09 | `d199cd3` (merge `884f00e`) | gate, history, run_idn (1792 at S56) | the gate tests reduce on its own (rules schema 1.1.0 `reduce`); an enter applies only on the enter verdict, a reduce only on the reduce verdict; bonds returns lag the OECD averages one month; cold rebuild 2,442 s: bonds enter 3/11 (was 4/11), reduce 1/13; stocks enter 0/14, reduce 7/7; all insufficient, no stance moves |
 | S55 phase K fan-in (F10-phase-k) | done | 2026-11-09 | merge `32eb850`, docs this commit | 1832 (merged main) | one live `assist run` on main 09:58 → 10:51 WIB (53 m 9 s, rule history cold rebuild 2,616 s) opens segment `sha256:7c387d7b4148…` (after `8c6a886f278d…`, 5 models, 503 records, chain ok); global risk_off, dollar flat; home (IDN) risk_off at 2 points (JCI −17.5% vs 20d high; flow z −0.72, USD/IDR +1.1%, SBN +0.4%, all counted, none stale); IDN stocks neutral 43.5 (0.65), bonds neutral 49.0 (0.79), currency neutral 49.3, stocks −48.9pt and bonds +30.2pt laddered 3 × 10 days, tilt 0; `out/rules/` both **insufficient**: bonds enter 3/11, reduce 1/13 (2021-03 → 2024-08), stocks enter 0/14, reduce 7/7 (2021-10 → 2026-07), live 0/0 since 11-09; 49 stances (7 overweight, 36 neutral, 4 underweight, 2 avoid); Telegram suppressed (07:00 weekly already sent, marker `brief_2026-11-09.json`) |
+| S57 IDN override input history (P75-override-inputs) | done | 2026-11-09 | this commit (branch `phase-l`) | 18 override_history (1849 total) | P17 on 262 month ends 2005-01 → 2026-10 in 5.5 s (each store read once): every component on 109, from 2017-07 (trade binds; growth from 2012-05, bi_rate 2006-02, cli and inflation 2005-01) except 2024-02 → 04 (bps-looker CPI known < 3 months, no dbnomics fallback); shift signs on complete months: stocks up 66 / zero 8 / down 35, bonds 48 / 7 / 54, currency 43 / 23 / 43 (descriptive, no returns); 2026-10-31: stocks −4, bonds −1, currency +3 |
+| S58 IDN override forward returns (P76-override-returns) | done | 2026-11-09 | this commit (branch `phase-l`) | 24 override_history (1855 total) | `idn_returns`: stocks JCI, bonds `bond_forward` (proxy lagged a month, IGSYC as is), currency USD/IDR(t)/USD/IDR(t+3) − 1 on the P65 splice (rupiah up = positive), never across a gap or from a running month; complete months with a 3-month return: stocks and currency 2017-07 → 2026-07 (106), bonds 2017-07 → 2024-08 (83) |
+| S61b P17 CPI fallback (P85-cpi-fallback) | done | 2026-11-09 | this commit (branch `phase-l`) | 3 overrides_idn, override_history updated (1858 total) | P17 inflation falls back to dbnomics `idn.cpi.yoy` when bps-looker CPI has no point 3 months back (the bps short line stays stale; the newest CPI level stays bps-looker's); live: no inflation hole, 112 complete months 2017-07 → 2026-10; rule fingerprints bonds `deb1f60c…` → `f9be0b94…`, stocks `d217e458…` → `457c6c85…` (out/rules/ rebuilds cold at S66) |
+| S62 Foreign fx on the USD/IDR splice (P80-foreign-fx) | done | 2026-11-09 | this commit (branch `phase-l`) | 4 overrides_foreign (1862 total) | P28 reads IDR per USD from the P65 splice (store key `usdidr`, MAS leg lagged a day); live USA fx +0.87% / 3m, JPN +0.38% (both inside 1.5%: shifts unchanged, USA 0 / −3 / +2, JPN −3 / −2 / +1); no JISDOR stale line |
+| S59 Override gate (P77-override-gate) | done | 2026-11-09 | this commit (branch `phase-l`) | 21 override_gate, 3 run_idn, 1 ops (1887 total) | `eval/override_gate.py`: up / down per asset on complete months, phase K numbers, Holm per subject, CLI-zeroed check, live monitor on `overrides` records of the override fingerprint, revocation; `out/overrides/IDN.json` (schema `overrides.schema.json`), `assist overrides`, `assist run` reads it and journals an IDN `overrides` record; live IDN: all six sides failed (S60), nothing moves |
+| S60 IDN override walk-forward (P78-override-walk) | done | 2026-11-09 | this commit (branch `phase-l`) | docs only (1887 total) | horizon 3, complete months: stocks up 24/13 t 1.08 p 0.186, down 12/25 t 0.92 p 0.225; bonds up 13/16 t −0.99, down 15/14 t −1.03; currency up 13/24 t 1.75 p 0.122, **down 15/22 t 2.47 p 0.047** (Holm needs 0.0083; CLI zeroed t 0.95); all six failed, none insufficient; no override may cross a band; 1-month and per-component diagnostics nothing near |t| 2 |
+| S63 Foreign override input history (P81-foreign-override-inputs) | done | 2026-11-09 | this commit (branch `phase-l`) | 9 override_history (1896 total) | `foreign_replay`: P28 on 262 month ends in 86 s, stores read once, GDPC1 at its vintage per date, ausdata per date, AUS fx on the MAS cross until RBA AUD/IDR has 3 months (2023-04); complete months USA 259, JPN 259, EMU 259 (from 2005-04), AUS 155 (from 2013-12, the AGS curve), SGP 247 (2006-04); GDP read at today's revision would flip USA growth in 64 of 262 months; locked reads retried |
+| S64 Foreign forward returns (P82-foreign-returns) | done | 2026-11-09 | this commit (branch `phase-l`) | 5 override_history (1901 total) | `foreign_returns`: currency = IDR per local unit (MAS crosses), bonds = local 10Y `bond_returns` × the FX move, USA stocks = SPY × IDR per USD; complete months with a 3-month IDR return: USA bonds and currency 256 (2005-04 → 2026-07), stocks 127 (2016-01 →), JPN 256, EMU 254 / 256, AUS 152 (2013-12 →), SGP 244 |
+| S61 A passed side crosses a band (P79-override-stance) | done | 2026-11-09 | this commit (branch `phase-l`) | 7 stance, 4 run_foreign, 3 brief, 3 view_signals (1918 total) | `build_stance(override_gate=)`: a shift crosses a band only in the direction of a passed side, else held and named; `layer2` block (stance schema 1.3.0), MODEL_VERSION 0.6.0, `override_moves_stance` "passed_side_only"; foreign gates in the run, EMU's reaching its five members; journal `moves_band` per stance; brief line and `/signals` gate column; IDN: no side passed, nothing moves |
+| S65 Foreign walk-forward (P83-foreign-walk) | done | 2026-11-09 | this commit (branch `phase-l`) | docs only (1918 total) | all 20 foreign sides failed, none insufficient (USA 6 incl. stocks on SPY 22/21 and 16/27; JPN, EMU, AUS, SGP bonds and currency); best placebo p USA stocks down 0.078, JPN bonds up 0.087; control t −0.21..+0.21; no override may cross a band anywhere; suspect: AUS currency inverted (1-month t −2.39 / −2.51), bonds wrong-signed in IDN, USA, SGP, EMU up (Open questions) |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

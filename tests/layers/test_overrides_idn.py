@@ -174,6 +174,39 @@ def test_cpi_falls_back_to_dbnomics_when_bps_has_none():
     assert any(CPI_YOY in s for s in out.stale_inputs)
 
 
+def test_cpi_falls_back_to_dbnomics_when_bps_is_too_short_for_its_window():
+    """P85 (phase L choice 9): bps-looker CPI known for 2 months has no 3-month change, so the
+    inflation component comes from dbnomics; the bps short line stays stale."""
+    rows = [r for r in bps_rows() if r.series_id != CPI_YOY]
+    rows += _series(CPI_YOY, _months(date(2026, 9, 1), 2), [3.0, 3.1], "bps-looker")
+    cpi = (2.5,) * 9 + (2.8, 3.1, 3.4)
+    out = run(bps=Fake("bps-looker", rows), dbn=Fake("dbnomics", dbn_rows(cpi=cpi)))
+    infl = out.component("inflation")
+    assert infl is not None and infl.source == "dbnomics" and infl.series_id == DBN_CPI
+    assert infl.direction == 1 and infl.value == pytest.approx(0.9)  # 3.4 vs 2.5
+    assert f"bps-looker {CPI_YOY} (history from 2026-08-01)" in out.stale_inputs
+    # the newest CPI level (the bonds rule's real yield) is still bps-looker's
+    assert out.latest("cpi_yoy").source == "bps-looker"
+    assert out.latest("cpi_yoy").value == pytest.approx(3.1)
+
+
+def test_a_bps_cpi_long_enough_is_kept_over_dbnomics():
+    cpi = (2.5,) * 8 + (2.8, 3.1, 3.4, 3.6)
+    out = run(bps=Fake("bps-looker", bps_rows(cpi=cpi[-4:])),
+              dbn=Fake("dbnomics", dbn_rows(cpi=(3.0,) * 12)))
+    infl = out.component("inflation")
+    assert infl.source == "bps-looker" and infl.series_id == CPI_YOY
+    assert not any(CPI_YOY in s for s in out.stale_inputs)
+
+
+def test_a_short_bps_cpi_without_dbnomics_stays_missing():
+    rows = [r for r in bps_rows() if r.series_id != CPI_YOY]
+    rows += _series(CPI_YOY, _months(date(2026, 9, 1), 2), [3.0, 3.1], "bps-looker")
+    out = run(bps=Fake("bps-looker", rows), dbn=Fake("dbnomics", error="locked"))
+    assert out.component("inflation") is None
+    assert f"bps-looker {CPI_YOY} (history from 2026-08-01)" in out.stale_inputs
+
+
 def test_trade_balance_widening_supports_the_rupiah():
     bal = (1000.0,) * 9 + (3000.0, 3500.0, 4000.0)
     out = run(bps=Fake("bps-looker", bps_rows(balance=bal)))

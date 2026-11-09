@@ -283,3 +283,55 @@ def test_num_format():
     assert signals.num(-0.64212) == "-0.6421" and signals.num(98.62859) == "98.63"
     assert signals.num(None) == "n/a" and signals.num(True) == "n/a"
     assert signals.num(float("nan")) == "n/a"
+
+
+# ---------------- the override gate (S61, P79) ----------------
+
+
+def _gate_doc(states: dict, subject="IDN") -> dict:
+    return {"subject": subject, "override_fingerprint": "sha256:" + "cd" * 32,
+            "as_of": "2026-11-09", "since": "2026-11-09",
+            "covers": {"complete": 112, "complete_from": "2017-07"},
+            "passed": {a: [s for s, v in sides.items() if v == "passed"]
+                       for a, sides in states.items()},
+            "tests": {a: {s: {"state": v, "line": f"{a} {s}: {v}"} for s, v in sides.items()}
+                      for a, sides in states.items()}}
+
+
+def _write_gate(out: Path, subject: str, doc) -> None:
+    d = out / "overrides"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{subject}.json").write_text(doc if isinstance(doc, str) else json.dumps(doc))
+
+
+def test_assets_table_shows_the_gate_per_side(out):
+    _write_gate(out, "IDN", _gate_doc({"stocks": {"up": "failed", "down": "insufficient"},
+                                       "bonds": {"up": "failed", "down": "failed"},
+                                       "currency": {"up": "failed", "down": "passed"}}))
+    l2 = _section(_get(out, "/signals/IDN").body, "layer2")
+    assert "Gate (up / down)" in l2
+    cur = l2[l2.index("<b>currency</b>"):]
+    assert '<span class="chip good">down passed</span>' in cur
+    stocks = l2[l2.index("<b>stocks</b>"):l2.index("<b>bonds</b>")]
+    assert "up failed" in stocks and "down insufficient" in stocks
+    assert "Override gate: passed currency down; 112 complete months from 2017-07" in l2
+
+
+def test_an_asset_without_a_gate_and_no_gate_file(out):
+    _write_gate(out, "EMU", _gate_doc({"bonds": {"up": "failed", "down": "failed"},
+                                       "currency": {"up": "failed", "down": "failed"}}, "EMU"))
+    l2 = _section(_get(out, "/signals/EMU").body, "layer2")
+    assert "not gated" in l2  # EMU stocks: no index price in any store
+    assert "Override gate: no side passed" in l2
+    (out / "overrides" / "EMU.json").unlink()
+    l2 = _section(_get(out, "/signals/EMU").body, "layer2")
+    assert "no out/overrides/EMU.json yet" in l2
+
+
+def test_a_bad_gate_file_is_a_notice_and_values_are_escaped(out):
+    _write_gate(out, "IDN", "{not json")
+    r = _get(out, "/signals/IDN")
+    assert r.status == 200 and "overrides/IDN.json is not valid JSON" in r.body
+    _write_gate(out, "IDN", _gate_doc({"stocks": {"up": EVIL, "down": "failed"}}))
+    r = _get(out, "/signals/IDN")
+    assert r.status == 200 and EVIL not in r.body

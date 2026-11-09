@@ -661,3 +661,32 @@ def test_cli_rules_writes_out_rules_and_diagnostics(tmp_path, monkeypatch, capsy
 
     assert cli.main(["rules", "--today", DAY.isoformat(), "--rebuild"]) == 0
     assert build.calls == [119, 119]
+
+
+# ---------------- assist overrides (P77) ----------------
+
+
+def test_cli_overrides_writes_out_overrides(tmp_path, monkeypatch, capsys):
+    from test_run_idn import FakeOverrideBuild, missing_idn
+
+    from assist import override_history
+    from assist.eval import override_gate as og
+
+    paths = pipeline.Paths.under(tmp_path / "repo")
+    build = FakeOverrideBuild()
+    monkeypatch.setattr(pipeline.Paths, "default", classmethod(lambda cls: paths))
+    monkeypatch.setattr(pipeline.IdnSources, "default",
+                        classmethod(lambda cls: missing_idn(tmp_path)))
+    monkeypatch.setattr(override_history, "live_build", build)
+    assert cli.main(["overrides", "--today", DAY.isoformat(), "--subject", "IDN"]) == 0
+    out = capsys.readouterr().out
+    assert "IDN override gate" in out and "stocks up: insufficient" in out
+    assert "Holm over 6 tests" in out
+    assert DISCLAIMER in out
+    og.validator().validate(json.loads((paths.out / "overrides" / "IDN.json").read_text()))
+    assert build.calls == [("IDN", DAY)]
+    assert cli.main(["overrides", "--today", DAY.isoformat(), "--subject", "IDN"]) == 0
+    assert len(build.calls) == 1
+    assert cli.main(["overrides", "--today", DAY.isoformat(), "--subject", "IDN",
+                     "--rebuild"]) == 0
+    assert len(build.calls) == 2

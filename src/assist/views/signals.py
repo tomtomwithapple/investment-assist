@@ -11,7 +11,9 @@ through `esc`.
 
 The page: a summary (as of, model, stale inputs, sources), the layer-2 table (component, newest
 value and date, change over its window, direction, weights, source, detail), the per-asset shift
-with the uncapped raw sum and the cap, the foreign IDR terms and gaps, and the layer-3 table with
+with the uncapped raw sum, the cap and the override gate's state per side (S61: read from
+`out/overrides/<SUBJECT>.json`, `eval.override_gate`; a passed side may cross a band in its
+direction), the foreign IDR terms and gaps, and the layer-3 table with
 its tally. IDN also gets inline SVG charts: net foreign flow in IDR and in USD (60 IDX days; a day
 without JISDOR has no USD bar, it is marked, never filled), JISDOR (60 days; BI's carried-forward
 days and IDX days without a fixing marked), the IGSYC curve today against ~4 weeks earlier, the
@@ -218,7 +220,55 @@ def components_table(comps: Sequence[Any]) -> str:
     return _table(head, rows, "no components")
 
 
-def assets_table(assets: Sequence[Any]) -> str:
+GATE_TONE = {"passed": "good", "live-passed": "good", "revoked": "bad", "failed": "muted",
+             "insufficient": "muted", "none": "muted"}
+
+
+def gate_cell(gate: Mapping | None, asset: str) -> str:
+    """The override gate's state per side for one asset (S61)."""
+    if gate is None:
+        return web.chip("no gate file", "muted")
+    sides = _d(_d(gate.get("tests")).get(asset))
+    if not sides:
+        return web.chip("not gated", "muted")
+    out = []
+    for side in ("up", "down"):
+        state = str(_d(sides.get(side)).get("state") or DASH)
+        out.append(web.chip(f"{side} {state}", GATE_TONE.get(state, "warn")))
+    return " ".join(out)
+
+
+def gate_line(subject: str, gate: Mapping | None, problem: str | None) -> str:
+    if problem:
+        return web.notice(problem)
+    if gate is None:
+        return (f'<p class="muted">Override gate: no out/overrides/{esc(subject)}.json yet: run '
+                "`assist overrides` or `assist run`.</p>")
+    passed = [f"{a} {'/'.join(map(str, _l(sides)))}"
+              for a, sides in _d(gate.get("passed")).items() if _l(sides)]
+    cov = _d(gate.get("covers"))
+    text = ("Override gate: " + (f"passed {', '.join(passed)}" if passed else
+                                 "no side passed: the shifts move scores, never bands")
+            + f"; {cov.get('complete', DASH)} complete months from "
+            f"{cov.get('complete_from') or DASH}")
+    return f'<p class="muted">{esc(text)}</p>'
+
+
+def load_gate(out_dir: Path, subject: str) -> tuple[dict | None, str | None]:
+    """(out/overrides/<SUBJECT>.json, problem); (None, None) when there is no file."""
+    path = Path(out_dir, "overrides", f"{subject}.json")
+    if not path.is_file():
+        return None, None
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return None, f"overrides/{subject}.json is not valid JSON ({e})"
+    if not isinstance(doc, dict):
+        return None, f"overrides/{subject}.json is not a JSON object"
+    return doc, None
+
+
+def assets_table(assets: Sequence[Any], gate: Mapping | None = None) -> str:
     rows = []
     for a in map(_d, assets):
         capped = a.get("capped") is True
@@ -228,9 +278,10 @@ def assets_table(assets: Sequence[Any]) -> str:
             f'<td class="num">{esc(num(a.get("raw"), signed=True))}</td>'
             f'<td class="num">±{esc(num(a.get("cap")))}</td>'
             f"<td>{web.chip('capped', 'warn') if capped else web.chip('no', 'muted')}</td>"
+            f"<td>{gate_cell(gate, str(a.get('asset')))}</td>"
             f'<td class="reason">{_s(a.get("reason"))}</td></tr>')
     head = (("Asset", False), ("Shift", True), ("Raw (uncapped)", True), ("Cap", True),
-            ("Capped", False), ("Reason", False))
+            ("Capped", False), ("Gate (up / down)", False), ("Reason", False))
     return _table(head, rows, "no per-asset shift")
 
 
@@ -592,14 +643,16 @@ def _summary(p: Mapping) -> str:
             + "".join(f"<tr><th>{k}</th><td>{v}</td></tr>" for k, v in rows) + "</table></section>")
 
 
-def render(subject: str, p: Mapping | None, problem: str | None) -> str:
+def render(subject: str, p: Mapping | None, problem: str | None,
+           gate: Mapping | None = None, gate_problem: str | None = None) -> str:
     head = f"<h1>Signals: {esc(subject)}</h1>"
     if p is None or problem:
         return (f'{STYLE}<div class="signals">{head}{web.notice(problem or "no data")}'
                 + (_summary(p) if p else "") + "</div>")
     l2 = _d(p.get("layer2"))
     layer2 = (components_table(_l(l2.get("components")))
-              + "<h3>Shift per asset</h3>" + assets_table(_l(l2.get("assets")))
+              + "<h3>Shift per asset</h3>" + assets_table(_l(l2.get("assets")), gate)
+              + gate_line(subject, gate, gate_problem)
               + idr_terms(l2.get("idr_terms")) + gaps(_l(l2.get("gaps"))))
     l3 = p.get("layer3")
     if isinstance(l3, Mapping):
@@ -649,6 +702,7 @@ def page(app: web.App, m: re.Match[str]) -> web.View | None:
     if subject not in found:
         return None
     p, problem = load(found[subject], app.cache)
+    gate, gate_problem = load_gate(app.out_dir, subject)
     data = p if p is not None and problem is None else {"subject": subject, "problem": problem,
                                                         "file": p}
-    return web.View(f"{TITLE} {subject}", render(subject, p, problem), data)
+    return web.View(f"{TITLE} {subject}", render(subject, p, problem, gate, gate_problem), data)

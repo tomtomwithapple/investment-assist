@@ -12,9 +12,10 @@ from pathlib import Path
 
 import httpx
 
-from assist import brief, doctor, journal, notify, paper, pipeline, stance, status, web
+from assist import brief, doctor, journal, notify, paper, pipeline, status, web
 from assist.layers import regime as regime_layer
 from assist.layers import undervalued
+from assist.layers.types import DISCLAIMER
 
 STATUS_HELP = ("local pages: stances, regime, signals, candidates, industries, portfolio, flows, "
                "paper, journal, source health")
@@ -101,6 +102,10 @@ def _run(args: argparse.Namespace) -> int:
                 g = res.idn.gates.get(asset)
                 if g is not None:
                     print(f"    gate {g.line()}")
+            og = res.idn.override_gate
+            if og is not None:
+                for asset in ("stocks", "bonds", "currency"):
+                    print(f"  {og.line(asset)}")
             print(f"  {res.idn.candidates.headline()}")
             for c in res.idn.candidates.candidates:
                 print(f"    {c.symbol:<5} {c.screen}: {c.detail}")
@@ -207,6 +212,64 @@ def _rules(args: argparse.Namespace) -> int:
     return 0
 
 
+def _fmt_side(t: dict) -> str:
+    """One override gate side: state, sample, t, p, Holm, control t, CLI zeroed, distance."""
+    h, hd = t["sample"].get("historical"), t["distance"].get("historical")
+    head = f"{t['asset']} {t['side']}: {t['state']}"
+    if h is None:
+        return f"{head} (no history for this override fingerprint)"
+    text = f"{head}: on {h['on']} / off {h['off']} / no_call {h['no_call']}"
+    text += f" (short on {hd['on']}, off {hd['off']})"
+    p = t["placebo"]
+    if p is not None and p["rule"]["ok"]:
+        hm = t["holm"]
+        text += (f"; t {p['rule']['t']:.2f}, p {p['p_value']:.3f}, control t "
+                 f"{p['control_t']:.2f}; Holm rank {hm['rank']}/{hm['m']} needs p ≤ "
+                 f"{hm['threshold']:.4f} ({'ok' if hm['passed'] else 'no'})")
+        z, zh = t["cli_zeroed"], t["cli_holm"]
+        if z is not None and z["rule"]["ok"]:
+            text += (f"; cli zeroed t {z['rule']['t']:.2f}, p {z['p_value']:.3f} "
+                     f"({'ok' if z['passed'] and zh['passed'] else 'no'})")
+        else:
+            text += "; cli zeroed: insufficient sample"
+    lv = t["sample"]["live"]
+    return text + f"; live on {lv['on']} / off {lv['off']}"
+
+
+def _print_override_gate(doc: dict) -> None:
+    c = doc["covers"]
+    n = sum(len(v) for v in doc["tests"].values())
+    print(f"{doc['subject']} override gate ({doc['override_fingerprint'][:19]}…, monitor since "
+          f"{doc['since']}): history {c['first']} → {c['last']} ({c['months']} month ends, "
+          f"{c['complete']} complete from {c['complete_from']}); Holm over {n} tests")
+    for sides in doc["tests"].values():
+        for side in ("up", "down"):
+            t = sides[side]
+            win = t["window"]
+            print(f"  {_fmt_side(t)}" + (f"; window {win[0]} → {win[1]}" if win else ""))
+    passed = {a: s for a, s in doc["passed"].items() if s}
+    print("  passed: " + (", ".join(f"{a} {'/'.join(s)}" for a, s in passed.items())
+                          if passed else "none (no override may cross a band)"))
+    for line in doc["stale_inputs"]:
+        print(f"  stale: {line}")
+
+
+def _overrides(args: argparse.Namespace) -> int:
+    """P77: build or refresh out/overrides/<SUBJECT>.json (the layer-2 override gate)."""
+    from assist import override_history
+    from assist.eval import override_gate
+
+    day = _today(args)
+    paths = pipeline.Paths.default()
+    records = list(journal.Journal(paths.journal).read())
+    for subject in args.subject or override_gate.LIVE_SUBJECTS:
+        g = override_gate.refresh(day, paths.out / "overrides", subject, records=records,
+                                  build=override_history.live_build, rebuild=args.rebuild)
+        _print_override_gate(g.to_dict())
+    print(DISCLAIMER)
+    return 0
+
+
 def _print_undervalued(p: dict) -> None:
     """S20: each style's verdict and names, the tilt's verdict, the budget, sizes and trims."""
     h = p["hurdle"]["required_pt"]
@@ -235,15 +298,23 @@ def _print_foreign(res: pipeline.RunResult) -> None:
     f = res.foreign
     for m in f.overrides.markets:
         shifts = ", ".join(f"{o.asset} {o.delta:+.0f}" for o in m.overrides)
-        print(f"foreign overrides {m.subject}: {shifts}")
+        g = f.override_gates.get(m.subject)
+        gate = "" if g is None else "; gate passed: " + (", ".join(
+            f"{a} {'/'.join(sorted(g.passed_sides(a)))}" for a in ("stocks", "bonds", "currency")
+            if g.passed_sides(a)) or "none")
+        print(f"foreign overrides {m.subject}: {shifts}{gate}")
     print("  KOR, TWN: no layer-2 overrides (P28 covers USA, JPN, EMU, AUS, SGP); layer-1 score"
           " stands")
     foreign = [s for s in res.stances if s["subject"] in pipeline.FOREIGN
                and s["asset"] in pipeline.FOREIGN_ASSETS]
     held = [f"{s['subject']} {s['asset']} ({s['score']:.1f})" for s in foreign
-            if stance.stance_for(s["score"]) != s["stance"]]
+            if (s.get("layer2") or {}).get("held")]
+    crossed = [f"{s['subject']} {s['asset']} → {s['stance']}" for s in foreign
+               if (s.get("layer2") or {}).get("crossed")]
     if held:
-        print(f"  band held until the overrides beat a placebo: {', '.join(held)}")
+        print(f"  band held until that side passes its override gate: {', '.join(held)}")
+    if crossed:
+        print(f"  band crossed by a passed override side: {', '.join(crossed)}")
     vals = f.candidates.valuations
     passing = sum(v.passes for v in vals)
     print(f"foreign layer 4: {len(vals)} index candidate(s), {passing} passing. Context only:"
@@ -466,6 +537,14 @@ def main(argv: list[str] | None = None) -> int:
     ru.add_argument("--variant", choices=("valuation-only",),
                     help="diagnostic: a variant of the stocks calls (never gates)")
     ru.set_defaults(func=_rules)
+
+    ov = sub.add_parser("overrides", help="layer-2 override gates → out/overrides/<SUBJECT>.json "
+                                          "(per asset and side: placebo, Holm, CLI zeroed, live)")
+    ov.add_argument("--today", help="YYYY-MM-DD (default today)")
+    ov.add_argument("--subject", action="append",
+                    help="IDN, USA, JPN, EMU, AUS or SGP (repeatable; default every gated one)")
+    ov.add_argument("--rebuild", action="store_true", help="replay every month end again")
+    ov.set_defaults(func=_overrides)
 
     b = sub.add_parser("brief", help="print the brief for the current out/")
     b.add_argument("--send", action="store_true", help="also send the summary (once a day)")

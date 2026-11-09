@@ -96,10 +96,11 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from assist import brief, journal, layers_out, notify, stance
+from assist import brief, journal, layers_out, notify, override_history, stance
 from assist.candidates import peers as peer_cmp
 from assist.candidates import tiers_replay
 from assist.eval import gate as rule_gate
+from assist.eval import override_gate
 from assist.eval.placebo import Verdict
 from assist.fx import FxEdge, fx_edge
 from assist.history import ten_year_months
@@ -282,6 +283,9 @@ class Sources:
     `paper.PaperReport`) feed the brief's *Data health* and *Paper track* sections (S14); None
     leaves the section out. `undervalued(day, regime)` gives the inputs of the S20 list (IDN) and
     `undervalued_us(day, regime)` those of the US one (F6); None writes no file for it.
+    `override_history(subject, day)` replays a subject's layer-2 overrides on month ends with
+    their forward returns (`override_history.live_build`, P77) when `out/overrides/` needs it;
+    None never rebuilds (no file is then no verdict).
     `peers(day)` gives the S30 peer comparison (`out/industries/IDN.json`); None skips it.
     `tier_replay(day, out_dir)` gives the S31 replay verdict (`out/industries/IDN.replay.json`,
     P50); None skips it. `layers_out` writes each layer's result to `out/layers/` (S33, from
@@ -302,6 +306,7 @@ class Sources:
     tier_replay: Callable[[date, Path], dict] | None = None
     layers_out: bool = False
     rule_history: rule_gate.Build | None = None
+    override_history: override_gate.Build | None = None
 
     @classmethod
     def default(cls) -> Sources:
@@ -315,7 +320,8 @@ class Sources:
                    undervalued=undervalued.gather_live,
                    undervalued_us=undervalued.gather_live_usa, peers=peer_cmp.gather_live,
                    tier_replay=tiers_replay.run_live, layers_out=True,
-                   rule_history=rule_gate.live_build)
+                   rule_history=rule_gate.live_build,
+                   override_history=override_history.live_build)
 
 
 def live_doctor(day: date) -> list[Any]:
@@ -349,6 +355,7 @@ class IdnLayers:
     candidates: IdnCandidates
     verdicts: dict[str, Verdict | None] = field(default_factory=dict)
     gates: dict[str, rule_gate.Gate] = field(default_factory=dict)
+    override_gate: override_gate.OverrideGate | None = None  # P77: out/overrides/IDN.json
 
     def rule(self, asset: str) -> IdnBonds | IdnStocks:
         return self.bonds if asset == "bonds" else self.stocks
@@ -356,7 +363,8 @@ class IdnLayers:
     @property
     def stale_inputs(self) -> list[str]:
         parts = (self.overrides, self.signals, self.bonds, self.stocks, self.candidates,
-                 *self.gates.values())
+                 *self.gates.values(),
+                 *(() if self.override_gate is None else (self.override_gate,)))
         return [s for p in parts for s in p.stale_inputs]
 
 
@@ -390,6 +398,8 @@ class ForeignLayers:
     overrides: ForeignOverrides
     candidates: ForeignCandidates
     edges: dict[tuple[str, str], IdrEdge] = field(default_factory=dict)
+    # P79: the override gate per P28 market (out/overrides/<MARKET>.json); EMU's for its members
+    override_gates: dict[str, override_gate.OverrideGate] = field(default_factory=dict)
 
     def valuation(self, subject: str) -> IndexValuation | None:
         return next((v for v in self.candidates.valuations if v.market.subject == subject), None)
@@ -397,7 +407,8 @@ class ForeignLayers:
     @property
     def stale_inputs(self) -> list[str]:
         edges = [s for e in self.edges.values() for s in e.stale_inputs]
-        return [*self.overrides.stale_inputs, *self.candidates.stale_inputs, *edges]
+        gates = [s for g in self.override_gates.values() for s in g.stale_inputs]
+        return [*self.overrides.stale_inputs, *self.candidates.stale_inputs, *edges, *gates]
 
 
 @dataclass
@@ -430,11 +441,12 @@ def in_scope(s: AssetScore) -> bool:
 
 
 def gather(day: date, sources: Sources, history: Sequence[Mapping] = (),
-           rules_dir: Path | None = None) -> Layers:
+           rules_dir: Path | None = None, overrides_dir: Path | None = None) -> Layers:
     """Read layers 0, 1 and 5 as of `day`, plus Indonesia's layers 2–4 when `sources.idn` is
     set and the foreign layers when `sources.foreign` is; `history` is the journal so far (the
-    rules' live monitor), `rules_dir` the rule gates' `out/rules/` (None: in memory, no
-    history). Never raises for a missing or locked store."""
+    rules' and overrides' live monitors), `rules_dir` the rule gates' `out/rules/` and
+    `overrides_dir` the override gates' `out/overrides/` (None: in memory, no history). Never
+    raises for a missing or locked store."""
     stale: list[str] = []
     try:
         layer1 = sources.worldbankscape.load()
@@ -457,12 +469,16 @@ def gather(day: date, sources: Sources, history: Sequence[Mapping] = (),
         scores = {(s.subject, s.asset): s for s in layer1.scores}
         idn = gather_idn(day, reg, sources.idn, score=scores.get((HOME, "stocks")),
                          worldbankscape=sources.worldbankscape, history=history,
-                         rules_dir=rules_dir, rule_history=sources.rule_history)
+                         rules_dir=rules_dir, rule_history=sources.rule_history,
+                         overrides_dir=overrides_dir,
+                         override_history=sources.override_history)
         overrides = idn.overrides.overrides
         stale += idn.stale_inputs
     foreign = None
     if sources.foreign is not None and layer1 is not None:
-        foreign = gather_foreign(day, sources.foreign)
+        foreign = gather_foreign(day, sources.foreign, history=history,
+                                 overrides_dir=overrides_dir,
+                                 override_history=sources.override_history)
         overrides = (*overrides, *foreign_override_rows(foreign))
         stale += foreign.stale_inputs
     return Layers(day, layer1, reg, weights, overrides=tuple(overrides),
@@ -505,9 +521,12 @@ def _portfolio(source: Any) -> tuple[portfolio.Portfolio | None, tuple[Any, ...]
 def gather_idn(day: date, reg: Regime, src: IdnSources, *, score: AssetScore | None = None,
                worldbankscape: Any = None, history: Sequence[Mapping] = (),
                rules_dir: Path | None = None,
-               rule_history: rule_gate.Build | None = None) -> IdnLayers:
+               rule_history: rule_gate.Build | None = None,
+               overrides_dir: Path | None = None,
+               override_history: override_gate.Build | None = None) -> IdnLayers:
     """Indonesia's layers 2–4 on `day` (P17 overrides, P18 signals, P31 bonds rule, P22 stocks
-    rule, layer-4 candidates) and each rule's gate (`rule_gates`). The stocks rule's macro input
+    rule, layer-4 candidates), each rule's gate (`rule_gates`) and the overrides' gate
+    (`override_gates`, P77). The stocks rule's macro input
     is `history.held_score` (layer 1 held at 50, open question 4), as in the history its gate is
     judged on; `score` and `worldbankscape` are kept for callers and no longer read by it."""
     from assist.history import held_score
@@ -524,7 +543,8 @@ def gather_idn(day: date, reg: Regime, src: IdnSources, *, score: AssetScore | N
     cands = idn_candidates(day, stocks=src.stocks)
     gates = rule_gates(day, history, rule_prices(src, day), rules_dir, rule_history)
     verdicts = {a: g.verdict for a, g in gates.items()}
-    return IdnLayers(ov, sig, bonds, stocks, cands, verdicts, gates)
+    og = override_gates(day, HOME, history, overrides_dir, override_history)
+    return IdnLayers(ov, sig, bonds, stocks, cands, verdicts, gates, og)
 
 
 def _with_fx_seam(bonds: IdnBonds, fx: Any) -> IdnBonds:
@@ -538,12 +558,17 @@ def _with_fx_seam(bonds: IdnBonds, fx: Any) -> IdnBonds:
         sources=tuple(dict.fromkeys(sources)))
 
 
-def gather_foreign(day: date, src: ForeignSources) -> ForeignLayers:
-    """The foreign layers on `day`: P28's overrides, P29's index valuations, and the IDR edge of
-    stocks, bonds and currency in every market P29 covers."""
+def gather_foreign(day: date, src: ForeignSources, *, history: Sequence[Mapping] = (),
+                   overrides_dir: Path | None = None,
+                   override_history: override_gate.Build | None = None) -> ForeignLayers:
+    """The foreign layers on `day`: P28's overrides, P29's index valuations, the IDR edge of
+    stocks, bonds and currency in every market P29 covers, and each P28 market's override gate
+    (`override_gates`, P79; never raises)."""
     fo = foreign_overrides(day, src.overrides)
     fc = foreign_candidates(day, src.candidates)
-    return ForeignLayers(fo, fc, idr_edges_from(fc, src.candidates, day))
+    gates = {m.subject: override_gates(day, m.subject, history, overrides_dir, override_history)
+             for m in fo.markets}
+    return ForeignLayers(fo, fc, idr_edges_from(fc, src.candidates, day), gates)
 
 
 def foreign_override_rows(foreign: ForeignLayers) -> tuple[Override, ...]:
@@ -670,11 +695,44 @@ def rule_gates(day: date, history: Sequence[Mapping],
                 for a, g in gates.items()}
 
 
+def override_gates(day: date, subject: str, history: Sequence[Mapping],
+                   overrides_dir: Path | None, build: override_gate.Build | None = None, *,
+                   rebuild: bool = False) -> override_gate.OverrideGate:
+    """The subject's override gate (`eval.override_gate.refresh`, P77) on `day`. Never raises:
+    a gate that cannot be read, built or written is computed in memory without a history and
+    says why."""
+    try:
+        return override_gate.refresh(day, overrides_dir, subject, records=history, build=build,
+                                     rebuild=rebuild)
+    except Exception as e:  # noqa: BLE001 - a run never fails on its gate
+        first = str(e).splitlines()[0][:200] if str(e) else ""
+        g = override_gate.refresh(day, None, subject, records=history, build=None)
+        line = f"override gate {subject} failed: {type(e).__name__}: {first}"
+        return dataclasses.replace(g, stale_inputs=(*g.stale_inputs, line))
+
+
 # ---------------- combine ----------------
 
 
 def _verdict_text(v: Verdict | None) -> str:
     return "none" if v is None else ("passed" if v.passed else "not passed") + f", {v.reason}"
+
+
+def override_view(score: AssetScore, layers: Layers) -> stance.OverrideGateView | None:
+    """The override gate that reaches one stance (choice 11): IDN's for IDN, the P28 market's for
+    a foreign subject (EMU's for DEU, FRA, ITA, ESP, NLD); None where there is no gate or the
+    asset is not gated (KOR, TWN, commodities, foreign stocks outside USA)."""
+    g = None
+    if score.subject == HOME and layers.idn is not None:
+        g = layers.idn.override_gate
+    elif layers.foreign is not None and score.subject in FOREIGN:
+        market = "EMU" if score.subject in EMU_MEMBERS else score.subject
+        g = layers.foreign.override_gates.get(market)
+    if g is None or (score.asset, "up") not in g.tests:
+        return None
+    return stance.OverrideGateView(g.passed_sides(score.asset),
+                                   {s: g.test(score.asset, s).state for s in override_gate.SIDES},
+                                   g.line(score.asset))
 
 
 def rule_view(score: AssetScore, layers: Layers) -> stance.RuleView | None:
@@ -775,7 +833,7 @@ def build(layers: Layers, fingerprint: str) -> list[dict]:
     out = [stance.build_stance(score=s, regime=layers.regime, weights=layers.weights,
                                overrides=layers.overrides, as_of=layers.day,
                                fingerprint=fingerprint, rule=rule_view(s, layers),
-                               home=layers.home)
+                               home=layers.home, override_gate=override_view(s, layers))
            for s in sorted(layers.scores, key=lambda s: (s.subject, s.asset))]
     stance.apply_limits(out)
     for p in out:
@@ -852,19 +910,18 @@ def _journal_foreign(j: journal.Journal, layers: Layers, stances: Mapping, fp: s
     f = layers.foreign
     for m in f.overrides.markets:
         members = EMU_MEMBERS if m.subject == "EMU" else (m.subject,)
-        reached = {}
-        for s in members:
-            for a in FOREIGN_ASSETS:
-                p = stances.get((s, a))
-                if p is not None:
-                    reached[f"{s}/{a}"] = {
-                        "stance": p["stance"], "score": p["score"],
-                        "layer1_score": p["layer1_score"],
-                        "held": stance.stance_for(p["score"]) != p["stance"]}
+        cli = m.component("cli")
+        outputs = override_gate.journal_outputs(
+            {o.asset: o.delta for o in m.overrides}, m.raw,
+            override_history.complete_live((c.name for c in m.components), m.subject),
+            None if cli is None else cli.direction,
+            g.fingerprint if (g := f.override_gates.get(m.subject)) is not None
+            else override_gate.override_fingerprint(m.subject))
+        reached = _reached(stances, members)
+        outputs.update({"gate": g.states() if g is not None else None, "stances": reached,
+                        "moves_band": any(v["crossed"] for v in reached.values())})
         j.record(kind="overrides", fingerprint=fp, subject=m.subject, as_of=layers.day,
-                 run_id=run_id, inputs=m,
-                 outputs={"deltas": {o.asset: o.delta for o in m.overrides}, "raw": m.raw,
-                          "stances": reached, "moves_band": False})
+                 run_id=run_id, inputs=m, outputs=outputs)
     for m in cf.MARKETS:
         v = f.valuation(m.subject)
         p = stances.get((m.subject, "stocks"))
@@ -902,6 +959,43 @@ def _journal_idn(j: journal.Journal, layers: Layers, stances: Mapping, fp: str,
     j.record(kind="candidates", fingerprint=fp, subject=HOME, asset="stocks", as_of=layers.day,
              run_id=run_id, inputs={"order_idr": idn.candidates.order_idr},
              outputs=idn.candidates)
+    _journal_idn_overrides(j, layers, stances, fp, run_id)
+
+
+def _reached(stances: Mapping, members: Sequence[str]) -> dict:
+    """Per stance an override reached: stance, score, layer-1 score, whether the band held and
+    whether a passed side crossed it (P79)."""
+    out = {}
+    for s in members:
+        for a in FOREIGN_ASSETS:
+            p = stances.get((s, a))
+            if p is not None:
+                l2 = p.get("layer2") or {}
+                out[f"{s}/{a}"] = {"stance": p["stance"], "score": p["score"],
+                                   "layer1_score": p["layer1_score"],
+                                   "held": bool(l2.get("held")),
+                                   "crossed": bool(l2.get("crossed"))}
+    return out
+
+
+def _journal_idn_overrides(j: journal.Journal, layers: Layers, stances: Mapping, fp: str,
+                           run_id: str) -> None:
+    """One `overrides` record for IDN (P77): the shift per asset, whether every P17 component
+    was computed, the CLI's direction and the override fingerprint (the gate's live monitor),
+    the gate state per asset and side, and the stances it reached."""
+    idn = layers.idn
+    ov, og = idn.overrides, idn.override_gate
+    cli = ov.component("cli")
+    outputs = override_gate.journal_outputs(
+        {o.asset: o.delta for o in ov.overrides}, ov.raw,
+        override_history.complete_live(c.name for c in ov.components),
+        None if cli is None else cli.direction,
+        og.fingerprint if og is not None else override_gate.override_fingerprint(HOME))
+    reached = _reached(stances, (HOME,))
+    outputs.update({"gate": og.states() if og is not None else None, "stances": reached,
+                    "moves_band": any(v["crossed"] for v in reached.values())})
+    j.record(kind="overrides", fingerprint=fp, subject=HOME, as_of=layers.day, run_id=run_id,
+             inputs=ov, outputs=outputs)
 
 
 # ---------------- notify ----------------
@@ -1145,7 +1239,8 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
     paths = paths or Paths.default()
     sources = sources or Sources.default()
     j = journal.Journal(paths.journal)
-    layers = gather(day, sources, history=list(j.read()), rules_dir=paths.out / "rules")
+    layers = gather(day, sources, history=list(j.read()), rules_dir=paths.out / "rules",
+                    overrides_dir=paths.out / "overrides")
     res = RunResult(ok=False, day=day, regime=layers.regime, stale_inputs=layers.stale_inputs,
                     problems=dict(layers.layer1.problems) if layers.layer1 else {},
                     idn=layers.idn, foreign=layers.foreign, home=layers.home)

@@ -50,6 +50,13 @@ points, drivers, stale inputs); its stale inputs stay in the block and do not lo
 confidence, since the home regime does not move the score while not adopted. Bands, `TILT_PT`,
 `BENCHMARK_PCT` and `TRANSITION_PT` are unchanged.
 
+Phase L (S61, choice 11, fixed 2026-11-09): the layer-2 shift may cross a band only in the
+direction of a side that passed its override gate (`eval.override_gate`, out/overrides/): an up
+pass lets a positive shift lift the band stance, a down pass lets a negative shift lower it; the
+other direction stays held at the band, and no pass holds both. The shift keeps its ±10 cap. The
+EMU verdict reaches its five members. A passed phase K rule still replaces the band stance after.
+Each stance carries a `layer2` block (shift, gate states, sides passed, crossed, held).
+
 Every number below is hand-set and stays so until a rule using it beats its placebo control.
 TODO(PLAN.md, Open questions): the ±5 pt tilt (`TILT_PT`) is still a placeholder until phase I
 has run; the benchmark itself is the user's choice, not fitted.
@@ -92,6 +99,7 @@ __all__ = [
     "STANCE_BANDS",
     "TILT_PT",
     "TRANSITION_PT",
+    "OverrideGateView",
     "RuleView",
     "apply_limits",
     "base_stance",
@@ -104,9 +112,11 @@ __all__ = [
     "stance_for",
 ]
 
-SCHEMA_VERSION = "1.2.0"  # 1.1: portfolio.rebalance_pt / tilt_pt (S42); 1.2: home_regime (S53)
-MODEL_VERSION = "0.5.0"  # 0.2: phase B (F2), IDN rules and layer 4; 0.3: phase C (F3) foreign;
-# 0.4: phase I (S39), benchmark 48/32/20 and the 100% rule; 0.5: phase K (S53), home regime
+SCHEMA_VERSION = "1.3.0"  # 1.1: portfolio.rebalance_pt / tilt_pt (S42); 1.2: home_regime (S53);
+# 1.3: layer2 (S61)
+MODEL_VERSION = "0.6.0"  # 0.2: phase B (F2), IDN rules and layer 4; 0.3: phase C (F3) foreign;
+# 0.4: phase I (S39), benchmark 48/32/20 and the 100% rule; 0.5: phase K (S53), home regime;
+# 0.6: phase L (S61), a passed override side may cross a band
 
 # Layer-0 shift of the layer-1 score, in points (same for every asset in v0).
 REGIME_SHIFT = {"risk_on": 5.0, "neutral": 0.0, "risk_off": -5.0}
@@ -154,7 +164,8 @@ MODEL_CONFIG = {
     "ladder": {"tranches": LADDER_TRANCHES, "spacing_days": LADDER_SPACING_DAYS},
     "stale_penalty": STALE_PENALTY,
     "max_override": MAX_OVERRIDE,
-    "override_moves_stance": False,  # held at the band without overrides until a placebo passes
+    # phase L choice 11: only in the direction of a side that passed its override gate
+    "override_moves_stance": "passed_side_only",
     "home_regime": {
         "assets": sorted(f"{s}/{a}" for s, a in HOME_ASSETS),
         "ladder": "risk_off",  # adds and trims, LADDER_TRANCHES x LADDER_SPACING_DAYS
@@ -181,6 +192,16 @@ class RuleView:
     watch: tuple[str, ...] = ()
     stale_inputs: tuple[str, ...] = ()
     sources: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class OverrideGateView:
+    """What the override gate (`eval.override_gate`, S59) says for one subject × asset: the sides
+    that passed (`up`, `down`), the state of each, and its line for the drivers."""
+
+    passed: frozenset[str] = frozenset()
+    states: Mapping[str, str] | None = None
+    line: str = ""
 
 
 def model_fingerprint(config: Mapping | None = None) -> str:
@@ -245,6 +266,7 @@ def build_stance(
     fingerprint: str | None = None,
     rule: RuleView | None = None,
     home: HomeRegime | None = None,
+    override_gate: OverrideGateView | None = None,
 ) -> dict:
     """Stance payload (schema/stance.schema.json) for `score.subject` × `score.asset`.
 
@@ -298,9 +320,24 @@ def build_stance(
 
     final = _r(_clip(score.score + shift + h_shift + override))
     stance = base_stance(score, regime, home)
-    if stance_for(final) != stance:
-        drivers.append(f"layer-2 overrides would move the stance to {stance_for(final)};"
-                       f" held at {stance} until they beat a placebo")
+    moved, crossed, held = stance_for(final), False, False
+    if moved != stance:
+        side = "up" if override > 0 else "down"
+        if override_gate is not None and side in override_gate.passed:
+            drivers.append(f"layer-2 override crosses to {moved} from {stance}: its {side} side"
+                           f" passed its gate ({override_gate.line})")
+            stance, crossed = moved, True
+        else:
+            gate_state = (override_gate.states or {}).get(side) if override_gate else None
+            drivers.append(f"layer-2 overrides would move the stance to {moved}; held at "
+                           f"{stance} until their {side} side passes its gate"
+                           + (f" ({side} side {gate_state})" if gate_state else " (no gate)"))
+            held = True
+    layer2 = {"shift": _r(override),
+              "gate": dict(override_gate.states) if override_gate and override_gate.states
+              else None,
+              "passed": sorted(override_gate.passed) if override_gate else [],
+              "crossed": crossed, "held": held}
 
     watch: list[str] = []
     if rule is not None:
@@ -374,6 +411,7 @@ def build_stance(
         "portfolio": {"current_pct": current, "target_pct": target, "delta": delta_text,
                       "benchmark_pct": 0.0 if bench is None else _r(bench)},
         "flags": [dict(f) for f in score.flags],
+        "layer2": layer2,
         "stale_inputs": sorted(stale),
         "sources": sorted(sources),
         "disclaimer": DISCLAIMER,

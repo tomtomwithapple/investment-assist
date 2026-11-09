@@ -11,7 +11,7 @@
     "entry", "portfolio", "stale_inputs", "sources", "disclaimer"
   ],
   "properties": {
-    "schema_version": {"$ref": "https://github.com/tomtomtomdev/worldbankscape/schema/score.schema.json#/$defs/semver", "description": "Version of this contract (1.0.0 frozen by slice S1-contracts; 1.1.0 adds the optional portfolio.rebalance_pt and portfolio.tilt_pt, S42; 1.2.0 adds the optional home_regime, S53)."},
+    "schema_version": {"$ref": "https://github.com/tomtomtomdev/worldbankscape/schema/score.schema.json#/$defs/semver", "description": "Version of this contract (1.0.0 frozen by slice S1-contracts; 1.1.0 adds the optional portfolio.rebalance_pt and portfolio.tilt_pt, S42; 1.2.0 adds the optional home_regime, S53; 1.3.0 adds the optional layer2, S61)."},
     "subject": {"type": "string", "pattern": "^[A-Z0-9_]+$", "description": "ISO3 code (country) or worldbankscape commodity code."},
     "subject_type": {"enum": ["country", "commodity"]},
     "asset": {"enum": ["stocks", "bonds", "currency", "commodities"]},
@@ -24,6 +24,19 @@
     "confidence": {"type": "number", "minimum": 0, "maximum": 1, "description": "Lowered for every stale or missing input."},
     "regime": {"enum": ["risk_on", "neutral", "risk_off"], "description": "Layer-0 global regime."},
     "dollar": {"enum": ["up", "flat", "down"], "description": "Layer-0 broad dollar direction."},
+    "layer2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shift", "gate", "passed", "crossed", "held"],
+      "description": "Schema 1.3 (PLAN S61, phase L choice 11): the layer-2 override shift (capped at ±10) and its gate (out/overrides/<SUBJECT>.json; EMU's for its members). A shift may cross a band only in the direction of a side that passed: crossed = it did; held = it would have and was held at the band. gate null = no gate for this subject × asset (KOR, TWN, commodities, foreign stocks outside USA). Absent before schema 1.3.",
+      "properties": {
+        "shift": {"type": "number", "minimum": -10, "maximum": 10},
+        "gate": {"anyOf": [{"type": "null"}, {"type": "object", "additionalProperties": false, "required": ["up", "down"], "properties": {"up": {"enum": ["passed", "insufficient", "failed", "revoked", "live-passed", "none"]}, "down": {"enum": ["passed", "insufficient", "failed", "revoked", "live-passed", "none"]}}}]},
+        "passed": {"type": "array", "items": {"enum": ["up", "down"]}, "uniqueItems": true},
+        "crossed": {"type": "boolean"},
+        "held": {"type": "boolean"}
+      }
+    },
     "home_regime": {
       "type": "object",
       "additionalProperties": false,

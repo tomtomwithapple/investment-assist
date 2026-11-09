@@ -615,16 +615,80 @@ def test_home_config_is_fingerprinted_and_versions_bumped():
     assert cfg["shift_pt"] == -5.0 and cfg["ladder"] == "risk_off"
     changed = {**st.MODEL_CONFIG, "home_regime": {**cfg, "shift_adopted": True}}
     assert st.model_fingerprint(changed) != st.model_fingerprint()
-    assert st.MODEL_VERSION == "0.5.0" and st.SCHEMA_VERSION == "1.2.0"
+    assert st.MODEL_VERSION == "0.6.0" and st.SCHEMA_VERSION == "1.3.0"  # bumped again in S61
 
 
 def test_schema_takes_1_1_payloads_without_home_regime():
     p = build(home=home())
-    assert p["schema_version"] == "1.2.0" and "home_regime" in p
+    assert p["schema_version"] == "1.3.0" and "home_regime" in p
     valid(p)
     p.pop("home_regime")
+    p.pop("layer2")
     p["schema_version"] = "1.1.0"
     valid(p)
     bad = build(home=home())
     bad["home_regime"]["state"] = "risk_on"  # there is no home risk_on
     assert list(stance_validator().iter_errors(bad))
+
+
+# ---------------- phase L (S61, P79): a passed override side may cross a band ----------------
+
+
+def _ov(delta, asset="bonds", subject="IDN"):
+    return [Override(subject=subject, asset=asset, as_of=D, delta=delta, reason="P17",
+                     sources=("bps-looker",))]
+
+
+def _gate(*passed, up="failed", down="failed"):
+    states = {"up": "passed" if "up" in passed else up,
+              "down": "passed" if "down" in passed else down}
+    return st.OverrideGateView(frozenset(passed), states, "override gate IDN bonds: ...")
+
+
+def test_an_up_pass_lifts_the_band_on_a_positive_shift():
+    out = valid(build(score=score(57.0), overrides=_ov(6.0), override_gate=_gate("up")))
+    assert out["score"] == 63.0 and out["stance"] == "overweight"
+    assert any("crosses to overweight" in d and "up side passed" in d for d in out["drivers"])
+    assert out["layer2"] == {"shift": 6.0, "gate": {"up": "passed", "down": "failed"},
+                             "passed": ["up"], "crossed": True, "held": False}
+
+
+def test_a_down_shift_on_an_up_pass_stays_held():
+    out = valid(build(score=score(42.0), overrides=_ov(-6.0), override_gate=_gate("up")))
+    assert out["score"] == 36.0 and out["stance"] == "neutral"
+    assert any("would move the stance to underweight; held at neutral" in d
+               and "down side" in d for d in out["drivers"])
+    assert out["layer2"]["crossed"] is False and out["layer2"]["held"] is True
+
+
+def test_a_down_pass_lowers_the_band():
+    out = valid(build(score=score(42.0), overrides=_ov(-6.0), override_gate=_gate("down")))
+    assert out["stance"] == "underweight" and out["layer2"]["crossed"] is True
+
+
+def test_no_pass_nothing_moves():
+    for gate in (None, _gate()):
+        out = valid(build(score=score(57.0), overrides=_ov(6.0), override_gate=gate))
+        assert out["stance"] == "neutral"
+        assert out["layer2"]["crossed"] is False and out["layer2"]["held"] is True
+    assert build(score=score(57.0), overrides=_ov(6.0))["layer2"]["gate"] is None
+
+
+def test_a_shift_inside_the_band_neither_crosses_nor_holds():
+    out = valid(build(score=score(50.0), overrides=_ov(4.0), override_gate=_gate("up")))
+    assert out["stance"] == "neutral"
+    assert out["layer2"] == {"shift": 4.0, "gate": {"up": "passed", "down": "failed"},
+                             "passed": ["up"], "crossed": False, "held": False}
+
+
+def test_a_passed_rule_still_replaces_the_band_after_the_override():
+    rv = st.RuleView("IDN", "bonds", note="bonds rule applied: reduce", stance="neutral")
+    out = valid(build(score=score(57.0), overrides=_ov(6.0), override_gate=_gate("up"),
+                      rule=rv))
+    assert out["stance"] == "neutral"  # the rule has the last word
+    assert out["layer2"]["crossed"] is True
+
+
+def test_model_version_and_config_name_the_per_side_crossing():
+    assert st.MODEL_VERSION == "0.6.0" and st.SCHEMA_VERSION == "1.3.0"
+    assert st.MODEL_CONFIG["override_moves_stance"] == "passed_side_only"
