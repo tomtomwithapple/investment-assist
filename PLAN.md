@@ -1397,7 +1397,7 @@ brackets and its reason.
   on the same asset stays held; no pass, nothing moves.
 - [x] **S61b P17 CPI fallback** (P85-cpi-fallback). Choice 9, before S59's first verdict. Test
   first: a bps-looker CPI known for 2 months falls back to dbnomics.
-- [ ] **S62 Foreign fx on the USD/IDR splice** (P80-foreign-fx). Choice 12. Test first: 11
+- [x] **S62 Foreign fx on the USD/IDR splice** (P80-foreign-fx). Choice 12. Test first: 11
   JISDOR fixings plus MAS history give USA and JPN a 3-month `fx` change.
 - [ ] **S63 Foreign override input history** (P81-foreign-override-inputs). Choice 13. S57's
   replay for P28 per market, `GDPC1` through `fred_as_of`, the AUS fx MAS fallback in
@@ -1498,6 +1498,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S57 IDN override input history (P75-override-inputs) | done | 2026-11-09 | this commit (branch `phase-l`) | 18 override_history (1849 total) | P17 on 262 month ends 2005-01 → 2026-10 in 5.5 s (each store read once): every component on 109, from 2017-07 (trade binds; growth from 2012-05, bi_rate 2006-02, cli and inflation 2005-01) except 2024-02 → 04 (bps-looker CPI known < 3 months, no dbnomics fallback); shift signs on complete months: stocks up 66 / zero 8 / down 35, bonds 48 / 7 / 54, currency 43 / 23 / 43 (descriptive, no returns); 2026-10-31: stocks −4, bonds −1, currency +3 |
 | S58 IDN override forward returns (P76-override-returns) | done | 2026-11-09 | this commit (branch `phase-l`) | 24 override_history (1855 total) | `idn_returns`: stocks JCI, bonds `bond_forward` (proxy lagged a month, IGSYC as is), currency USD/IDR(t)/USD/IDR(t+3) − 1 on the P65 splice (rupiah up = positive), never across a gap or from a running month; complete months with a 3-month return: stocks and currency 2017-07 → 2026-07 (106), bonds 2017-07 → 2024-08 (83) |
 | S61b P17 CPI fallback (P85-cpi-fallback) | done | 2026-11-09 | this commit (branch `phase-l`) | 3 overrides_idn, override_history updated (1858 total) | P17 inflation falls back to dbnomics `idn.cpi.yoy` when bps-looker CPI has no point 3 months back (the bps short line stays stale; the newest CPI level stays bps-looker's); live: no inflation hole, 112 complete months 2017-07 → 2026-10; rule fingerprints bonds `deb1f60c…` → `f9be0b94…`, stocks `d217e458…` → `457c6c85…` (out/rules/ rebuilds cold at S66) |
+| S62 Foreign fx on the USD/IDR splice (P80-foreign-fx) | done | 2026-11-09 | this commit (branch `phase-l`) | 4 overrides_foreign (1862 total) | P28 reads IDR per USD from the P65 splice (store key `usdidr`, MAS leg lagged a day); live USA fx +0.87% / 3m, JPN +0.38% (both inside 1.5%: shifts unchanged, USA 0 / −3 / +2, JPN −3 / −2 / +1); no JISDOR stale line |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

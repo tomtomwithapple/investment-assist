@@ -285,7 +285,7 @@ class Wbs:
 
 def missing_foreign() -> pipeline.ForeignSources:
     names = ("fred", "tic", "dbnomics", "bisfetcher", "jquantster", "ausdata", "singstat",
-             "idxscape")
+             "usdidr")
     cand = ("dbnomics", "idxscape", "idxscape_phei", "bisfetcher", "jquantster", "ausdata",
             "singstat", "openkrx")
     return pipeline.ForeignSources(overrides={n: Missing(n) for n in names},

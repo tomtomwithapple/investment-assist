@@ -16,9 +16,11 @@ in time, with a direction of +1 (rising), -1 (falling) or 0 (inside its dead ban
 - `curve`: 10Y − 2Y over 3 months, +1 = steepening. The euro-area 2Y benchmark stands in for the
   Bund 2Y (dbnomics has none).
 - `fx`: IDR per local unit over 3 months, in percent: +1 = the currency gaining on the rupiah,
-  which an unhedged IDR investor earns on top of the local return. IDR per USD is JISDOR; JPY is
-  crossed through USD/JPY (jquantster), EUR through MAS's S$ rates (singstat), AUD is RBA's
-  direct AUD/IDR (ausdata), SGD is MAS's S$ per IDR inverted.
+  which an unhedged IDR investor earns on top of the local return. IDR per USD is the P65 splice
+  (`sources.usdidr`, key `usdidr`: JISDOR from its first fixing, the MAS cross before it; P80,
+  phase L choice 12, so the 3-month change has a base although idxscape's JISDOR here starts
+  2026-10-22); JPY is crossed through USD/JPY (jquantster), EUR through MAS's S$ rates
+  (singstat), AUD is RBA's direct AUD/IDR (ausdata), SGD is MAS's S$ per IDR inverted.
 - `flows_equity`, `flows_treasury` (US only): sec-edgar TIC foreign net purchases of US equities
   and of long-term Treasuries, grand total, last 3 months' sum minus the 3 before.
 
@@ -192,7 +194,9 @@ def _policy(what: str, *refs: Ref) -> Spec:
 
 
 IDR_RATE = Ref("bisfetcher", BI_RATE_M, 35, 70)
-JISDOR_REF = Ref("idxscape", JISDOR, 0, DAILY)
+# The P65 splice served as JISDOR rows: JISDOR points carry idxscape's vintage, MAS cross points
+# none, so they count from the day after their date (P80).
+JISDOR_REF = Ref("usdidr", JISDOR, 1, DAILY)
 IDR_PER_SGD = _mas(singstat.fx_id("IDR"), INVERSE)
 # Monthly ABS CPI (and OECD's copy of it) starts 2025-04; the quarterly y/y covers backtests.
 AU_CPI_Q = "DER.CPI_HEADLINE_YY_Q"  # dated at the quarter end
@@ -656,8 +660,9 @@ def foreign_overrides(
 ) -> ForeignOverrides:
     """Layer-2 overrides for each foreign market's stocks, bonds and currency on `as_of`.
     `sources` is keyed by store: fred, tic (both sec-edgar), dbnomics, bisfetcher, jquantster,
-    ausdata, singstat, idxscape; None builds them all from `config/sources.yaml`. A store that
-    is missing, locked or not given drops its components and is named in `stale_inputs`."""
+    ausdata, singstat, usdidr (the P65 USD/IDR splice); None builds them all from
+    `config/sources.yaml`. A store that is missing, locked or not given drops its components and
+    is named in `stale_inputs`."""
     rd = _Reader(default_sources() if sources is None else sources, as_of, _all_refs(markets))
     idr_rate = [] if IDR_RATE.source in rd.failed else rd.series(IDR_RATE)
     out = [_market(rd, m, idr_rate) for m in markets]
@@ -673,6 +678,7 @@ def default_sources(config: Path = DEFAULT_CONFIG, env: dict | None = None) -> d
     from assist.sources.idxscape import IdxscapeSource
     from assist.sources.jquantster import JquantsterSource
     from assist.sources.singstat import SingstatSource
+    from assist.sources.usdidr import UsdIdrSource
     from assist.sources.usfin import FredSource, Usfin
     from assist.sources.usfin_tic import TicSource
 
@@ -681,6 +687,8 @@ def default_sources(config: Path = DEFAULT_CONFIG, env: dict | None = None) -> d
     out: dict[str, Source] = {"fred": FredSource(usfin), "tic": TicSource(usfin)}
     for key, cls in (("dbnomics", DbnomicsSource), ("bisfetcher", BisfetcherSource),
                      ("jquantster", JquantsterSource), ("ausdata", AusdataSource),
-                     ("singstat", SingstatSource), ("idxscape", IdxscapeSource)):
+                     ("singstat", SingstatSource)):
         out[key] = cls.from_config(config=config, env=env)
+    out["usdidr"] = UsdIdrSource(IdxscapeSource.from_config(config=config, env=env),
+                                 out["singstat"])
     return out

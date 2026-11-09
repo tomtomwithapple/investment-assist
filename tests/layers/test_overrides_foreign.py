@@ -149,10 +149,10 @@ def world(**over) -> dict[str, Fake]:
         + daily(sg.SGS_2Y, "singstat", fill=1.9, last=AS_OF - timedelta(days=2))
         + daily(sg.fx_id("IDR"), "singstat", fill=1 / 14_000, last=AS_OF - timedelta(days=2))
         + daily(sg.fx_id("EUR"), "singstat", fill=1.45, last=AS_OF - timedelta(days=2)),
-        "idxscape": daily(JISDOR, "idxscape", fill=18_000.0),
+        "usdidr": daily(JISDOR, "idxscape", fill=18_000.0),
     }
     rows.update(over)
-    return {k: v if isinstance(v, Fake) else Fake(k, v) for k, v in rows.items()}
+    return {k: Fake(k, v) if isinstance(v, list) else v for k, v in rows.items()}
 
 
 def run(as_of=AS_OF, **over) -> ForeignOverrides:
@@ -484,3 +484,66 @@ def test_runs_over_the_real_adapters(tmp_path):
     assert {"ausdata", "singstat", "bisfetcher", "jquantster"} <= set(out.sources)
     for m in out.markets:
         assert all(abs(o.delta) <= MAX_OVERRIDE for o in m.overrides)
+
+
+# ---------------- USD/IDR on the P65 splice (P80, phase L choice 12) ----------------
+
+
+def _splice(jisdor_days: int = 11, jisdor: float = 16_800.0, mas: float = 16_000.0):
+    """The P65 splice over fake stores: MAS USD and IDR legs (S$ per unit) daily for ~2.5
+    years up to the day before JISDOR's first fixing, then `jisdor_days` JISDOR fixings
+    recorded on their own dates, as idxscape holds them on this Mac (from 2026-10-22)."""
+    from assist.sources.usdidr import UsdIdrSource
+
+    days = [d for d in _days(AS_OF - timedelta(days=1)) if d.weekday() < 5]
+    fixings = days[-jisdor_days:]
+    before = [d for d in days if d < fixings[0]]
+    sgd_per_usd = 1.30
+    mas_rows = (series(sg.fx_id("USD"), before, [sgd_per_usd] * len(before), "singstat")
+                + series(sg.fx_id("IDR"), before, [sgd_per_usd / mas] * len(before), "singstat"))
+    jis_rows = [Row(JISDOR, d, jisdor, d, "idxscape") for d in fixings]
+    return UsdIdrSource(Fake("idxscape", jis_rows), Fake("singstat", mas_rows)), fixings
+
+
+def test_usa_and_jpn_fx_read_usd_idr_from_the_splice():
+    """11 JISDOR fixings plus the MAS cross before them give USA and JPN a 3-month change."""
+    usdidr, fixings = _splice()
+    out = run(usdidr=usdidr)
+    usa, jpn = out.market("USA"), out.market("JPN")
+    fx = usa.component("fx")
+    assert fx is not None, usa.stale_inputs
+    assert fx.value == pytest.approx((16_800 / 16_000 - 1) * 100, rel=1e-6)  # +5%: USD up
+    assert fx.direction == 1 and fx.last.date == fixings[-1]
+    assert jpn.component("fx") is not None
+    assert jpn.component("fx").value == pytest.approx((16_800 / 16_000 - 1) * 100, rel=1e-6)
+    assert not any("JISDOR" in s for s in out.stale_inputs)
+    assert usa.idr.level == pytest.approx(16_800)
+
+
+def test_jisdor_alone_is_too_short_for_the_3_month_change():
+    """Without the MAS cross (idxscape's JISDOR from 2026-10-22 only) the fx component is n/a
+    and named, as it was live before P80."""
+    from assist.sources.usdidr import UsdIdrSource
+
+    _, fixings = _splice()
+    jis = [Row(JISDOR, d, 16_800.0, d, "idxscape") for d in fixings]
+    out = run(usdidr=UsdIdrSource(Fake("idxscape", jis), Fake("singstat", error="missing")))
+    assert out.market("USA").component("fx") is None
+    assert any(f"history from {fixings[0]}" in s for s in out.market("USA").stale_inputs)
+
+
+def test_the_mas_leg_waits_its_one_day_lag():
+    """A MAS cross point (no vintage) counts from the day after its date."""
+    usdidr, fixings = _splice(jisdor_days=1)
+    out = run(as_of=fixings[0] - timedelta(days=1), usdidr=usdidr)
+    fx = out.market("USA").component("fx")
+    assert fx is not None and fx.last.date < fixings[0] - timedelta(days=1)
+
+
+def test_default_sources_serve_usd_idr_from_the_splice():
+    from assist.layers.overrides_foreign import default_sources
+    from assist.sources.usdidr import UsdIdrSource
+
+    src = default_sources(env={"ASSIST_SIBLINGS_ROOT": "/nonexistent"})
+    assert isinstance(src["usdidr"], UsdIdrSource)
+    assert "idxscape" not in src
