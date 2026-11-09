@@ -267,3 +267,98 @@ def test_month_end_dates_and_default_end():
     assert OH.month_ends(D("2016-01-15"), D("2016-03-31")) == [
         D("2016-01-31"), D("2016-02-29"), D("2016-03-31")]
     assert OH.last_month_end(D("2026-11-09")) == D("2026-10-31")
+
+
+# ---------------- forward returns (P76, PLAN S58) ----------------
+
+from assist.history import HORIZON  # noqa: E402
+from assist.layers.bonds.idn import PROXY_10Y  # noqa: E402
+from assist.sources.idxmethod import JCI  # noqa: E402
+from assist.sources.idxscape import JISDOR  # noqa: E402
+from assist.sources.idxscape_phei import IGSYC_10Y  # noqa: E402
+
+
+def _daily_month_ends(first: date, last: date, value) -> list[tuple[date, float]]:
+    return [(d, value(i)) for i, d in enumerate(OH.month_ends(first, last))]
+
+
+def return_stores(*, jci=None, tens=None, fx=None) -> OH.ReturnSources:
+    jci = jci if jci is not None else _daily_month_ends(D("2015-01-31"), D("2019-12-31"),
+                                                        lambda i: 5000 * (1 + 0.01 * i))
+    tens = tens if tens is not None else [(d.replace(day=1), 7.0 + 0.05 * (i % 7))
+                                          for i, d in enumerate(OH.month_ends(D("2015-01-31"),
+                                                                              D("2019-11-30")))]
+    fx = fx if fx is not None else _daily_month_ends(D("2015-01-31"), D("2019-12-31"),
+                                                     lambda i: 13000 + 20 * i)
+    return OH.ReturnSources(
+        jci=Fake("jci", [Row(JCI, d, v, None, "jci") for d, v in jci]),
+        dbnomics=Fake("dbnomics", [Row(PROXY_10Y, d, v, None, "dbnomics") for d, v in tens]),
+        phei=Fake("idxscape_phei", error="missing"),
+        usdidr=Fake("USD/IDR", [Row(JISDOR, d, v, None, "singstat") for d, v in fx]))
+
+
+def test_currency_return_is_positive_when_the_rupiah_gains():
+    fx = [(D("2018-01-31"), 15000.0), (D("2018-02-28"), 14800.0), (D("2018-03-31"), 14500.0),
+          (D("2018-04-30"), 14000.0), (D("2018-05-31"), 14700.0)]
+    fwd = OH.currency_forward(fx, 3, D("2019-01-01"))
+    assert fwd[(2018, 1)] == pytest.approx(15000 / 14000 - 1)  # USD/IDR fell: rupiah up
+    assert fwd[(2018, 1)] > 0
+    assert fwd[(2018, 2)] == pytest.approx(14800 / 14700 - 1)
+    assert (2018, 3) not in fwd  # no point 3 months on
+
+
+def test_currency_return_never_crosses_a_gap():
+    fx = [(D("2018-01-31"), 15000.0), (D("2018-02-28"), 14800.0),
+          (D("2018-04-30"), 14000.0), (D("2018-05-31"), 14100.0), (D("2018-06-30"), 14200.0),
+          (D("2018-07-31"), 14300.0)]
+    fwd = OH.currency_forward(fx, 3, D("2019-01-01"))
+    assert (2018, 1) not in fwd and (2018, 2) not in fwd  # March is missing
+    assert fwd[(2018, 4)] == pytest.approx(14000 / 14300 - 1)
+
+
+def test_no_return_from_a_month_still_running():
+    src = return_stores()
+    fwd = OH.idn_returns(src, today=D("2019-12-15"), horizon=3)
+    # December 2019 is still running on 12-15: nothing priced to it
+    assert (2019, 8) in fwd["stocks"] and (2019, 9) not in fwd["stocks"]
+    assert (2019, 8) in fwd["currency"] and (2019, 9) not in fwd["currency"]
+    later = OH.idn_returns(src, today=D("2020-01-01"), horizon=3)
+    assert (2019, 9) in later["stocks"] and (2019, 9) in later["currency"]
+
+
+def test_bonds_return_stops_at_the_ten_year_hole():
+    tens = [(d.replace(day=1), 7.0) for d in OH.month_ends(D("2015-01-31"), D("2017-06-30"))]
+    tens += [(d.replace(day=1), 6.5) for d in OH.month_ends(D("2018-01-31"), D("2019-11-30"))]
+    fwd = OH.idn_returns(return_stores(tens=tens), today=D("2020-01-01"), horizon=3)["bonds"]
+    # averages are lagged a month (P74): the call on M is priced from M+1's average to M+4's
+    assert (2017, 2) in fwd and (2017, 3) not in fwd  # 2017-03 would need the 2017-07 average
+    assert not any((2017, m) in fwd for m in range(3, 12))
+    assert (2017, 12) in fwd  # the first call priced from 2018-01 on
+    assert fwd[(2017, 1)] == pytest.approx(7.0 / 100 * 3 / 12)  # flat yield: carry only
+
+
+def test_returns_join_the_rows_and_round_trip():
+    h = OH.replay(dates(), **stores())
+    fwd = OH.idn_returns(return_stores(), today=D("2020-01-15"), horizon=HORIZON)
+    hr = OH.with_returns(h, fwd)
+    row = hr.row(D("2018-03-31"))
+    assert row.forward["stocks"] == pytest.approx(fwd["stocks"][(2018, 3)])
+    assert row.forward["currency"] == pytest.approx(fwd["currency"][(2018, 3)])
+    assert row.forward["bonds"] == pytest.approx(fwd["bonds"][(2018, 3)])
+    assert hr.row(D("2019-12-31")).forward["stocks"] is None  # no close 3 months on
+    assert OH.OverrideHistory.from_dict(json.loads(json.dumps(hr.to_dict()))) == hr
+    cov = hr.return_coverage()
+    assert cov["stocks"]["last"] == "2019-09" and cov["bonds"]["last"] == "2019-07"
+
+
+def test_igsyc_closes_are_priced_on_their_own_dates():
+    tens = [(d.replace(day=1), 7.0) for d in OH.month_ends(D("2016-01-31"), D("2016-12-31"))]
+    src = return_stores(tens=tens)
+    igsyc = [Row(IGSYC_10Y, d, v, None, "idxscape_phei")
+             for d, v in ((D("2018-08-31"), 7.0), (D("2018-09-28"), 7.2),
+                          (D("2018-10-31"), 7.5), (D("2018-11-30"), 8.0))]
+    src = OH.ReturnSources(src.jci, src.dbnomics, Fake("idxscape_phei", igsyc), src.usdidr)
+    fwd = OH.idn_returns(src, today=D("2019-06-01"), horizon=3)["bonds"]
+    # daily closes are not lagged: the August call runs from 08-31 to 11-30
+    assert fwd[(2018, 8)] == pytest.approx(0.07 * 3 / 12 - OH.DURATION * (8.0 - 7.0) / 100)
+    assert (2018, 9) not in fwd

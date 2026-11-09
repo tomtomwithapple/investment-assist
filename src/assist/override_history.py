@@ -20,27 +20,62 @@ Each store is read once (`Preloaded`, up to the last month end) and sliced in me
 so 250 month ends take seconds, not the minutes of one read per month. No forward returns and no
 verdict here: which returns, horizon and sides the gate tests are phase L choices.
 
-`python -m assist.override_history [--today D] [--start D] [--rows]` replays the real stores
-(set ASSIST_SIBLINGS_ROOT) and prints the coverage per component and the summary.
+**Forward returns (S58, P76; phase L choice 2).** `idn_returns` gives, per IDN asset and month
+end, the return an IDR investor saw over the next `HORIZON` complete month ends, never across a
+gap in its price series and never from a month still running on `today`:
+
+- stocks: the JCI month-end close to the close `HORIZON` months later (`history.stock_forward`,
+  the P51 stitch, as P66);
+- bonds: `bond_returns` on the month-end 10Y (`history.bond_forward` over
+  `history.ten_year_months`: the OECD proxy's monthly averages lagged one month, IGSYC closes as
+  they stand; nothing across the 2025-01 → 2026-09 hole, as P66/P74);
+- currency: the rupiah against the US dollar, USD/IDR(t) / USD/IDR(t+h) − 1 on the P65 splice
+  (JISDOR from its first fixing, the MAS cross before), so a rupiah gain is positive.
+
+`with_returns` joins them onto the rows (`OverrideRow.forward`).
+
+`python -m assist.override_history [--today D] [--start D] [--rows] [--returns]` replays the
+real stores (set ASSIST_SIBLINGS_ROOT) and prints the coverage per component and the summary.
 """
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
+from types import SimpleNamespace
 
-from assist.history import last_month_end, month_ends
+from assist.history import (
+    HORIZON,
+    _complete,
+    _forward,
+    bond_forward,
+    last_month_end,
+    month_ends,
+    stock_forward,
+    ten_year_months,
+)
+from assist.layers.bonds.idn import DURATION
 from assist.layers.overrides import CLI, DBN_CPI, WEIGHTS, idn_overrides
+from assist.layers.rules.idn_stocks import month_end_closes
 from assist.sources.base import Row, Source, SourceUnavailable
 from assist.sources.bisfetcher import BI_RATE_M
 from assist.sources.bpslooker import CPI_YOY, GDP_YOY, TRADE_BALANCE
+from assist.sources.idxmethod import JCI
+from assist.sources.idxscape import JISDOR
 
 __all__ = [
     "ASSETS",
     "COMPONENTS",
+    "DURATION",
+    "HORIZON",
+    "ReturnSources",
+    "currency_forward",
+    "idn_returns",
+    "with_returns",
     "SCHEMA",
     "START",
     "ComponentPoint",
@@ -55,7 +90,7 @@ __all__ = [
 SUBJECT = "IDN"
 ASSETS = ("stocks", "bonds", "currency")
 COMPONENTS = tuple(WEIGHTS)  # growth, cli, inflation, trade, bi_rate
-SCHEMA = 1
+SCHEMA = 2  # 2: forward returns per asset (S58)
 START = date(2005, 1, 31)  # the MAS USD/IDR cross and BI rate (2005-07) start here
 # The series (and the store) each component reads, for its missing reason.
 SERIES = {
@@ -142,6 +177,8 @@ class OverrideRow:
     components: Mapping[str, ComponentPoint]
     missing: tuple[str, ...] = ()  # "component: reason"
     stale_inputs: tuple[str, ...] = ()
+    # per asset, the forward return over the history's horizon (None: not known yet, a gap)
+    forward: Mapping[str, float | None] = field(default_factory=dict)
 
     @property
     def complete(self) -> bool:
@@ -152,13 +189,15 @@ class OverrideRow:
         return {"as_of": self.as_of.isoformat(), "shift": dict(self.shift),
                 "raw": dict(self.raw),
                 "components": {n: c.to_dict() for n, c in self.components.items()},
-                "missing": list(self.missing), "stale_inputs": list(self.stale_inputs)}
+                "missing": list(self.missing), "stale_inputs": list(self.stale_inputs),
+                "forward": dict(self.forward)}
 
     @classmethod
     def from_dict(cls, d: Mapping) -> OverrideRow:
         return cls(date.fromisoformat(d["as_of"]), dict(d["shift"]), dict(d["raw"]),
                    {n: ComponentPoint.from_dict(c) for n, c in d["components"].items()},
-                   tuple(d.get("missing", ())), tuple(d.get("stale_inputs", ())))
+                   tuple(d.get("missing", ())), tuple(d.get("stale_inputs", ())),
+                   dict(d.get("forward", {})))
 
 
 def _ym(d: date) -> str:
@@ -186,6 +225,7 @@ class OverrideHistory:
     subject: str
     rows: tuple[OverrideRow, ...]
     store_dates: Mapping[str, str | None] = field(default_factory=dict)
+    horizon: int = HORIZON
 
     def row(self, as_of: date) -> OverrideRow:
         return next(r for r in self.rows if r.as_of == as_of)
@@ -236,14 +276,24 @@ class OverrideHistory:
                 "incomplete_after": self.incomplete_after_start(),
                 "shift_signs": signs}
 
+    def return_coverage(self) -> dict[str, dict]:
+        """Per asset: the first and last complete month with a forward return, and how many."""
+        out = {}
+        for a in ASSETS:
+            have = [r.as_of for r in self.rows if r.complete and r.forward.get(a) is not None]
+            out[a] = {"first": _ym(have[0]) if have else None,
+                      "last": _ym(have[-1]) if have else None, "months": len(have)}
+        return out
+
     def to_dict(self) -> dict:
-        return {"schema": SCHEMA, "subject": self.subject, "store_dates": dict(self.store_dates),
+        return {"schema": SCHEMA, "subject": self.subject, "horizon": self.horizon,
+                "store_dates": dict(self.store_dates),
                 "rows": [r.to_dict() for r in self.rows]}
 
     @classmethod
     def from_dict(cls, d: Mapping) -> OverrideHistory:
         return cls(d["subject"], tuple(OverrideRow.from_dict(r) for r in d["rows"]),
-                   dict(d.get("store_dates", {})))
+                   dict(d.get("store_dates", {})), d.get("horizon", HORIZON))
 
 
 # ---------------- replay ----------------
@@ -278,6 +328,67 @@ def replay(dates: Iterable[date], *, bps: Source, bisfetcher: Source, dbnomics: 
     return OverrideHistory(SUBJECT, tuple(rows), dict(store_dates or {}))
 
 
+# ---------------- forward returns (S58) ----------------
+
+Month = tuple[int, int]
+
+
+@dataclass(frozen=True)
+class ReturnSources:
+    """The price stores the IDN forward returns read (read-only): the JCI (`JciSource`, the P51
+    stitch), dbnomics (the OECD 10Y proxy), PHEI (IGSYC) and the P65 USD/IDR splice."""
+
+    jci: Source
+    dbnomics: Source
+    phei: Source
+    usdidr: Source
+
+    @classmethod
+    def default(cls) -> ReturnSources:
+        from assist.pipeline import IdnSources
+
+        src = IdnSources.default()
+        return cls(src.idxmethod, src.dbnomics, src.phei, src.usdidr)
+
+
+def _read(source: Source, sid: str, end: date) -> list[Row]:
+    try:
+        return source.rows([sid], end=end)
+    except SourceUnavailable:
+        return []
+
+
+def _fx_returns(run: Sequence[tuple[date, float]], h: int) -> list[tuple[date, float]]:
+    """USD/IDR(t) / USD/IDR(t+h) − 1: the rupiah's return against the dollar."""
+    return [(d, v / run[i + h][1] - 1.0) for i, (d, v) in enumerate(run[:max(0, len(run) - h)])]
+
+
+def currency_forward(points: Iterable[tuple[date, float]], horizon: int,
+                     today: date) -> dict[Month, float]:
+    """The rupiah's return against the US dollar from each month-end USD/IDR close to the close
+    `horizon` complete months later, only between consecutive months (never across a gap)."""
+    return _forward(_complete(points, today), horizon, _fx_returns)
+
+
+def idn_returns(src: ReturnSources, *, today: date,
+                horizon: int = HORIZON) -> dict[str, dict[Month, float]]:
+    """Per IDN asset, {(year, month): forward return} as known on `today` (phase L choice 2)."""
+    end = today - timedelta(days=1)
+    tens = ten_year_months(SimpleNamespace(dbnomics=src.dbnomics, phei=src.phei), end)
+    return {"stocks": stock_forward(_read(src.jci, JCI, end), horizon, today),
+            "bonds": bond_forward(tens, horizon, today),
+            "currency": currency_forward(month_end_closes(_read(src.usdidr, JISDOR, end)),
+                                         horizon, today)}
+
+
+def with_returns(h: OverrideHistory, fwd: Mapping[str, Mapping[Month, float]],
+                 horizon: int = HORIZON) -> OverrideHistory:
+    """`h` with each row's forward return per asset joined on its month."""
+    rows = tuple(dataclasses.replace(r, forward={
+        a: fwd.get(a, {}).get((r.as_of.year, r.as_of.month)) for a in ASSETS}) for r in h.rows)
+    return dataclasses.replace(h, rows=rows, horizon=horizon)
+
+
 def live_sources() -> dict[str, Source]:
     """The configured stores P17 reads (read-only)."""
     from assist.sources.bisfetcher import BisfetcherSource
@@ -300,15 +411,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--start", type=date.fromisoformat, default=START)
     ap.add_argument("--rows", action="store_true", help="print every row too")
     ap.add_argument("--json", type=str, default=None, help="write the history to this file")
+    ap.add_argument("--returns", action="store_true",
+                    help="join the forward returns per asset (S58)")
     args = ap.parse_args(argv)
     h = replay(month_ends(args.start, last_month_end(args.today)), **live_sources())
-    print(json.dumps({"coverage": h.coverage(), "summary": h.summary()}, indent=1))
+    report = {"coverage": h.coverage(), "summary": h.summary()}
+    if args.returns:
+        h = with_returns(h, idn_returns(ReturnSources.default(), today=args.today))
+        report["returns"] = h.return_coverage()
+    print(json.dumps(report, indent=1))
     if args.rows:
         for r in h.rows:
             sh = " ".join(f"{a[0]}{r.shift[a]:+.0f}" for a in ASSETS)
             dirs = " ".join(f"{n}{r.components[n].direction:+d}" if n in r.components
                             else f"{n}:-" for n in COMPONENTS)
-            print(f"{r.as_of} {sh:14} {dirs}  {' | '.join(r.missing)}")
+            fw = " ".join(f"{a[0]}{'-' if r.forward.get(a) is None else f'{r.forward[a]:+.3f}'}"
+                          for a in ASSETS) if r.forward else ""
+            print(f"{r.as_of} {sh:14} {dirs} {fw}  {' | '.join(r.missing)}")
     if args.json:
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(h.to_dict(), f, indent=1)
