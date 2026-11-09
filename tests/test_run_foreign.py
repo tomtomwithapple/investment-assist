@@ -319,8 +319,12 @@ def test_run_with_foreign_stores_missing_degrades(tmp_path, sources):
 
     recs = list(journal.Journal(paths.journal).read())
     ov = [r for r in recs if r["kind"] == "overrides"]
-    assert [r["subject"] for r in ov] == ["USA", "JPN", "EMU", "AUS", "SGP"]
-    emu = ov[2]["outputs"]
+    # P77: IDN journals its own overrides record first; every record carries the live monitor's
+    # fields (override fingerprint, completeness, the CLI's direction)
+    assert [r["subject"] for r in ov] == ["IDN", "USA", "JPN", "EMU", "AUS", "SGP"]
+    assert all(r["outputs"]["override_fingerprint"].startswith("sha256:")
+               and r["outputs"]["complete"] is False for r in ov)
+    emu = ov[3]["outputs"]
     assert set(emu["stances"]) == {f"{m}/{a}" for m in ("DEU", "FRA", "ITA", "ESP", "NLD")
                                    for a in ("stocks", "bonds", "currency")}
     assert all(v["held"] is False for v in emu["stances"].values())

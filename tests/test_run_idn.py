@@ -482,6 +482,7 @@ def test_cli_run_prints_the_idn_rules_and_candidates(tmp_path, sources, monkeypa
     assert "IDN bonds: neutral" in out and "IDN stocks: neutral" in out
     assert "bonds rule: no_call, proposes None; verdict: none" in out
     assert "gate none: no history for this rule" in out
+    assert "override gate IDN stocks: stocks up: none (no history for this override)" in out
     assert "layer 4: 0 IDN stock candidate(s)" in out
 
 
@@ -628,3 +629,77 @@ def test_gather_idn_without_a_usd_idr_source_reads_idxscape_as_before(tmp_path):
     idn = pipeline.gather_idn(DAY, regime(), missing_idn(tmp_path))
     assert idn.bonds.signal("jisdor_trend") is None
     assert "idxscape (missing)" in idn.bonds.stale_inputs
+
+
+# ---------------- the override gate in a run (P77, PLAN S59) ----------------
+
+
+class FakeOverrideBuild:
+    """override_history.live_build's shape: every month end complete with a +2 stocks shift,
+    no forward return yet (so every side is insufficient)."""
+
+    def __init__(self, fail: bool = False):
+        self.calls, self.fail = [], fail
+
+    def __call__(self, subject, day):
+        from assist.override_history import (
+            COMPONENTS,
+            START,
+            ComponentPoint,
+            OverrideHistory,
+            OverrideRow,
+            last_month_end,
+            month_ends,
+        )
+
+        self.calls.append((subject, day))
+        if self.fail:
+            raise RuntimeError("bps-looker locked")
+        rows = tuple(OverrideRow(d, {"stocks": 2.0, "bonds": 0.0, "currency": 0.0},
+                                 {"stocks": 2.0, "bonds": 0.0, "currency": 0.0},
+                                 {n: ComponentPoint(0.0, 0, d, n, "x") for n in COMPONENTS})
+                     for d in month_ends(START, last_month_end(day)))
+        return OverrideHistory(subject, rows)
+
+
+def test_run_writes_out_overrides_and_journals_the_override_fingerprint(tmp_path, sources):
+    from assist.eval import override_gate as og
+
+    sources.override_history = build = FakeOverrideBuild()
+    paths = pipeline.Paths.under(tmp_path / "repo")
+    res = pipeline.run(DAY, paths=paths, sources=sources, send=False)
+    assert res.ok and build.calls == [("IDN", DAY)]
+    doc = json.loads((paths.out / "overrides" / "IDN.json").read_text())
+    og.validator().validate(doc)
+    assert doc["override_fingerprint"] == og.override_fingerprint("IDN")
+    assert doc["tests"]["stocks"]["up"]["state"] == "insufficient"
+    assert res.idn.override_gate.passed_sides("stocks") == frozenset()
+    recs = [r for r in journal.Journal(paths.journal).read()
+            if r["kind"] == "overrides" and r["subject"] == "IDN"]
+    assert len(recs) == 1
+    out = recs[0]["outputs"]
+    assert out["override_fingerprint"] == doc["override_fingerprint"]
+    assert out["complete"] is False  # every IDN store is missing in this run
+    assert out["gate"]["stocks"] == {"up": "insufficient", "down": "insufficient"}
+    assert set(out["deltas"]) == {"stocks", "bonds", "currency"}
+    before = _out_bytes(paths.out)
+    pipeline.run(DAY, paths=paths, sources=sources, send=False)  # a weekly rerun
+    assert build.calls == [("IDN", DAY)]  # same month: nothing rebuilt
+    assert _out_bytes(paths.out) == before
+
+
+def test_override_gate_failing_never_fails_the_run(tmp_path, sources):
+    sources.override_history = FakeOverrideBuild(fail=True)
+    paths = pipeline.Paths.under(tmp_path / "repo")
+    res = pipeline.run(DAY, paths=paths, sources=sources, send=False)
+    assert res.ok
+    assert res.idn.override_gate.test("stocks", "up").state == "none"
+    assert any("override history IDN" in s and "bps-looker locked" in s
+               for s in res.stale_inputs)
+    assert not (paths.out / "overrides" / "IDN.json").exists()
+
+
+def test_run_without_an_override_builder_has_no_verdict(tmp_path, sources):
+    paths = pipeline.Paths.under(tmp_path / "repo")
+    res = pipeline.run(DAY, paths=paths, sources=sources, send=False)
+    assert res.ok and res.idn.override_gate.test("bonds", "down").state == "none"

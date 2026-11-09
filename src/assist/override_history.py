@@ -73,7 +73,10 @@ __all__ = [
     "DURATION",
     "HORIZON",
     "ReturnSources",
+    "complete_live",
     "currency_forward",
+    "expected_components",
+    "idn_build",
     "idn_returns",
     "with_returns",
     "SCHEMA",
@@ -83,6 +86,7 @@ __all__ = [
     "OverrideRow",
     "Preloaded",
     "last_month_end",
+    "live_build",
     "month_ends",
     "replay",
 ]
@@ -387,6 +391,41 @@ def with_returns(h: OverrideHistory, fwd: Mapping[str, Mapping[Month, float]],
     rows = tuple(dataclasses.replace(r, forward={
         a: fwd.get(a, {}).get((r.as_of.year, r.as_of.month)) for a in ASSETS}) for r in h.rows)
     return dataclasses.replace(h, rows=rows, horizon=horizon)
+
+
+def idn_build(src, day: date) -> OverrideHistory:
+    """The IDN override history on every month end `START` → `last_month_end(day)` with its
+    forward returns as known on `day`, from a `pipeline.IdnSources` (read-only)."""
+    h = replay(month_ends(START, last_month_end(day)), bps=src.bps, bisfetcher=src.bisfetcher,
+               dbnomics=src.dbnomics, satudatascape=src.satudatascape)
+    ret = ReturnSources(src.idxmethod, src.dbnomics, src.phei,
+                        src.usdidr if src.usdidr is not None else src.idxscape)
+    return with_returns(h, idn_returns(ret, today=day))
+
+
+def live_build(subject: str, day: date) -> OverrideHistory:
+    """The override history of `subject` on the real stores (read-only), for the gate."""
+    if subject != SUBJECT:
+        raise ValueError(f"no override history for {subject} yet")
+    from assist.pipeline import IdnSources
+
+    return idn_build(IdnSources.default(), day)
+
+
+def expected_components(subject: str = SUBJECT) -> tuple[str, ...]:
+    """Every component of the subject's override spec: P17's five for IDN; for a P28 market its
+    specs plus `fx` when it has an FX leg (choice 4: a month missing one is a no_call)."""
+    if subject == SUBJECT:
+        return COMPONENTS
+    from assist.layers.overrides_foreign import market
+
+    m = market(subject)
+    return (*(s.name for s in m.specs), *(("fx",) if m.fx is not None else ()))
+
+
+def complete_live(components: Iterable[str], subject: str = SUBJECT) -> bool:
+    """A live reading has every component of the subject's spec (choice 4)."""
+    return set(expected_components(subject)) <= set(components)
 
 
 def live_sources() -> dict[str, Source]:

@@ -1,0 +1,504 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tomtomtomdev/investment-assist/schema/overrides.schema.json",
+  "title": "investment-assist override gate (one subject's layer-2 overrides)",
+  "description": "PLAN S59 (P77): out/overrides/{SUBJECT}.json. Per asset and side (up: shift > 0 vs <= 0; down: shift < 0 vs >= 0) the placebo verdict on the point-in-time override history (complete months only), Holm over the subject's tests, the CLI-zeroed check, the live monitor on journalled overrides records, the state and the distance to MIN_N, keyed to the override fingerprint. A file whose override_fingerprint differs from the running code's counts as no verdict. Heuristic context, not investment advice.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "subject",
+    "as_of",
+    "override_fingerprint",
+    "since",
+    "params",
+    "assets",
+    "covers",
+    "passed",
+    "tests",
+    "stale_inputs",
+    "store_dates",
+    "rows",
+    "disclaimer"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "subject": {
+      "enum": [
+        "IDN",
+        "USA",
+        "JPN",
+        "EMU",
+        "AUS",
+        "SGP"
+      ]
+    },
+    "as_of": {
+      "$ref": "#/$defs/date"
+    },
+    "override_fingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "since": {
+      "$ref": "#/$defs/date",
+      "description": "First date this override fingerprint's file was written: the live monitor counts journalled records from here."
+    },
+    "params": {
+      "type": "object"
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "stocks",
+          "bonds",
+          "currency"
+        ]
+      }
+    },
+    "covers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "first",
+        "last",
+        "months",
+        "complete",
+        "complete_from"
+      ],
+      "properties": {
+        "first": {
+          "$ref": "#/$defs/month_or_null"
+        },
+        "last": {
+          "$ref": "#/$defs/month_or_null"
+        },
+        "months": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "complete": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "complete_from": {
+          "$ref": "#/$defs/month_or_null"
+        }
+      }
+    },
+    "passed": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "enum": [
+            "up",
+            "down"
+          ]
+        }
+      }
+    },
+    "tests": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "up": {
+            "$ref": "#/$defs/side"
+          },
+          "down": {
+            "$ref": "#/$defs/side"
+          }
+        }
+      }
+    },
+    "stale_inputs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "store_dates": {
+      "type": "object"
+    },
+    "rows": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      ]
+    },
+    "disclaimer": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "$defs": {
+    "date": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "month": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}$"
+    },
+    "month_or_null": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/month"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "on",
+        "off",
+        "no_call"
+      ],
+      "properties": {
+        "on": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "off": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "no_call": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "sides": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "on",
+        "off"
+      ],
+      "properties": {
+        "on": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "off": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "n_on",
+        "n_off",
+        "mean_on",
+        "mean_off",
+        "diff",
+        "t",
+        "ok"
+      ],
+      "properties": {
+        "n_on": {
+          "type": "integer"
+        },
+        "n_off": {
+          "type": "integer"
+        },
+        "mean_on": {
+          "type": "number"
+        },
+        "mean_off": {
+          "type": "number"
+        },
+        "diff": {
+          "type": "number"
+        },
+        "t": {
+          "type": "number"
+        },
+        "ok": {
+          "type": "boolean"
+        }
+      }
+    },
+    "verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passed",
+        "reason",
+        "rule",
+        "score_t",
+        "p_value",
+        "control_t",
+        "control_ts",
+        "seed",
+        "n_shuffles",
+        "n_controls",
+        "block",
+        "stride",
+        "direction",
+        "t_min",
+        "alpha"
+      ],
+      "properties": {
+        "passed": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "rule": {
+          "$ref": "#/$defs/edge"
+        },
+        "score_t": {
+          "type": "number"
+        },
+        "p_value": {
+          "type": "number"
+        },
+        "control_t": {
+          "type": "number"
+        },
+        "control_ts": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "n_shuffles": {
+          "type": "integer"
+        },
+        "n_controls": {
+          "type": "integer"
+        },
+        "block": {
+          "type": "integer"
+        },
+        "stride": {
+          "type": "integer"
+        },
+        "direction": {
+          "type": "integer"
+        },
+        "t_min": {
+          "type": "number"
+        },
+        "alpha": {
+          "type": "number"
+        }
+      }
+    },
+    "verdict_or_null": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/verdict"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "holm": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "index",
+            "rank",
+            "m",
+            "threshold",
+            "p",
+            "passed"
+          ],
+          "properties": {
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rank": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "m": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "threshold": {
+              "type": "number"
+            },
+            "p": {
+              "type": "number"
+            },
+            "passed": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "side": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "asset",
+        "side",
+        "direction",
+        "state",
+        "verdict",
+        "historical",
+        "placebo",
+        "cli_zeroed",
+        "holm",
+        "cli_holm",
+        "live",
+        "live_edge",
+        "sample",
+        "distance",
+        "window",
+        "why"
+      ],
+      "properties": {
+        "asset": {
+          "enum": [
+            "stocks",
+            "bonds",
+            "currency"
+          ]
+        },
+        "side": {
+          "enum": [
+            "up",
+            "down"
+          ]
+        },
+        "direction": {
+          "enum": [
+            1,
+            -1
+          ]
+        },
+        "state": {
+          "enum": [
+            "passed",
+            "insufficient",
+            "failed",
+            "revoked",
+            "live-passed",
+            "none"
+          ]
+        },
+        "verdict": {
+          "$ref": "#/$defs/verdict_or_null",
+          "description": "The effective verdict: a pass lets this side's shift cross a band in its direction (choice 11); null = no verdict."
+        },
+        "historical": {
+          "$ref": "#/$defs/verdict_or_null",
+          "description": "The placebo verdict combined with Holm and the CLI-zeroed check."
+        },
+        "placebo": {
+          "$ref": "#/$defs/verdict_or_null",
+          "description": "placebo.evaluate alone, before Holm."
+        },
+        "cli_zeroed": {
+          "$ref": "#/$defs/verdict_or_null",
+          "description": "The same test with the cli component's points removed (choice 10)."
+        },
+        "holm": {
+          "$ref": "#/$defs/holm"
+        },
+        "cli_holm": {
+          "$ref": "#/$defs/holm"
+        },
+        "live": {
+          "$ref": "#/$defs/verdict"
+        },
+        "live_edge": {
+          "$ref": "#/$defs/edge"
+        },
+        "sample": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "live"
+          ],
+          "properties": {
+            "historical": {
+              "$ref": "#/$defs/counts"
+            },
+            "live": {
+              "$ref": "#/$defs/counts"
+            }
+          }
+        },
+        "distance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "live",
+            "revoke"
+          ],
+          "properties": {
+            "historical": {
+              "$ref": "#/$defs/sides"
+            },
+            "live": {
+              "$ref": "#/$defs/sides"
+            },
+            "revoke": {
+              "$ref": "#/$defs/sides"
+            }
+          }
+        },
+        "window": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/month_or_null"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          ]
+        },
+        "why": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1381,7 +1381,7 @@ brackets and its reason.
   the forward return per month end as choice 2, never across a gap; joined to the S57 rows.
   Test first: the currency return's sign (rupiah up = positive), the bonds hole, no return
   from a month still running.
-- [ ] **S59 Override gate** (P77-override-gate). Choices 1, 3–8, 10. `eval/override_gate.py`
+- [x] **S59 Override gate** (P77-override-gate). Choices 1, 3–8, 10. `eval/override_gate.py`
   reusing `placebo.evaluate` and phase K's state logic: per asset and side, Holm per subject,
   the CLI-zeroed check, live monitor, fingerprint; `schema/overrides.schema.json`;
   `assist overrides` writes `out/overrides/IDN.json`; `assist run` reads it (rebuilds when stale,
@@ -1499,6 +1499,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S58 IDN override forward returns (P76-override-returns) | done | 2026-11-09 | this commit (branch `phase-l`) | 24 override_history (1855 total) | `idn_returns`: stocks JCI, bonds `bond_forward` (proxy lagged a month, IGSYC as is), currency USD/IDR(t)/USD/IDR(t+3) − 1 on the P65 splice (rupiah up = positive), never across a gap or from a running month; complete months with a 3-month return: stocks and currency 2017-07 → 2026-07 (106), bonds 2017-07 → 2024-08 (83) |
 | S61b P17 CPI fallback (P85-cpi-fallback) | done | 2026-11-09 | this commit (branch `phase-l`) | 3 overrides_idn, override_history updated (1858 total) | P17 inflation falls back to dbnomics `idn.cpi.yoy` when bps-looker CPI has no point 3 months back (the bps short line stays stale; the newest CPI level stays bps-looker's); live: no inflation hole, 112 complete months 2017-07 → 2026-10; rule fingerprints bonds `deb1f60c…` → `f9be0b94…`, stocks `d217e458…` → `457c6c85…` (out/rules/ rebuilds cold at S66) |
 | S62 Foreign fx on the USD/IDR splice (P80-foreign-fx) | done | 2026-11-09 | this commit (branch `phase-l`) | 4 overrides_foreign (1862 total) | P28 reads IDR per USD from the P65 splice (store key `usdidr`, MAS leg lagged a day); live USA fx +0.87% / 3m, JPN +0.38% (both inside 1.5%: shifts unchanged, USA 0 / −3 / +2, JPN −3 / −2 / +1); no JISDOR stale line |
+| S59 Override gate (P77-override-gate) | done | 2026-11-09 | this commit (branch `phase-l`) | 21 override_gate, 3 run_idn, 1 ops (1887 total) | `eval/override_gate.py`: up / down per asset on complete months, phase K numbers, Holm per subject, CLI-zeroed check, live monitor on `overrides` records of the override fingerprint, revocation; `out/overrides/IDN.json` (schema `overrides.schema.json`), `assist overrides`, `assist run` reads it and journals an IDN `overrides` record; live IDN: all six sides failed (S60), nothing moves |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`
