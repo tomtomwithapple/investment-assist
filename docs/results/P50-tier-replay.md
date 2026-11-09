@@ -168,3 +168,46 @@ user decision too.
 The `survivorship` flag still says "until idx-method V2"; V2 (`industry_membership`) has
 landed but holds one date (2026-11-06), so today's membership is still back-filled and the
 flag stands in substance.
+
+## Replay of record on `industry_membership` (2026-11-09, user-approved)
+
+The user approved two spec changes on 2026-11-09 (data sources only; `CONFIG`, weights,
+thresholds and both fingerprints unchanged, `sha256:6cf25fa49ea6…` / tier `sha256:bb4e3805c09d…`):
+
+1. **Membership from idx-method `industry_membership`. Done.** `membership_snapshots(series)`
+   reads the table read-only (`sub_sector_id` as the industry, `sub_sector` as the label, the
+   same 33 IDX sub-sectors S30's Stockbit groups match, with the same names). `replay_panel` and
+   `run` take either the old static mapping or dated snapshots; at each quarter end
+   `membership_at` takes the latest snapshot on or before it, else the first one back-filled, and
+   a name outside that snapshot sits the quarter out. The payload gains a `membership` block
+   (`source`, `snapshots`, `first_snapshot`, `last_snapshot`, `names`, `quarters_back_filled`,
+   `quarters_point_in_time`), and the survivorship flag now states how many scored quarters
+   are back-filled. `run_live` no longer reads `out/industries/IDN.json`; it is blocked only
+   when the table is missing or empty. Tests: 5 new (snapshot choice, one later snapshot
+   reproducing the static panel and verdict exactly, a reclassified and a dropped name moving
+   from their snapshot date, the live read from a fixture db with no IDN.json, blocked without
+   the table); 21 in the file, 1943 total; ruff clean.
+2. **Momentum and liquidity from bars back to 2016-11. Not done: no source.** `factor_series`
+   has daily `price` (close) from 2016-11-07 for 541 names already listed then, enough for
+   `mom_12_1` and `near_52w_high`, but no traded value or volume: its items are price, mktcap
+   and the five multiples. idx-method's `bars` table (the `idx-method-history` import of
+   `cache/history/`) starts 2021-10-18, and idxscape `stock_summary` (`value_idr`,
+   `volume_shares`) starts 2021-10-01. `days_traded_60` and `med_value_60d` therefore cannot be
+   computed before late 2021 without a proxy, so per the instruction the work stopped there.
+   Momentum alone from `factor_series` would not lengthen the replay either, because every name
+   still fails the liquidity gate before 2021-12.
+
+**Live verdict (`run_live`, written to `out/industries/IDN.replay.json`): failed**, the same
+numbers as the diagnostic above, as expected with one snapshot over the same 33 groups:
+
+| | |
+|---|---|
+| status | **failed**: t-stat 0.02 below 2.0 |
+| quarters | 15, 2022-12-31 → 2026-06-30, all 15 back-filled from the 2026-11-06 snapshot |
+| Tier A minus industry median, 3 m | +3.11 pt vs placebo +3.08 pt |
+| t / p / perm_p / control t | 0.02 / 0.508 / 0.468 / −0.17 |
+| pool | 963 member names (962 with history), 17.2 industries with a Tier A per quarter, 370 Tier A picks |
+| pillars alone (decide nothing) | value t 2.66, growth 2.16, health 2.12, momentum 1.53, quality 1.38 |
+
+The tiers stay context only (`context_only: true`). Any change to the weights after this
+result is post-hoc and would need an agent review the user decides.
