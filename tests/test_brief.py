@@ -352,3 +352,41 @@ def test_golden_brief_changes_only_by_the_home_line():
     lines.remove(home[0])
     assert "\n".join(lines) + ("\n" if md.endswith("\n") else "") == EXPECTED.read_text(
         encoding="utf-8")
+
+
+# ---------------- layer-2 override gate (S61, P79) ----------------
+
+
+def _with_layer2(blocks: dict) -> list[dict]:
+    out = copy.deepcopy(current())
+    for s in out:
+        if (s["subject"], s["asset"]) in blocks:
+            s["layer2"] = copy.deepcopy(blocks[(s["subject"], s["asset"])])
+    return out
+
+
+def _l2(shift, up="failed", down="failed", passed=(), crossed=False, held=False):
+    return {"shift": shift, "gate": {"up": up, "down": down}, "passed": list(passed),
+            "crossed": crossed, "held": held}
+
+
+def test_override_gate_line_when_no_side_passed():
+    stances = _with_layer2({("IDN", "bonds"): _l2(-4.0, held=False),
+                            ("IDN", "stocks"): _l2(-5.0, held=True)})
+    line = brief.override_gate_line(stances)
+    assert line == ("- Layer-2 override gate: no side passed (2 gated stance(s)); overrides move "
+                    "scores, never bands; held at the band: IDN stocks")
+    assert line in section(brief.render(stances), "Global regime")
+
+
+def test_override_gate_line_names_passes_and_crossings():
+    stances = _with_layer2({("IDN", "bonds"): _l2(-6.0, down="passed", passed=("down",),
+                                                  crossed=True),
+                            ("IDN", "stocks"): _l2(3.0, up="insufficient")})
+    line = brief.override_gate_line(stances)
+    assert "passed: IDN bonds down" in line
+    assert "crossed: IDN bonds → " in line
+
+
+def test_no_layer2_no_override_gate_line():
+    assert brief.override_gate_line(current()) is None

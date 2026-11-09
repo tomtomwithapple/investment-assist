@@ -398,6 +398,8 @@ class ForeignLayers:
     overrides: ForeignOverrides
     candidates: ForeignCandidates
     edges: dict[tuple[str, str], IdrEdge] = field(default_factory=dict)
+    # P79: the override gate per P28 market (out/overrides/<MARKET>.json); EMU's for its members
+    override_gates: dict[str, override_gate.OverrideGate] = field(default_factory=dict)
 
     def valuation(self, subject: str) -> IndexValuation | None:
         return next((v for v in self.candidates.valuations if v.market.subject == subject), None)
@@ -405,7 +407,8 @@ class ForeignLayers:
     @property
     def stale_inputs(self) -> list[str]:
         edges = [s for e in self.edges.values() for s in e.stale_inputs]
-        return [*self.overrides.stale_inputs, *self.candidates.stale_inputs, *edges]
+        gates = [s for g in self.override_gates.values() for s in g.stale_inputs]
+        return [*self.overrides.stale_inputs, *self.candidates.stale_inputs, *edges, *gates]
 
 
 @dataclass
@@ -473,7 +476,9 @@ def gather(day: date, sources: Sources, history: Sequence[Mapping] = (),
         stale += idn.stale_inputs
     foreign = None
     if sources.foreign is not None and layer1 is not None:
-        foreign = gather_foreign(day, sources.foreign)
+        foreign = gather_foreign(day, sources.foreign, history=history,
+                                 overrides_dir=overrides_dir,
+                                 override_history=sources.override_history)
         overrides = (*overrides, *foreign_override_rows(foreign))
         stale += foreign.stale_inputs
     return Layers(day, layer1, reg, weights, overrides=tuple(overrides),
@@ -553,12 +558,17 @@ def _with_fx_seam(bonds: IdnBonds, fx: Any) -> IdnBonds:
         sources=tuple(dict.fromkeys(sources)))
 
 
-def gather_foreign(day: date, src: ForeignSources) -> ForeignLayers:
-    """The foreign layers on `day`: P28's overrides, P29's index valuations, and the IDR edge of
-    stocks, bonds and currency in every market P29 covers."""
+def gather_foreign(day: date, src: ForeignSources, *, history: Sequence[Mapping] = (),
+                   overrides_dir: Path | None = None,
+                   override_history: override_gate.Build | None = None) -> ForeignLayers:
+    """The foreign layers on `day`: P28's overrides, P29's index valuations, the IDR edge of
+    stocks, bonds and currency in every market P29 covers, and each P28 market's override gate
+    (`override_gates`, P79; never raises)."""
     fo = foreign_overrides(day, src.overrides)
     fc = foreign_candidates(day, src.candidates)
-    return ForeignLayers(fo, fc, idr_edges_from(fc, src.candidates, day))
+    gates = {m.subject: override_gates(day, m.subject, history, overrides_dir, override_history)
+             for m in fo.markets}
+    return ForeignLayers(fo, fc, idr_edges_from(fc, src.candidates, day), gates)
 
 
 def foreign_override_rows(foreign: ForeignLayers) -> tuple[Override, ...]:
@@ -708,6 +718,23 @@ def _verdict_text(v: Verdict | None) -> str:
     return "none" if v is None else ("passed" if v.passed else "not passed") + f", {v.reason}"
 
 
+def override_view(score: AssetScore, layers: Layers) -> stance.OverrideGateView | None:
+    """The override gate that reaches one stance (choice 11): IDN's for IDN, the P28 market's for
+    a foreign subject (EMU's for DEU, FRA, ITA, ESP, NLD); None where there is no gate or the
+    asset is not gated (KOR, TWN, commodities, foreign stocks outside USA)."""
+    g = None
+    if score.subject == HOME and layers.idn is not None:
+        g = layers.idn.override_gate
+    elif layers.foreign is not None and score.subject in FOREIGN:
+        market = "EMU" if score.subject in EMU_MEMBERS else score.subject
+        g = layers.foreign.override_gates.get(market)
+    if g is None or (score.asset, "up") not in g.tests:
+        return None
+    return stance.OverrideGateView(g.passed_sides(score.asset),
+                                   {s: g.test(score.asset, s).state for s in override_gate.SIDES},
+                                   g.line(score.asset))
+
+
 def rule_view(score: AssetScore, layers: Layers) -> stance.RuleView | None:
     """What layers 2–4 add to one stance beyond the overrides: an IDN rule (`_idn_view`) or a
     foreign subject's IDR edge and index candidate (`_foreign_view`)."""
@@ -806,7 +833,7 @@ def build(layers: Layers, fingerprint: str) -> list[dict]:
     out = [stance.build_stance(score=s, regime=layers.regime, weights=layers.weights,
                                overrides=layers.overrides, as_of=layers.day,
                                fingerprint=fingerprint, rule=rule_view(s, layers),
-                               home=layers.home)
+                               home=layers.home, override_gate=override_view(s, layers))
            for s in sorted(layers.scores, key=lambda s: (s.subject, s.asset))]
     stance.apply_limits(out)
     for p in out:
@@ -888,8 +915,11 @@ def _journal_foreign(j: journal.Journal, layers: Layers, stances: Mapping, fp: s
             {o.asset: o.delta for o in m.overrides}, m.raw,
             override_history.complete_live((c.name for c in m.components), m.subject),
             None if cli is None else cli.direction,
-            override_gate.override_fingerprint(m.subject))
-        outputs.update({"stances": _reached(stances, members), "moves_band": False})
+            g.fingerprint if (g := f.override_gates.get(m.subject)) is not None
+            else override_gate.override_fingerprint(m.subject))
+        reached = _reached(stances, members)
+        outputs.update({"gate": g.states() if g is not None else None, "stances": reached,
+                        "moves_band": any(v["crossed"] for v in reached.values())})
         j.record(kind="overrides", fingerprint=fp, subject=m.subject, as_of=layers.day,
                  run_id=run_id, inputs=m, outputs=outputs)
     for m in cf.MARKETS:
@@ -933,15 +963,18 @@ def _journal_idn(j: journal.Journal, layers: Layers, stances: Mapping, fp: str,
 
 
 def _reached(stances: Mapping, members: Sequence[str]) -> dict:
-    """Per stance an override reached: stance, score, layer-1 score, whether the band held."""
+    """Per stance an override reached: stance, score, layer-1 score, whether the band held and
+    whether a passed side crossed it (P79)."""
     out = {}
     for s in members:
         for a in FOREIGN_ASSETS:
             p = stances.get((s, a))
             if p is not None:
+                l2 = p.get("layer2") or {}
                 out[f"{s}/{a}"] = {"stance": p["stance"], "score": p["score"],
                                    "layer1_score": p["layer1_score"],
-                                   "held": stance.stance_for(p["score"]) != p["stance"]}
+                                   "held": bool(l2.get("held")),
+                                   "crossed": bool(l2.get("crossed"))}
     return out
 
 
@@ -958,8 +991,9 @@ def _journal_idn_overrides(j: journal.Journal, layers: Layers, stances: Mapping,
         override_history.complete_live(c.name for c in ov.components),
         None if cli is None else cli.direction,
         og.fingerprint if og is not None else override_gate.override_fingerprint(HOME))
-    outputs.update({"gate": og.states() if og is not None else None,
-                    "stances": _reached(stances, (HOME,)), "moves_band": False})
+    reached = _reached(stances, (HOME,))
+    outputs.update({"gate": og.states() if og is not None else None, "stances": reached,
+                    "moves_band": any(v["crossed"] for v in reached.values())})
     j.record(kind="overrides", fingerprint=fp, subject=HOME, as_of=layers.day, run_id=run_id,
              inputs=ov, outputs=outputs)
 

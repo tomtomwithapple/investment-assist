@@ -358,3 +358,68 @@ def test_cli_run_prints_the_foreign_layers(tmp_path, sources, monkeypatch, capsy
 def test_foreign_layers_are_journalable():
     assert journal.canonical(foreign_layers())
     assert json.loads(journal.canonical(foreign_layers().edges))
+
+
+# ---------------- phase L (S61, P79): foreign override gates reach the stance ----------------
+
+
+def gate_with(subject: str, *passed: tuple[str, str]):
+    """A gate whose `passed` (asset, side) pairs passed and every other side is none."""
+    import dataclasses as dc
+
+    from assist.eval import override_gate as og
+
+    g = og.evaluate_subject(subject, None, records=(), day=DAY,
+                            fingerprint="sha256:" + "c" * 64, since=DAY)
+    return dc.replace(g, tests={k: dc.replace(t, state="passed") if k in passed else t
+                                for k, t in g.tests.items()})
+
+
+def test_a_passed_emu_down_side_lowers_every_member_bond_stance():
+    fl = foreign_layers()
+    fl.override_gates = {"EMU": gate_with("EMU", ("bonds", "down"))}
+    lay = layers_with(fl, [score(m, "bonds", 45.0) for m in ("DEU", "FRA", "NLD")])
+    for m in ("DEU", "FRA", "NLD"):
+        p = stance_of(lay, m, "bonds")
+        assert p["score"] == 36.0 and p["stance"] == "underweight"
+        assert p["layer2"]["crossed"] is True and p["layer2"]["passed"] == ["down"]
+        assert p["layer2"]["gate"] == {"up": "none", "down": "passed"}
+        assert any("crosses to underweight" in d and "override gate EMU bonds" in d
+                   for d in p["drivers"])
+
+
+def test_an_up_pass_does_not_let_a_down_shift_cross():
+    fl = foreign_layers()
+    fl.override_gates = {"EMU": gate_with("EMU", ("bonds", "up"))}
+    p = stance_of(layers_with(fl, [score("DEU", "bonds", 45.0)]), "DEU", "bonds")
+    assert p["stance"] == "neutral" and p["layer2"]["held"] is True
+
+
+def test_a_subject_or_asset_without_a_gate_has_none():
+    fl = foreign_layers()
+    fl.override_gates = {"EMU": gate_with("EMU", ("bonds", "down"))}
+    lay = layers_with(fl, [score("KOR", "bonds", 45.0), score("DEU", "stocks", 55.0)])
+    assert stance_of(lay, "KOR", "bonds")["layer2"]["gate"] is None
+    deu = stance_of(lay, "DEU", "stocks")  # EMU stocks are not gated (no index price)
+    assert deu["layer2"]["gate"] is None and deu["layer2"]["passed"] == []
+
+
+def test_run_writes_an_override_gate_per_market(tmp_path, sources):
+    from test_run_idn import FakeOverrideBuild
+
+    from assist.eval import override_gate as og
+
+    sources.override_history = build = FakeOverrideBuild()
+    paths = pipeline.Paths.under(tmp_path / "repo")
+    res = pipeline.run(DAY, paths=paths, sources=sources, send=False)
+    assert res.ok
+    assert sorted(s for s, _ in build.calls) == sorted(og.SUBJECTS)
+    for s in og.SUBJECTS:
+        og.validator().validate(json.loads((paths.out / "overrides" / f"{s}.json").read_text()))
+    deu = next(p for p in res.stances if (p["subject"], p["asset"]) == ("DEU", "bonds"))
+    assert deu["layer2"]["gate"] == {"up": "insufficient", "down": "insufficient"}
+    recs = [r for r in journal.Journal(paths.journal).read() if r["kind"] == "overrides"]
+    emu = next(r for r in recs if r["subject"] == "EMU")["outputs"]
+    assert emu["gate"]["bonds"] == {"up": "insufficient", "down": "insufficient"}
+    assert emu["moves_band"] is False
+    assert all(v["crossed"] is False for v in emu["stances"].values())

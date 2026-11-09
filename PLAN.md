@@ -1390,7 +1390,7 @@ brackets and its reason.
 - [x] **S60 IDN override walk-forward, live** (P78-override-walk). Docs only: per asset and
   side on/off, t, p, Holm rank, control t, CLI-zeroed result, distance to 10/10, diagnostics
   (1-month horizon, local returns). No threshold change.
-- [ ] **S61 A passed side crosses a band** (P79-override-stance). Choice 11. `build_stance`
+- [x] **S61 A passed side crosses a band** (P79-override-stance). Choice 11. `build_stance`
   reads each override verdict; a passed side's shift may cross in its direction; driver,
   journal, stance schema minor bump, `/signals` and brief show the gate state; MODEL_VERSION
   0.6.0. Test first: an up pass lifts neutral to overweight on a +6 shift from 57; a down shift
@@ -1507,6 +1507,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S60 IDN override walk-forward (P78-override-walk) | done | 2026-11-09 | this commit (branch `phase-l`) | docs only (1887 total) | horizon 3, complete months: stocks up 24/13 t 1.08 p 0.186, down 12/25 t 0.92 p 0.225; bonds up 13/16 t −0.99, down 15/14 t −1.03; currency up 13/24 t 1.75 p 0.122, **down 15/22 t 2.47 p 0.047** (Holm needs 0.0083; CLI zeroed t 0.95); all six failed, none insufficient; no override may cross a band; 1-month and per-component diagnostics nothing near |t| 2 |
 | S63 Foreign override input history (P81-foreign-override-inputs) | done | 2026-11-09 | this commit (branch `phase-l`) | 9 override_history (1896 total) | `foreign_replay`: P28 on 262 month ends in 86 s, stores read once, GDPC1 at its vintage per date, ausdata per date, AUS fx on the MAS cross until RBA AUD/IDR has 3 months (2023-04); complete months USA 259, JPN 259, EMU 259 (from 2005-04), AUS 155 (from 2013-12, the AGS curve), SGP 247 (2006-04); GDP read at today's revision would flip USA growth in 64 of 262 months; locked reads retried |
 | S64 Foreign forward returns (P82-foreign-returns) | done | 2026-11-09 | this commit (branch `phase-l`) | 5 override_history (1901 total) | `foreign_returns`: currency = IDR per local unit (MAS crosses), bonds = local 10Y `bond_returns` × the FX move, USA stocks = SPY × IDR per USD; complete months with a 3-month IDR return: USA bonds and currency 256 (2005-04 → 2026-07), stocks 127 (2016-01 →), JPN 256, EMU 254 / 256, AUS 152 (2013-12 →), SGP 244 |
+| S61 A passed side crosses a band (P79-override-stance) | done | 2026-11-09 | this commit (branch `phase-l`) | 7 stance, 4 run_foreign, 3 brief, 3 view_signals (1918 total) | `build_stance(override_gate=)`: a shift crosses a band only in the direction of a passed side, else held and named; `layer2` block (stance schema 1.3.0), MODEL_VERSION 0.6.0, `override_moves_stance` "passed_side_only"; foreign gates in the run, EMU's reaching its five members; journal `moves_band` per stance; brief line and `/signals` gate column; IDN: no side passed, nothing moves |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

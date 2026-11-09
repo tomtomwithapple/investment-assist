@@ -88,7 +88,7 @@ OVERRIDES_SCHEMA = SCHEMA_DIR / "overrides.schema.json"
 SIDES = {"up": 1, "down": -1}  # the shift sign tested as on, and the sign of its claimed edge
 STATES = ("passed", "insufficient", "failed", "revoked", "live-passed", "none")
 SUBJECTS = ("IDN", "USA", "JPN", "EMU", "AUS", "SGP")
-LIVE_SUBJECTS = ("IDN",)  # the subjects `override_history.live_build` can replay
+LIVE_SUBJECTS = SUBJECTS  # the subjects `override_history.live_build` can replay
 # Choice 13: which assets have a forward return to gate on. No JP / euro-area / AU / SG equity
 # index price is in any store, so only USA stocks are gated abroad.
 ASSETS = {"IDN": ("stocks", "bonds", "currency"), "USA": ("stocks", "bonds", "currency"),

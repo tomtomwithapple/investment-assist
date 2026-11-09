@@ -12,7 +12,7 @@ from pathlib import Path
 
 import httpx
 
-from assist import brief, doctor, journal, notify, paper, pipeline, stance, status, web
+from assist import brief, doctor, journal, notify, paper, pipeline, status, web
 from assist.layers import regime as regime_layer
 from assist.layers import undervalued
 from assist.layers.types import DISCLAIMER
@@ -298,15 +298,23 @@ def _print_foreign(res: pipeline.RunResult) -> None:
     f = res.foreign
     for m in f.overrides.markets:
         shifts = ", ".join(f"{o.asset} {o.delta:+.0f}" for o in m.overrides)
-        print(f"foreign overrides {m.subject}: {shifts}")
+        g = f.override_gates.get(m.subject)
+        gate = "" if g is None else "; gate passed: " + (", ".join(
+            f"{a} {'/'.join(sorted(g.passed_sides(a)))}" for a in ("stocks", "bonds", "currency")
+            if g.passed_sides(a)) or "none")
+        print(f"foreign overrides {m.subject}: {shifts}{gate}")
     print("  KOR, TWN: no layer-2 overrides (P28 covers USA, JPN, EMU, AUS, SGP); layer-1 score"
           " stands")
     foreign = [s for s in res.stances if s["subject"] in pipeline.FOREIGN
                and s["asset"] in pipeline.FOREIGN_ASSETS]
     held = [f"{s['subject']} {s['asset']} ({s['score']:.1f})" for s in foreign
-            if stance.stance_for(s["score"]) != s["stance"]]
+            if (s.get("layer2") or {}).get("held")]
+    crossed = [f"{s['subject']} {s['asset']} → {s['stance']}" for s in foreign
+               if (s.get("layer2") or {}).get("crossed")]
     if held:
-        print(f"  band held until the overrides beat a placebo: {', '.join(held)}")
+        print(f"  band held until that side passes its override gate: {', '.join(held)}")
+    if crossed:
+        print(f"  band crossed by a passed override side: {', '.join(crossed)}")
     vals = f.candidates.valuations
     passing = sum(v.passes for v in vals)
     print(f"foreign layer 4: {len(vals)} index candidate(s), {passing} passing. Context only:"

@@ -480,6 +480,29 @@ def home_line(stances: Sequence[Mapping]) -> str | None:
     return line
 
 
+def override_gate_line(stances: Sequence[Mapping]) -> str | None:
+    """The brief's layer-2 override gate line (S61): the sides that passed their gate, the bands
+    a passed side crossed, and the stances held at the band; None when no stance carries a
+    gate (`layer2.gate`)."""
+    gated = [s for s in stances if (s.get("layer2") or {}).get("gate")]
+    if not gated:
+        return None
+    passed = [f"{_label(s)} {'/'.join(s['layer2']['passed'])}" for s in gated
+              if s["layer2"].get("passed")]
+    crossed = [f"{_label(s)} → {s['stance']}" for s in gated if s["layer2"].get("crossed")]
+    held = [_label(s) for s in gated if s["layer2"].get("held")]
+    if passed:
+        line = f"- Layer-2 override gate: passed: {', '.join(passed)}"
+        if crossed:
+            line += f"; crossed: {', '.join(crossed)}"
+    else:
+        line = (f"- Layer-2 override gate: no side passed ({len(gated)} gated stance(s)); "
+                "overrides move scores, never bands")
+    if held:
+        line += f"; held at the band: {', '.join(held)}"
+    return line
+
+
 def home_message_line(stances: Sequence[Mapping]) -> str | None:
     """The Telegram line (S54): only on a home risk_off."""
     h = _home(stances)
@@ -569,6 +592,9 @@ def render(current: Sequence[Mapping], previous: Sequence[Mapping] | None = None
         home = home_line(stances)
         if home:
             out.append(home)
+        gate = override_gate_line(stances)
+        if gate:
+            out.append(gate)
         fps = sorted({_fingerprint(s["model_fingerprint"]) for s in stances})
         out.append(f"- Model: `{'`, `'.join(fps)}`")
     else:

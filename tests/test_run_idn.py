@@ -396,7 +396,7 @@ def test_run_puts_the_home_regime_on_idn_legs_and_in_the_regime_record(tmp_path,
     assert res.home.state == "neutral" and res.home.points == 0  # every store missing
     for asset in ("bonds", "stocks"):
         p = valid(json.loads((paths.out / "IDN" / f"{asset}.json").read_text()))
-        assert p["schema_version"] == "1.2.0" and p["model_version"] == "0.5.0"
+        assert p["schema_version"] == "1.3.0" and p["model_version"] == "0.6.0"
         assert p["home_regime"]["state"] == "neutral"
         assert "idxscape (missing)" in p["home_regime"]["stale_inputs"]
     for f in paths.out.glob("[A-Z]*/*.json"):
