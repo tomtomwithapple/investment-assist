@@ -1176,3 +1176,121 @@ slices:
       record the old and new fingerprints, the rule states in out/rules/, the home regime and
       every IDN stance's entry. Open data gaps gets the 10Y ask (P69). CLAUDE.md (decision rules,
       coverage) only with the user's OK.
+
+  # ---------------- phase L: layer-2 overrides on their history (planned 2026-11-09) ----------------
+  # Choices 1-13 in PLAN.md (Phase L) are open; every slice after P75 waits for them. Thresholds and
+  # band-crossing rules are committed before a walk-forward judges them.
+  - id: P75-override-inputs
+    title: "PLAN S57: point-in-time input history of the IDN overrides: P17 unchanged on every month end, each store read once, components, shifts, missing reasons, coverage"
+    depends_on: [F10-phase-k]
+    owns: ["src/assist/override_history.py", "tests/test_override_history.py", "docs/results/P75-override-inputs.md"]
+    accept: uv run pytest -q tests/test_override_history.py tests/layers/test_overrides_idn.py && uv run ruff check .
+    estimate: 1
+    notes: >-
+      Plumbing outside the model fingerprint (as assist.history). No forward returns, no verdict,
+      no threshold: depends on no phase L choice. Preloaded wraps a store, reads it once up to the
+      last month end and slices it per date like the adapters; P17's own LAG decides what is known.
+      Tests first: poisoning every value not yet known on a cut-off moves no row; zero lags would
+      leak; one read per store; the 2024-style CPI splice hole. Live: coverage per component.
+  - id: P76-override-returns
+    title: "PLAN S58: forward return per IDN asset on the override month ends (JCI, 10Y bond return, rupiah vs USD), never across a gap"
+    depends_on: [P75-override-inputs]
+    owns: ["src/assist/override_history.py", "tests/test_override_history.py", "docs/results/P76-override-returns.md"]
+    accept: uv run pytest -q tests/test_override_history.py && uv run ruff check .
+    estimate: 1
+    notes: >-
+      Waits for choices 2 and 3. Stocks history.stock_forward on jci(); bonds history.bond_forward
+      on history.ten_year_months (OECD proxy lagged one month, IGSYC as is); currency
+      USD/IDR(t)/USD/IDR(t+h) - 1 on the P65 splice (sources/usdidr), so a rupiah gain is
+      positive. Import, do not edit, history.py (it is in both rule fingerprints). Tests first:
+      currency sign, no return across the 10Y hole, none from a month still running.
+  - id: P85-cpi-fallback
+    title: "PLAN S61b: P17 inflation falls back to dbnomics when bps-looker CPI is too short for its 3-month window (choice 9)"
+    depends_on: [P75-override-inputs]
+    owns: ["src/assist/layers/overrides.py", "tests/layers/test_overrides_idn.py", "docs/results/P85-cpi-fallback.md"]
+    accept: uv run pytest -q tests/layers tests/test_override_history.py tests/test_history.py && uv run ruff check .
+    estimate: 0.5
+    notes: >-
+      Waits for choice 9. A P17 model change: the model fingerprint and both IDN rule
+      fingerprints change (overrides.py is in gate.RULE_FILES), so out/rules/ rebuilds cold at the
+      fan-in run (about 45 min). Must land before P77's first verdict. Test first: bps CPI known
+      for 2 months -> inflation from dbnomics idn.cpi.yoy, the bps short line still stale.
+  - id: P77-override-gate
+    title: "PLAN S59: override gate per subject x asset x side (up / down), Holm per subject, CLI-zeroed check, live monitor, fingerprint; assist overrides writes out/overrides/IDN.json"
+    depends_on: [P76-override-returns, P85-cpi-fallback]
+    owns: ["src/assist/eval/override_gate.py", "tests/eval/test_override_gate.py", "schema/overrides.schema.json", "src/assist/pipeline.py", "tests/test_run_idn.py", "src/assist/cli.py", "tests/test_ops.py", "docs/results/P77-override-gate.md"]
+    accept: uv run pytest -q tests/eval tests/test_run_idn.py tests/test_ops.py && uv run ruff check .
+    estimate: 1.5
+    notes: >-
+      Waits for choices 1, 3-8 and 10. Reuse placebo.evaluate and gate.py's state logic (import,
+      do not fork): complete months only, up side shift>0 vs <=0 direction +1, down side shift<0
+      vs >=0 direction -1, horizon/stride/block 3, MIN_N 10, Holm over the subject's six tests,
+      a side passes only if it also passes with cli zeroed; live monitor on journal `overrides`
+      records of this override fingerprint; revocation 5 / -1.0. Never fails a run. Tests first:
+      pass, insufficient, Holm blocks a lone p 0.03, cli-zeroed fail blocks, revoked,
+      fingerprint mismatch.
+  - id: P78-override-walk
+    title: "PLAN S60: IDN override walk-forward on the real stores: per asset and side on/off, t, p, Holm, control t, CLI-zeroed, distance to 10/10"
+    depends_on: [P77-override-gate]
+    owns: ["docs/results/P78-override-walk.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+    notes: >-
+      Live run only (scratch Paths). Diagnostics only: 1-month horizon, per-component signs. A bug
+      found goes back to P75-P77, not fixed here. No threshold changes.
+  - id: P79-override-stance
+    title: "PLAN S61: a passed override side may cross a band in its direction (choice 11); driver, journal, stance schema minor bump, /signals and brief show the gate state"
+    depends_on: [P78-override-walk]
+    owns: ["src/assist/stance.py", "tests/test_stance.py", "schema/stance.schema.json", "src/assist/pipeline.py", "tests/test_run_e2e.py", "src/assist/brief.py", "tests/test_brief.py", "src/assist/views/signals.py", "tests/test_view_signals.py", "docs/results/P79-override-stance.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 1
+    notes: >-
+      Waits for choice 11. MODEL_VERSION 0.6.0; MODEL_CONFIG override_moves_stance becomes per
+      subject/asset/side from out/overrides/. The EMU verdict reaches DEU, FRA, ITA, ESP, NLD. A
+      passed phase K rule still replaces the band stance after. Tests first: an up pass lifts
+      57 + 6 to overweight; a down shift on the same asset stays held; no pass, nothing moves.
+  - id: P80-foreign-fx
+    title: "PLAN S62: USA and JPN fx override components read USD/IDR from the P65 splice, live and in history (choice 12)"
+    depends_on: [P75-override-inputs]
+    owns: ["src/assist/layers/overrides_foreign.py", "tests/layers/test_overrides_foreign.py", "docs/results/P80-foreign-fx.md"]
+    accept: uv run pytest -q tests/layers tests/test_run_foreign.py && uv run ruff check .
+    estimate: 0.5
+    notes: >-
+      Waits for choice 12. Live 2026-11-09 both are n/a ("idxscape JISDOR (history from
+      2026-10-22)"). A live model change. Test first: 11 JISDOR fixings plus MAS history give a
+      3-month change.
+  - id: P81-foreign-override-inputs
+    title: "PLAN S63: point-in-time input history of the foreign overrides per market (P28 unchanged), GDPC1 through fred_as_of, AUS fx on the MAS cross before 2023"
+    depends_on: [P75-override-inputs, P80-foreign-fx]
+    owns: ["src/assist/override_history.py", "tests/test_override_history.py", "docs/results/P81-foreign-override-inputs.md"]
+    accept: uv run pytest -q tests/test_override_history.py && uv run ruff check .
+    estimate: 1
+    notes: >-
+      Waits for choice 13. Same Preloaded replay over foreign_overrides' sources; coverage per
+      market and component; the vintage of each store named.
+  - id: P82-foreign-returns
+    title: "PLAN S64: foreign forward returns in IDR unhedged: local 10Y bond return, IDR per local unit, USA stocks on SPY"
+    depends_on: [P76-override-returns, P81-foreign-override-inputs]
+    owns: ["src/assist/override_history.py", "tests/test_override_history.py", "docs/results/P82-foreign-returns.md"]
+    accept: uv run pytest -q tests/test_override_history.py && uv run ruff check .
+    estimate: 1
+    notes: >-
+      Waits for choices 2, 3, 13. DGS10, JGB 10Y, ea.bund.10y, FCMYGBAG10D, SGS 10Y through
+      bond_returns; MAS crosses for every currency; no JP/EU/AU/SG stocks (no index price).
+  - id: P83-foreign-walk
+    title: "PLAN S65: foreign override walk-forward on the real stores, per market as P78"
+    depends_on: [P77-override-gate, P82-foreign-returns]
+    owns: ["docs/results/P83-foreign-walk.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+    notes: Live run only. No threshold changes.
+  - id: F11-phase-l
+    kind: integration
+    title: "PLAN S66: phase L fan-in: merge phase-l to main, one live assist run (one new journal segment), Progress rows, STATUS, README, Open data gaps"
+    depends_on: [P79-override-stance, P83-foreign-walk]
+    owns: ["PLAN.md", "README.md", "CLAUDE.md", "docs/results/F11-phase-l.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+    notes: >-
+      Record the old and new model fingerprints, out/overrides/ and out/rules/ states (rules
+      rebuild cold if P85 landed). CLAUDE.md only with the user's OK.
