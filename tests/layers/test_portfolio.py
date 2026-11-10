@@ -103,7 +103,8 @@ def test_latest_loaded_statement_per_account(src):
 
 def test_money_is_minor_units_over_100(src):
     aj = _by_account(src.statements())["AJ-TEST"]
-    assert aj.holdings[0] == Holding("BBCA", "BANK CENTRAL ASIA Tbk", "100", 600_000.0, "IDR")
+    assert aj.holdings[0] == Holding("BBCA", "BANK CENTRAL ASIA Tbk", "100", 600_000.0, "IDR",
+                                     9_000.0, 900_000.0)
     assert aj.stated_value_idr == 850_000
     assert aj.holdings_idr == 850_000
 

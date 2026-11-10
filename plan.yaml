@@ -1319,12 +1319,14 @@ slices:
   - id: P86-cost-basis
     title: "PLAN S67: financer Holding carries avg_cost and cost_value, re-averaged through rolled trade documents; undervalued.cost_basis_from per market"
     depends_on: [P21b-entry-peak, F11-phase-l]
-    owns: ["src/assist/sources/financer.py", "tests/sources/test_financer.py", "src/assist/layers/undervalued.py", "tests/test_run_undervalued.py", "tests/fixtures/financer/**", "docs/results/P86-cost-basis.md"]
+    owns: ["src/assist/sources/financer.py", "tests/sources/test_financer.py", "src/assist/layers/undervalued.py", "tests/test_run_undervalued.py", "tests/fixtures/financer/**", "tests/layers/test_portfolio.py", "docs/results/P86-cost-basis.md"]
     accept: uv run pytest -q && uv run ruff check .
     estimate: 0.5
     notes: >-
-      Nothing reads the cost basis yet: no payload, schema or fingerprint change. A printed
-      average cost of 0 is None. Live: names below cost against the latest statement.
+      Nothing reads the cost basis yet: no payload or schema change. The model fingerprint does
+      change (journal.RULE_GLOBS hashes layers/**, cost_basis_from is in layers/undervalued.py)
+      with identical behaviour, so the new segment opens at the phase M fan-in run, not before.
+      A printed average cost of 0 is None. Live: names below cost against the latest statement.
   - id: P87-average-down
     title: "PLAN S68: candidates/average_down.py, gates 1-6, action average_down and cost block in the candidates schema, journalled"
     depends_on: [P86-cost-basis]

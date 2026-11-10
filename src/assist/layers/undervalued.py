@@ -55,7 +55,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from functools import cache
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import jsonschema
 
@@ -71,7 +71,9 @@ __all__ = [
     "TRANCHE_IDR",
     "US_COST",
     "UndervaluedInputs",
+    "CostBasis",
     "assemble",
+    "cost_basis_from",
     "gather_live",
     "gather_live_usa",
     "holdings_from",
@@ -142,6 +144,31 @@ def holdings_from(statements: Iterable[Any], market: str = "IDN") -> dict[str, f
             if classify(h.symbol, h.currency) == (market, "stocks"):
                 out[h.symbol] = out.get(h.symbol, 0.0) + float(h.value)
     return dict(sorted(out.items()))
+
+
+class CostBasis(NamedTuple):
+    """`avg_cost` per share over `quantity` shares: the lines whose cost is known."""
+
+    avg_cost: float
+    quantity: float
+
+
+def cost_basis_from(statements: Iterable[Any], market: str = "IDN") -> dict[str, CostBasis]:
+    """Quantity-weighted average cost and quantity per ticker of `market`'s stocks across
+    accounts (PLAN S67; the same mapping as `holdings_from`). Lines with no known cost are left
+    out, and so is a symbol none of whose lines has one. A label, never a signal: nothing reads
+    it yet."""
+    paid: dict[str, float] = {}
+    qty: dict[str, float] = {}
+    for s in statements:
+        for h in s.holdings:
+            q = float(h.quantity)
+            if (h.avg_cost is None or q <= 0
+                    or classify(h.symbol, h.currency) != (market, "stocks")):
+                continue
+            paid[h.symbol] = paid.get(h.symbol, 0.0) + h.avg_cost * q
+            qty[h.symbol] = qty.get(h.symbol, 0.0) + q
+    return {sym: CostBasis(paid[sym] / qty[sym], qty[sym]) for sym in sorted(qty)}
 
 
 # ---------------- assembly ----------------

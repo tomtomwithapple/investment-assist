@@ -276,6 +276,30 @@ def test_holdings_from_statements_keeps_idx_stocks_per_symbol():
     assert uv.holdings_from([st]) == {"BBCA": 700.0}
 
 
+def test_cost_basis_weights_two_accounts_by_quantity():
+    """PLAN S67: 100 sh at 9,000 and 300 sh at 7,000 are 400 sh at 7,500."""
+    a = Statement("ajaib", "A", "portfolio", DAY, None, None, 0.0,
+                  (Holding("BBCA", "", "100", 600.0, "IDR", 9_000.0, 900_000.0),
+                   Holding("FR0081", "", "200000", 9.0, "IDR", 1.0, 200_000.0),
+                   Holding("AAPL", "", "1", 5.0, "USD", 200.0, 200.0)))
+    b = Statement("stockbit", "B", "broker_soa", DAY, None, None, 0.0,
+                  (Holding("BBCA", "", "300", 1_800.0, "IDR", 7_000.0, 2_100_000.0),
+                   Holding("BMRI", "", "100", 500.0, "IDR", 6_000.0, 600_000.0),
+                   Holding("INCO", "", "12", 0.0, "IDR")))
+    got = uv.cost_basis_from([a, b])
+    assert got == {"BBCA": (7_500.0, 400.0), "BMRI": (6_000.0, 100.0)}  # no cost: left out
+    assert (got["BBCA"].avg_cost, got["BBCA"].quantity) == (7_500.0, 400.0)
+    assert list(got) == ["BBCA", "BMRI"]
+    assert uv.cost_basis_from([a, b], "USA") == {}  # layer 5 maps no USD line
+
+
+def test_cost_basis_averages_only_the_lines_with_a_known_cost():
+    st = Statement("ajaib", "A", "portfolio", DAY, None, None, 0.0,
+                   (Holding("BBCA", "", "100", 600.0, "IDR", 9_000.0, 900_000.0),
+                    Holding("BBCA", "", "50", 300.0, "IDR")))
+    assert uv.cost_basis_from([st]) == {"BBCA": (9_000.0, 100.0)}
+
+
 # ---------------- brief and Telegram ----------------
 
 

@@ -70,7 +70,7 @@ tiers wait on.
 | J. Review quick fixes (fingerprint scope, rebalance vs tilt, docs, USA universe) | S41–S44 | 4 / 4 |
 | K. Rules on their history, home regime (point-in-time rule gate, IDN home regime) | S45–S56 | 12 / 12 |
 | L. Layer-2 overrides on their history (point-in-time override gate, all 26 sides failed) | S57–S66, S61b | 11 / 11 |
-| M. Average down on a held name (cost basis in layer 5, gated rule, dip placebo) | S67–S71 | 0 / 5 |
+| M. Average down on a held name (cost basis in layer 5, gated rule, dip placebo) | S67–S71 | 1 / 5 |
 
 ### Open data gaps (fetcher side)
 
@@ -1458,6 +1458,9 @@ Parallel groups: S57 → {S58, S61b, S62} → {S59, S63} → {S60, S64} → {S61
   are 16–37% below cost; AMRT, PWON and BBNI are "trim in full: fails its screen". BMRI is the
   only held name that passes (−16.5% vs cost, margin 4.1pt, status `deep`) and it is over the 5%
   cap, so it is trimmed to the cap. No name would qualify today.
+- Corrected by S67's live check (2026-11-10): the 16–37% and BMRI −16.5% figures were the Ajaib
+  statement alone. Over both accounts: 67 IDN stock names, 61 below cost, six at 16% or more
+  below, BMRI −15.0%, total cost against value −8.8%.
 
 **Principle.** Cost basis is a label, never a signal. The test is "would the model buy this
 today if none were held", plus a falling-knife guard and room under the caps.
@@ -1488,12 +1491,14 @@ waits for both.
    rests on gates 1, 2, 4 and 5 until S69 passes; if S69 fails it stays context.] Reason:
    `entry.py`'s thresholds are measured on the history they would be tested on.
 
-- [ ] **S67 Cost basis in layer 5** (P86-cost-basis). `sources/financer.py`: `Holding` carries
+- [x] **S67 Cost basis in layer 5** (P86-cost-basis). `sources/financer.py`: `Holding` carries
   `avg_cost` and `cost_value` (None when the statement prints 0, as for an SBN line); `roll`
   recomputes the average through later trade documents (a buy moves it by its net amount, a sell
   leaves it). `undervalued.cost_basis_from(statements, market)`: quantity-weighted average cost
-  and quantity per symbol across accounts. Nothing reads it yet: no payload, schema or
-  fingerprint change. Test first: a statement line keeps its cost; a later buy re-averages it; a
+  and quantity per symbol across accounts. Nothing reads it yet: no payload or schema
+  change. The model fingerprint does change (`journal.RULE_GLOBS` hashes `layers/**`) with
+  identical behaviour, so the new segment opens at the phase M fan-in run (S71), not before.
+  Test first: a statement line keeps its cost; a later buy re-averages it; a
   sell does not; two accounts weight by quantity. Live: the names below cost against the
   2026-10-31 statement.
 - [ ] **S68 Average-down rule** (P87-average-down). `candidates/average_down.py`, pure: gates
@@ -1620,6 +1625,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S65 Foreign walk-forward (P83-foreign-walk) | done | 2026-11-09 | this commit (branch `phase-l`) | docs only (1918 total) | all 20 foreign sides failed, none insufficient (USA 6 incl. stocks on SPY 22/21 and 16/27; JPN, EMU, AUS, SGP bonds and currency); best placebo p USA stocks down 0.078, JPN bonds up 0.087; control t −0.21..+0.21; no override may cross a band anywhere; suspect: AUS currency inverted (1-month t −2.39 / −2.51), bonds wrong-signed in IDN, USA, SGP, EMU up (Open questions) |
 | S66 Phase L fan-in (F11-phase-l) | done | 2026-11-09 | merge `a8dd638` | 1919 on main | `assist run --no-send` 14:55 → 15:34 WIB (38 m 37 s, rule history cold 1,916 s): model `sha256:b68e9bce1774…` (0.6.0), journal 573 records, 6 models, chain ok; out/rules/ new fingerprints, both insufficient (bonds enter 3/11 reduce 1/13; stocks 0/14, 7/7); out/overrides/ IDN, USA, JPN, EMU, AUS, SGP all sides failed; no band crossed, FRA / ITA / USA bonds held; IDN stocks 43.5, bonds 49.0, currency 49.3, all neutral; Telegram not sent |
 | S15 Industry-relative value screen (S15-industry-value) | done | 2026-11-09 | this commit (branch `s15`) | 19 industry_value (1937 total) | 119 month ends, 95 scored 2018-11 → 2026-09: top − bottom quintile +0.85%/mo, **failed** t 1.76 < 2.0 (p 0.040, control t 0.37), no candidate; live 2026-11-05 pool 399 in 24 peer groups (14 sub-industries), 60 pass gates and floor; fitted leg alone t 2.44 (diagnostic); 17 s |
+| S67 Cost basis in layer 5 (P86-cost-basis) | done | 2026-11-10 | this commit (branch `phase-m`) | 10 financer, 2 run_undervalued, 1 portfolio expectation updated (1958 total) | `Holding.avg_cost` / `cost_value` (None when the statement prints 0: FR0080), `roll` re-averages through trade documents (a buy by its net amount, a sell in proportion), `undervalued.cost_basis_from`; nothing reads it; live, both accounts: 67 IDN stock names all with a cost, 61 below cost, six at 16% or more below (AMRT −36.7%, KKGI, CTRA, KLBF, TOWR, ASII), BMRI −15.0%, cost Rp58,905,894 vs value Rp53,697,910 (−8.8%); model fingerprint `13d8dceb4fa3…` → `0054161d53f8…` with identical behaviour (segment opens at S71) |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`
