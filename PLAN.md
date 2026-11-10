@@ -1699,7 +1699,15 @@ Parallel groups: S81 → S82 → S83 → S84.
     peaks +0.19pt against `ERP_BAND` 1.0, so the enter side is unreachable). Real growth is
     counted twice (`G_REAL` added to the EY) and so is the IDN country risk premium (CRP on
     top of a local-currency 10Y). Fixing both still gives 0 cheap months; dropping the CRP
-    alone gives 10, which would be fitting to this sample.
+    alone gives 10, which would be fitting to this sample. **Agent review 2026-11-10**
+    (`docs/results/R-stocks-valuation.md` on branch `review-stocks-valuation`, `97b162c`):
+    `G_REAL` is a full double count; of the CRP only the default spread is (the rest, ~0.6pt,
+    is real equity risk). Spec r1 (EY − real 10Y vs US ERP + CRP − default spread, phase K
+    numbers unchanged) gives 0 cheap months and identical gate verdicts; the two errors cancel
+    (~2pt each), and the gap is structural (JCI EY 5.35% vs ~10% needed). **Kept, not adopted**
+    (user 2026-11-10): fold r1 into the next valuation change that opens a segment anyway (the
+    J9 10Y read, the same fix in `candidates/hurdle.py`, or a free-float EY history), as an
+    edit to `idn_stocks.py` only so the bonds fingerprint holds.
   - *Headline CPI shocks.* The bonds rule's real yield subtracts headline CPI, so a one-off
     food or administered-price jump moves the real yield and the call.
   - *Non-resident SBN freshness.* DJPPR posts monthly with a lag (idxscape's whole history came
