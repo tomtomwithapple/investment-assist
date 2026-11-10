@@ -6,12 +6,13 @@ Fixture: `tests/fixtures/financer/` (made-up accounts; expected numbers in `seed
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from helpers import FIXTURES, make_sqlite
 
-from assist.sources.financer import FinancerSource, Statement
+from assist.sources.financer import FinancerSource, Holding, Statement, Trade, roll
 
 FIX = FIXTURES / "financer"
 
@@ -118,6 +119,94 @@ def test_positional_statement_still_builds():
     """Callers that build a Statement by position (layer-4 tests) keep working."""
     s = Statement("ajaib", "A", "portfolio", date(2026, 9, 30), None, None, None, ())
     assert s.owner == "tommy" and s.trade_docs == 0 and s.unheld == ()
+
+
+# ---------------- cost basis (PLAN S67, P86-cost-basis) ----------------
+
+_TRADE_DOC = """
+INSERT INTO documents (id, sha256, file_name, issuer, parser_id, doc_type, statement_date,
+    currency, number_locale, opening_minor, closing_minor, reconciled, status, account_ref,
+    account_kind) VALUES
+(30, 'x1', 'x.pdf', 'ajaib', 'ajaib_daily_v1', 'trades', '2026-10-05', 'IDR', 'id',
+    0, 0, 1, 'loaded', 'AJ-TEST', 'asset');
+INSERT INTO trades (document_id, trade_date, reference, symbol, side, board, quantity,
+    price_minor, gross_minor, net_minor, fees_minor, currency, dedup_key) VALUES
+"""
+
+
+def _cost(s: Statement) -> dict[str, tuple[float | None, float | None]]:
+    return {h.symbol: (h.avg_cost, h.cost_value) for h in s.holdings}
+
+
+def test_statement_line_keeps_its_cost(got):
+    # BBCA 100 sh printed at an average of 9,000 (cost 900,000), now worth 600,000
+    assert _cost(got["AJ-TEST"])["BBCA"] == (9_000.0, 900_000.0)
+    assert _cost(got["SB-TEST"])["PBS036"] == (1.0, 100_000.0)
+
+
+def test_printed_zero_cost_is_unknown(got):
+    # the right is printed with an average cost of 0, as an SBN line such as FR0080 is live
+    assert _cost(got["SB-TEST"])["INCO-R"] == (None, None)
+
+
+def test_later_buy_re_averages(got):
+    # UNVR 100 sh at 2,000 on the statement, then 100 bought for 210,000: 410,000 / 200
+    assert _cost(got["AJ-TWO"]) == {"UNVR": (2_050.0, 410_000.0)}
+
+
+def test_buy_moves_the_average_by_its_net_amount(tmp_path):
+    # 100 more BBCA at 6,000 with 1,500 of fees: (900,000 + 601,500) / 200
+    extra = _TRADE_DOC + ("(30, '2026-10-05', 'X', 'BBCA', 'buy', 'RG', '100', 600000, 60000000,"
+                          " 60150000, 150000, 'IDR', 'x');")
+    aj = {s.account: s for s in _db(tmp_path, "schema.sql", "seed.sql", extra=extra).statements()}
+    assert _cost(aj["AJ-TEST"])["BBCA"] == (7_507.5, 1_501_500.0)
+    assert _held(aj["AJ-TEST"])["BBCA"] == ("200", 1_200_000.0)
+    assert _cost(aj["AJ-TEST"])["FR0081"] == (1.0, 200_000.0)  # untouched line, as printed
+
+
+def test_sell_does_not_move_the_average(tmp_path):
+    extra = _TRADE_DOC + ("(30, '2026-10-05', 'X', 'BBCA', 'sell', 'RG', '40', 700000, 28000000,"
+                          " 27900000, 100000, 'IDR', 'x');")
+    aj = {s.account: s for s in _db(tmp_path, "schema.sql", "seed.sql", extra=extra).statements()}
+    assert _held(aj["AJ-TEST"])["BBCA"][0] == "60"
+    assert _cost(aj["AJ-TEST"])["BBCA"] == (9_000.0, 540_000.0)  # cost falls with the quantity
+
+
+def test_position_opened_by_trades_gets_its_cost_from_the_buys(got):
+    pris = got["SB-PRIS"]
+    assert _cost(pris) == {"BBRI": (4_100.0, 820_000.0)}  # 100 at 4,000 + 100 at 4,200
+    assert [(h.avg_cost, h.cost_value) for h in pris.unheld] == [(None, None)]  # ADRO
+
+
+def _roll(lines: tuple[Holding, ...], *trades: Trade) -> dict[str, Holding]:
+    base = Statement("ajaib", "A", "portfolio", date(2026, 9, 30), None, None, None, lines)
+    out = roll(base, "ajaib", "A", "tommy", date(2026, 10, 5), trades, 1)
+    return {h.symbol: h for h in out.holdings}
+
+
+def test_unknown_base_cost_stays_unknown_through_a_buy():
+    h = _roll((Holding("BBCA", "", "100", 600_000.0, "IDR"),),
+              Trade("BBCA", "buy", Decimal(100), 6_000.0, "IDR", 601_500.0))["BBCA"]
+    assert (h.quantity, h.avg_cost, h.cost_value) == ("200", None, None)
+
+
+def test_two_lines_of_one_symbol_pool_their_cost():
+    lines = (Holding("BBCA", "", "100", 600_000.0, "IDR", 9_000.0, 900_000.0),
+             Holding("BBCA", "", "300", 1_800_000.0, "IDR", 7_000.0, 2_100_000.0))
+    h = _roll(lines, Trade("BBCA", "sell", Decimal(200), 6_000.0, "IDR", 1_198_000.0))["BBCA"]
+    assert (h.quantity, h.avg_cost, h.cost_value) == ("200", 7_500.0, 1_500_000.0)
+
+
+def test_cost_is_unknown_once_a_line_was_sold_below_zero():
+    lines = (Holding("BBCA", "", "100", 600_000.0, "IDR", 9_000.0, 900_000.0),)
+    h = _roll(lines, Trade("BBCA", "sell", Decimal(300), 6_000.0, "IDR", 1_800_000.0),
+              Trade("BBCA", "buy", Decimal(500), 6_000.0, "IDR", 3_000_000.0))["BBCA"]
+    assert (h.quantity, h.avg_cost, h.cost_value) == ("300", None, None)
+
+
+def test_holding_without_cost_still_builds():
+    h = Holding("BBCA", "", "1", 600.0, "IDR")
+    assert h.avg_cost is None and h.cost_value is None
 
 
 # ---------------- movements (PLAN S38, P58-flows) ----------------

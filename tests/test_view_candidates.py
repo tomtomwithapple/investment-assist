@@ -122,7 +122,7 @@ def test_idn_passed_style_ranked_rows_with_null_size(out):
     bmri = re.search(r'<tr data-symbol="BMRI">(.*?)</tr>', s, re.S).group(1)
     cells = re.findall(r"<td[^>]*>(.*?)</td>", bmri, re.S)
     assert cells == ["1", "BMRI", "Keuangan", "hold", "16.25%", "+2.51pt", "+0.00pt", "+1.85pt",
-                     "67", "5,950 (typical, deep)", "IDR 4,010,000", "-"]
+                     "67", "5,950 (typical, deep)", "IDR 4,010,000", "-", "-", "-"]
     jpfa = re.search(r'<tr data-symbol="JPFA">(.*?)</tr>', s, re.S).group(1)
     assert "<td>no</td>" in jpfa and "<td>watch</td>" in jpfa
     dropped = re.search(r'<div class="dropped">(.*?)</div>', s, re.S).group(1)
@@ -267,3 +267,51 @@ def test_index_links_resolve(out):
     assert links
     for link in links:
         assert _get(out, link).status == 200, link
+
+
+# ---------------- average down (P89, PLAN S70) ----------------
+
+
+def _with_average_down(out: Path) -> None:
+    """AUS.json's sized JPFA row as a funded average down, plus an unfunded and a stopped name."""
+    p = json.loads((FIXTURES / "AUS.json").read_text())
+    row = next(r for s in p["styles"] for r in s["rows"] if r["size"])
+    row.update(action="average_down", held=True, held_idr=2e6,
+               cost_basis={"avg_cost": 2000.0, "quantity": 1000.0, "below_cost_pct": -12.5,
+                           "new_avg_cost": 1890.0},
+               average_down={"status": "average_down", "gate": None, "reason": "12.5% below"})
+    base = {"quantity": 100.0, "price": 900.0, "new_avg_cost": None}
+    p["average_down"] = {"underwater_pct": 5.0, "gate3": "context", "names": [
+        {"symbol": row["symbol"], "status": "average_down", "gate": None,
+         "reason": "12.5% below cost; sized", "avg_cost": 2000.0, "quantity": 1000.0,
+         "price": 1750.0, "below_cost_pct": -12.5, "new_avg_cost": 1890.0,
+         "entry_status": "deep"},
+        {**base, "symbol": "BMRI", "status": "unfunded", "gate": 5, "avg_cost": 1000.0,
+         "reason": "no budget: 96.9% held against a target of 48.0%", "below_cost_pct": -10.0,
+         "entry_status": "avoid"},
+        {**base, "symbol": "AMRT", "status": "stopped", "gate": 2, "avg_cost": 1400.0,
+         "reason": "trim in full: fails its screen", "below_cost_pct": -35.7,
+         "entry_status": None},
+        {**base, "symbol": "BBCA", "status": "stopped", "gate": 1, "avg_cost": 902.0,
+         "reason": "0.2% below cost (needs 5%)", "below_cost_pct": -0.2, "entry_status": None},
+    ]}
+    _write(out, "AUS.json", json.dumps(p))
+
+
+def test_average_down_columns_and_card(out):
+    _with_average_down(out)
+    body = _get(out, "/candidates/AUS").body
+    row = re.search(r'<tr data-symbol="JPFA">(.*?)</tr>', body, re.S).group(1)
+    cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+    assert cells[3] == "average_down" and cells[-3:-1] == ["2,000", "-12.5%"]
+    card = _card(body, "average-down")
+    assert "3 of 4 held names are 5% or more below their average cost" in card
+    assert "Entry status is context" in card
+    names = re.findall(r"<tr><td>([A-Z]+)</td>", card)
+    assert names == ["JPFA", "BMRI", "AMRT"]  # funded, unfunded, stopped; gate 1 left out
+    assert "<td>stopped (gate 2)</td>" in card and "<td>unfunded</td>" in card
+    assert "<td>1,890</td>" in card and "trim in full: fails its screen" in card
+
+
+def test_no_average_down_card_without_the_block(out):
+    assert 'class="card average-down"' not in _get(out, "/candidates/IDN").body

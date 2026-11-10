@@ -55,11 +55,11 @@ from dataclasses import dataclass, field
 from datetime import date
 from functools import cache
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import jsonschema
 
-from assist.candidates import costs, sizing
+from assist.candidates import average_down, costs, sizing
 from assist.candidates import hurdle as hurdle_mod
 from assist.layers.portfolio import classify
 from assist.layers.types import DISCLAIMER, SCHEMA_DIR, Regime
@@ -71,7 +71,9 @@ __all__ = [
     "TRANCHE_IDR",
     "US_COST",
     "UndervaluedInputs",
+    "CostBasis",
     "assemble",
+    "cost_basis_from",
     "gather_live",
     "gather_live_usa",
     "holdings_from",
@@ -86,7 +88,7 @@ __all__ = [
 ]
 
 SCHEMA = SCHEMA_DIR / "candidates.schema.json"
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"  # 1.1.0: action `average_down`, `cost_basis`, `average_down` (S68)
 STYLES = ("dividend_value", "garp")  # S15's industry_value has no expected return: not a style
 TRANCHE_IDR = 10e6  # P21's DEFAULT_ORDER: the tranche costs and capacity are judged at
 DROP_FLAGS = ("over_participation", "below_one_lot")
@@ -142,6 +144,31 @@ def holdings_from(statements: Iterable[Any], market: str = "IDN") -> dict[str, f
             if classify(h.symbol, h.currency) == (market, "stocks"):
                 out[h.symbol] = out.get(h.symbol, 0.0) + float(h.value)
     return dict(sorted(out.items()))
+
+
+class CostBasis(NamedTuple):
+    """`avg_cost` per share over `quantity` shares: the lines whose cost is known."""
+
+    avg_cost: float
+    quantity: float
+
+
+def cost_basis_from(statements: Iterable[Any], market: str = "IDN") -> dict[str, CostBasis]:
+    """Quantity-weighted average cost and quantity per ticker of `market`'s stocks across
+    accounts (PLAN S67; the same mapping as `holdings_from`). Lines with no known cost are left
+    out, and so is a symbol none of whose lines has one. A label, never a signal: nothing reads
+    it yet."""
+    paid: dict[str, float] = {}
+    qty: dict[str, float] = {}
+    for s in statements:
+        for h in s.holdings:
+            q = float(h.quantity)
+            if (h.avg_cost is None or q <= 0
+                    or classify(h.symbol, h.currency) != (market, "stocks")):
+                continue
+            paid[h.symbol] = paid.get(h.symbol, 0.0) + h.avg_cost * q
+            qty[h.symbol] = qty.get(h.symbol, 0.0) + q
+    return {sym: CostBasis(paid[sym] / qty[sym], qty[sym]) for sym in sorted(qty)}
 
 
 # ---------------- assembly ----------------
@@ -262,6 +289,7 @@ def _style(style: str, res: Mapping, sectors: Mapping[str, dict],
             "cost": {"order_idr": float(order_idr), "round_trip_bps": rt,
                      "flags": list(cost.flags)},
             "held": False, "held_idr": 0.0, "action": "watch", "size": None,
+            "cost_basis": None, "average_down": None,
         })
     rows.sort(key=lambda r: (-r["margin_pt"], r["symbol"]))
     for i, r in enumerate(rows, 1):
@@ -295,7 +323,8 @@ def config(tilt_fp: str | None, caps: Mapping | None, screens: Mapping[str, Mapp
            market: Mapping | None = None) -> dict:
     """What the payload and every journalled row carry besides the model fingerprint."""
     out = {"tilt_fingerprint": tilt_fp, "hurdle": dict(hurdle_mod.CONFIG),
-           "sizing": sizing.config(caps), "tranche_idr": TRANCHE_IDR,
+           "sizing": sizing.config(caps), "average_down": average_down.config(),
+           "tranche_idr": TRANCHE_IDR,
            "round_trips_per_year": 1,
            "screens": {k: dict(v.get("fingerprint") or {}) for k, v in sorted(screens.items())}}
     if market:
@@ -303,10 +332,60 @@ def config(tilt_fp: str | None, caps: Mapping | None, screens: Mapping[str, Mapp
     return out
 
 
+def _average_down(styles: Sequence[dict], inp: UndervaluedInputs, held: Mapping[str, float],
+                  basis: Mapping[str, Any], size_rows: Sequence[Mapping],
+                  sized_style: Mapping[str, str], trims: Sequence[Mapping],
+                  excluded: Sequence[Mapping], budget: float, value: float | None,
+                  caps: Mapping | None, any_passed: bool, stance_block: Mapping) -> list[dict]:
+    """S68: `average_down.judge` over the held names, written back on their rows: `cost_basis`
+    and `average_down` on every held row, action `average_down` (with gate 6's limits and the new
+    average cost) on the row a funded one is sized under. Returns the verdicts, one per held
+    name, rows or not."""
+    kept: dict[str, dict] = {}
+    for s in styles:
+        for r in s["rows"]:
+            if r["symbol"] not in kept or r["margin_pt"] > kept[r["symbol"]]["margin_pt"]:
+                kept[r["symbol"]] = r
+    sizes = {r["symbol"]: r["size"] for s in styles for r in s["rows"] if r["size"]}
+    prices = {}
+    for sym, idr in held.items():
+        b = basis.get(sym)
+        prices[sym] = ((kept.get(sym) or {}).get("price")
+                       or (inp.factors.get(sym) or {}).get("price")
+                       or (idr / b[1] if b and b[1] else None))
+    status = {sym: str(_get(v.get("levels"), "status")) for sym, v in inp.plan.items()
+              if v.get("levels") is not None}
+    names = average_down.judge(
+        held=held, basis=basis, prices=prices, kept=kept, size_rows=size_rows, sizes=sizes,
+        trims=trims, excluded=excluded, budget_idr=budget, portfolio_value_idr=value,
+        caps=caps, entry_status=status, any_passed=any_passed, stance=stance_block)
+    by_sym = {v["symbol"]: v for v in names}
+    for s in styles:
+        for r in s["rows"]:
+            v = by_sym.get(r["symbol"])
+            if v is None:
+                continue
+            if v["avg_cost"] is not None:
+                r["cost_basis"] = {"avg_cost": v["avg_cost"], "quantity": v["quantity"],
+                                   "below_cost_pct": v["below_cost_pct"],
+                                   "new_avg_cost": v["new_avg_cost"]}
+            r["average_down"] = {"status": v["status"], "gate": v["gate"], "reason": v["reason"]}
+            if (v["status"] == "average_down" and r["size"]
+                    and sized_style.get(r["symbol"]) == s["style"]):
+                r["action"] = "average_down"
+                typical = _get((inp.plan.get(r["symbol"]) or {}).get("levels"), "entry_typical")
+                r["size"]["tranches"] = average_down.limit_tranches(
+                    r["size"]["tranches"], r["price"], typical)
+    return names
+
+
 def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
              portfolio_value_idr: float | None, holdings: Mapping[str, float],
-             regime: Regime | str | None, fingerprint: str) -> dict:
-    """Pure: one market's inputs + its stocks stance + layer 5 → the candidates payload."""
+             regime: Regime | str | None, fingerprint: str,
+             cost_basis: Mapping[str, Any] | None = None) -> dict:
+    """Pure: one market's inputs + its stocks stance + layer 5 → the candidates payload.
+    `cost_basis` is `cost_basis_from`'s (sym → (avg_cost, quantity)); without it no held name
+    has a cost and none is called an average down."""
     t_passed, sectors, tilt_block = _tilt_view(inp.tilt, inp.tilt_note)
     order = [s for s in STYLES if s in inp.screens] + sorted(set(inp.screens) - set(STYLES))
     styles = [_style(s, inp.screens[s], sectors, inp.plan, inp.order_idr) for s in order]
@@ -352,6 +431,13 @@ def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
                 if z is not None:
                     r["drivers"].append(f"sized under {sized_style[sym]}")
     port = st.get("portfolio") or {}
+    stance_block = {"stance": st.get("stance"), "current_pct": port.get("current_pct"),
+                    "target_pct": port.get("target_pct")}
+    trims_out = [{"symbol": x.symbol, "idr": x.idr, "reason": x.reason} for x in trims]
+    excluded_out = [{"symbol": a, "reason": b} for a, b in excluded]
+    names = _average_down(styles, inp, held, cost_basis or {}, rows, sized_style, trims_out,
+                          excluded_out, sz.budget_idr, portfolio_value_idr, caps, any_passed,
+                          stance_block)
     stale = list(inp.stale_inputs)
     for s in order:
         stale += inp.screens[s].get("stale_inputs") or []
@@ -372,16 +458,15 @@ def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
         "regime": state,
         "hurdle": {"required_pt": h.get("hurdle_pt"),
                    "drivers": list(h.get("hurdle_drivers") or [])},
-        "stance": {"stance": st.get("stance"), "current_pct": port.get("current_pct"),
-                   "target_pct": port.get("target_pct")},
+        "stance": stance_block,
         "tilt": tilt_block,
         "styles": styles,
         "sizing": {"portfolio_value_idr": portfolio_value_idr, "budget_idr": sz.budget_idr,
                    "unspent_idr": sz.unspent_idr,
-                   "trims": [{"symbol": x.symbol, "idr": x.idr, "reason": x.reason}
-                             for x in trims],
-                   "excluded": [{"symbol": a, "reason": b} for a, b in excluded],
+                   "trims": trims_out, "excluded": excluded_out,
                    "fingerprint": sz.fingerprint},
+        "average_down": {"underwater_pct": average_down.UNDERWATER_PCT,
+                         "gate3": average_down.GATE3, "names": names},
         "config": config(tilt_block["fingerprint"], caps, inp.screens, inp.config),
         "stale_inputs": list(dict.fromkeys(stale)),
         "sources": list(dict.fromkeys([*inp.sources, "financer"])) or ["idx-method"],

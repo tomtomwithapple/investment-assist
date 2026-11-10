@@ -35,6 +35,14 @@ due is a credit to the broker account, a sale's proceeds a debit) dated on its t
 opening and closing, and `owner_map()` financer's `account_owners`. An account is
 `coalesce(nullif(account_ref, ''), card_last4, '')`, so a card with no account ref is its last 4.
 
+Since PLAN S67 a `Holding` carries its cost basis: `avg_cost` (per unit) and `cost_value`, from
+the statement's `avg_cost_minor` and `cost_value_minor`; a printed average of 0 (an SBN line, a
+right) is no cost at all, so both are None. `roll` carries it through the trades: a buy adds its
+`net_minor` (the amount paid, fees included) to the cost, a sell takes cost out in proportion to
+the quantity sold, so the average stays. A position the trades open gets its cost from its buys.
+The cost stays None when any statement line of the symbol has none, and becomes None once the
+line was sold below zero (what was sold had a cost nobody printed). Nothing reads it yet.
+
 `rows()` gives the tidy view: `HOLDING.<symbol>` (market value of IDR lines, summed across
 accounts) and `CASH.IDR`, dated by the statement (or its latest trade document). Layer 5
 (`assist.layers.portfolio`) uses `statements()`.
@@ -87,12 +95,13 @@ order by issuer, coalesce(account_ref, ''), statement_date, id
 """
 
 _TRADES = """
-select document_id, symbol, side, quantity, price_minor, currency
+select document_id, symbol, side, quantity, price_minor, currency, net_minor
 from trades where document_id in ({marks}) order by trade_date, document_id, id
 """
 
 _HOLDINGS = """
-select document_id, symbol, name, quantity, market_value_minor, currency
+select document_id, symbol, name, quantity, market_value_minor, currency, avg_cost_minor,
+       cost_value_minor
 from holdings where document_id in ({marks}) order by document_id, line_no
 """
 
@@ -159,13 +168,17 @@ class Ledger(NamedTuple):
 
 
 class Holding(NamedTuple):
-    """One line of a broker's holdings table; `value` is the market value in `currency`."""
+    """One line of a broker's holdings table; `value` is the market value in `currency`.
+    `avg_cost` (per unit) and `cost_value` are the cost basis (PLAN S67), None when the statement
+    printed an average cost of 0 or the cost cannot be known."""
 
     symbol: str
     name: str
     quantity: str
     value: float
     currency: str
+    avg_cost: float | None = None
+    cost_value: float | None = None
 
 
 class Statement(NamedTuple):
@@ -201,11 +214,14 @@ class Statement(NamedTuple):
 
 
 class Trade(NamedTuple):
+    """`net` is the amount paid (buy) or received (sell), fees included; None: quantity × price."""
+
     symbol: str
     side: str
     quantity: Decimal
     price: float
     currency: str
+    net: float | None = None
 
 
 def _idr(minor: int | None) -> float | None:
@@ -220,16 +236,33 @@ def _qty(text: str) -> Decimal:
 def roll(base: Statement | None, issuer: str, account: str, owner: str, as_of: date,
          trades: Sequence[Trade], docs: int) -> Statement:
     """`base` (None: start from nothing) plus `trades` in order (PLAN S32). A symbol no trade
-    touches keeps its statement lines as printed."""
+    touches keeps its statement lines as printed, and so does one whose trades net to nothing.
+
+    Cost basis (PLAN S67): a symbol's lines pool their cost; a buy adds its net amount, a sell
+    takes cost out in proportion (the average stays). None when a line has no cost, and from the
+    moment the quantity goes below zero."""
     base_lines = base.holdings if base else ()
     traded = list(dict.fromkeys(t.symbol for t in trades))
     start = {s: sum((Decimal(h.quantity) for h in base_lines if h.symbol == s), Decimal(0))
              for s in traded}
     qty = dict(start)
+    cost: dict[str, float | None] = {}
+    for s in traded:
+        printed = [h.cost_value for h in base_lines if h.symbol == s]
+        cost[s] = None if None in printed else float(sum(printed))
     last: dict[str, Trade] = {}
     for t in trades:
-        qty[t.symbol] += t.quantity if t.side == "buy" else -t.quantity
+        before = qty[t.symbol]
+        buy = t.side == "buy"
+        qty[t.symbol] = after = before + (t.quantity if buy else -t.quantity)
         last[t.symbol] = t
+        c = cost[t.symbol]
+        if after < 0:
+            cost[t.symbol] = None
+        elif c is not None and buy:
+            cost[t.symbol] = c + (float(t.quantity) * t.price if t.net is None else t.net)
+        elif c is not None:
+            cost[t.symbol] = c * float(after / before) if before > 0 else 0.0
     held = [h for h in base_lines if h.symbol not in qty or qty[h.symbol] == start[h.symbol]]
     unheld, priced = [], []
     for sym in traded:
@@ -238,7 +271,9 @@ def roll(base: Statement | None, issuer: str, account: str, owner: str, as_of: d
             continue  # unchanged (kept above) or sold to zero (dropped)
         t = last[sym]
         name = next((h.name for h in base_lines if h.symbol == sym), "")
-        h = Holding(sym, name, str(_qty(str(q))), float(q) * t.price, t.currency)
+        c = cost[sym] if q > 0 else None
+        h = Holding(sym, name, str(_qty(str(q))), float(q) * t.price, t.currency,
+                    None if c is None else c / float(q), c)
         if q < 0:
             unheld.append(h)
         else:
@@ -325,8 +360,11 @@ class FinancerSource:
             held: dict[int, list[Holding]] = defaultdict(list)
             if ids:
                 sql = _HOLDINGS.format(marks=", ".join("?" for _ in ids))
-                for doc_id, symbol, name, qty, value, ccy in con.execute(sql, ids):
-                    held[doc_id].append(Holding(symbol, name, qty, value / MINOR_SCALE, ccy))
+                for doc_id, symbol, name, qty, value, ccy, avg, cost in con.execute(sql, ids):
+                    known = bool(avg)  # a printed average of 0 is no cost basis
+                    held[doc_id].append(Holding(symbol, name, qty, value / MINOR_SCALE, ccy,
+                                                avg / MINOR_SCALE if known else None,
+                                                cost / MINOR_SCALE if known else None))
             has_trades = con.execute(
                 "select 1 from sqlite_master where type = 'table' and name = 'trades'").fetchone()
             trade_docs = (con.execute(_TRADE_DOCS.replace("{owner}", owner)).fetchall()
@@ -335,9 +373,9 @@ class FinancerSource:
             if trade_docs:
                 tids = [d[0] for d in trade_docs]
                 sql = _TRADES.format(marks=", ".join("?" for _ in tids))
-                for doc_id, symbol, side, qty, price, ccy in con.execute(sql, tids):
+                for doc_id, symbol, side, qty, price, ccy, net in con.execute(sql, tids):
                     trades[doc_id].append(Trade(symbol, side, Decimal(qty), price / MINOR_SCALE,
-                                                ccy))
+                                                ccy, _idr(net)))
         out: dict[tuple[str, str], Statement] = {}
         for doc_id, issuer, account, doc_type, as_of, ccy, closing, stated, own in docs:
             is_cash = doc_type in CASH_DOC_TYPES

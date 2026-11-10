@@ -29,7 +29,9 @@ DIR = "candidates"
 DASH = "-"
 EMPTY = "no candidate lists in out/candidates/ yet: run `assist run`"
 COLUMNS = ("#", "Symbol", "Sector", "Action", "Expected", "Margin", "Tilt shift", "Net of cost",
-           "Round trip bps", "Entry", "Held", "Size")
+           "Round trip bps", "Entry", "Held", "Avg cost", "vs cost", "Size")
+DOWN_COLUMNS = ("Symbol", "Status", "Avg cost", "Price", "vs cost", "New avg cost", "Entry status",
+                "Reason")
 
 
 @dataclass
@@ -96,6 +98,10 @@ def _pt(x: Any) -> str:
 
 def _pct1(x: Any) -> str:
     return DASH if _num(x, "g") == DASH else esc(brief._pct(x))
+
+
+def _pct1s(x: Any) -> str:
+    return _num(x, "+.1f") + ("%" if _num(x, "f") != DASH else "")
 
 
 def _verdict_chip(passed: Any) -> str:
@@ -202,7 +208,8 @@ def _row(r: Mapping) -> str:
              _text(r.get("action")), _pct(r.get("expected_pt")), _pt(r.get("margin_pt")),
              _pt(r.get("margin_shift_pt")), _pt(r.get("net_margin_pt")),
              _num(_d(r.get("cost")).get("round_trip_bps"), ".0f"), _entry(_d(r.get("entry"))),
-             _held(r), _size(r.get("size"))]
+             _held(r), _num(_d(r.get("cost_basis")).get("avg_cost"), ",.0f"),
+             _pct1s(_d(r.get("cost_basis")).get("below_cost_pct")), _size(r.get("size"))]
     return (f'<tr data-symbol="{esc(str(r.get("symbol", "")))}">'
             + "".join(f"<td>{c}</td>" for c in cells) + "</tr>" + _tranches(r))
 
@@ -233,6 +240,29 @@ def _style(s: Mapping) -> str:
             f"{head}{table}{drop}</section>")
 
 
+def _average_down(p: Mapping) -> str:
+    """PLAN S70: the held names 5% or more below cost and where each stopped (S68's block)."""
+    v = brief.average_down_view(p)
+    if v is None:
+        return ""
+    rows = []
+    for n in [*v["funded"], *v["unfunded"], *v["stopped"]]:
+        status = _text(str(n.get("status", "")).replace("_", " "))
+        if n.get("status") == "stopped":
+            status += f" (gate {_num(n.get('gate'), 'd')})"
+        elif n.get("idr") is not None:
+            status += f" {_idr(n['idr'])}"
+        rows.append([_text(n.get("symbol")), status, _num(n.get("avg_cost"), ",.0f"),
+                     _num(n.get("price"), ",.0f"), _pct1s(n.get("below_cost_pct")),
+                     _num(n.get("new_avg_cost"), ",.0f"), _text(n.get("entry_status")),
+                     _text(n.get("reason"))])
+    note = (f'<p class="muted">{v["underwater"]} of {v["held"]} held names are '
+            f'{_num(v["underwater_pct"], "g")}% or more below their average cost. Cost basis is '
+            f"a label: it changes no size. Entry status is {_text(v['gate3'])} "
+            "(its placebo has too little history).</p>")
+    return _card("average-down", "Average down", note + _rows(DOWN_COLUMNS, rows))
+
+
 def _sizing(z: Mapping) -> str:
     return "".join([
         _card("sizing", "Sizing", _kv([("Portfolio", _idr(z.get("portfolio_value_idr"))),
@@ -259,6 +289,7 @@ def market(m: Market) -> str:
                   _tilt(_d(p.get("tilt"))),
                   *(_style(_d(s)) for s in _l(p.get("styles"))),
                   _sizing(_d(p.get("sizing"))),
+                  _average_down(p),
                   _card("stale", "Stale inputs", _list(_l(p.get("stale_inputs")))),
                   _card("sources", "Sources", _list(_l(p.get("sources"))))]
     parts.append("</section><!-- /market -->")

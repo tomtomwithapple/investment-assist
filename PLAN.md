@@ -70,6 +70,7 @@ tiers wait on.
 | J. Review quick fixes (fingerprint scope, rebalance vs tilt, docs, USA universe) | S41–S44 | 4 / 4 |
 | K. Rules on their history, home regime (point-in-time rule gate, IDN home regime) | S45–S56 | 12 / 12 |
 | L. Layer-2 overrides on their history (point-in-time override gate, all 26 sides failed) | S57–S66, S61b | 11 / 11 |
+| M. Average down on a held name (cost basis in layer 5, gated rule, dip placebo) | S67–S71 | 4 / 5 |
 
 ### Open data gaps (fetcher side)
 
@@ -1442,6 +1443,88 @@ brackets and its reason.
 
 Parallel groups: S57 → {S58, S61b, S62} → {S59, S63} → {S60, S64} → {S61, S65} → S66.
 
+### Phase M — average down on a held name (planned 2026-11-10)
+
+**Why.** Nothing decides when a held name that has fallen deserves more money. Checked
+2026-11-10 (run of 2026-11-09, statement of 2026-10-31):
+
+- financer stores `avg_cost_minor` and `unrealised_minor` per holding; the adapter's `Holding`
+  keeps only symbol, name, quantity, value and currency, so layer 5 has no cost basis.
+- `sizing.size` adds to a held name only as any other add: it passes a placebo-passing screen
+  with margin > 0, the market has budget and the name is under the per-name cap.
+- `entry.py`'s status (`avoid`, `wait`, `buy_zone`, `deep`) gates nothing; its thresholds are
+  in-sample and may not change a stance before a placebo control.
+- IDN stocks are 96.9% of the portfolio against a 48% target, so the budget is 0. Nine holdings
+  are 16–37% below cost; AMRT, PWON and BBNI are "trim in full: fails its screen". BMRI is the
+  only held name that passes (−16.5% vs cost, margin 4.1pt, status `deep`) and it is over the 5%
+  cap, so it is trimmed to the cap. No name would qualify today.
+- Corrected by S67's live check (2026-11-10): the 16–37% and BMRI −16.5% figures were the Ajaib
+  statement alone. Over both accounts: 67 IDN stock names, 61 below cost, six at 16% or more
+  below, BMRI −15.0%, total cost against value −8.8%.
+
+**Principle.** Cost basis is a label, never a signal. The test is "would the model buy this
+today if none were held", plus a falling-knife guard and room under the caps.
+
+**Flow.** A held name gets `average_down` only if it clears every gate, in order:
+
+1. *Underwater*: price below its average cost (label only).
+2. *Thesis intact*: ranked and kept by a placebo-passing screen, `net_margin_pt` > 0. Otherwise
+   the existing trim applies.
+3. *Not a falling knife*: entry status is not `avoid`, and is `buy_zone` or `deep`.
+4. *Room*: holding below the per-name cap, sector cap not full, tranche under
+   `max_participation`.
+5. *Money*: the market's budget is above 0.
+6. *Timing*: a ladder on global or home risk_off, else one lump; later tranches limited at
+   `entry_typical`.
+7. *Output*: row action `average_down` with the old and the new average cost, a Telegram block
+   "IDN to average down", a journal record.
+
+**Decided.** No change to the screens, the hurdle, `CAPS`, the ladder, the budget formula or
+any phase K, phase L or S15 number. Slices land on branch `phase-m`; the fan-in merges to main.
+
+**Phase M choices: decided by the user 2026-11-10, all three defaults as bracketed.** Choice 2
+was taken after S69 came back insufficient, so gate 3 is context.
+1. Money when the market is over its target. [Keep the budget rule: a name that clears gates
+   1–4 with no budget is shown as "average down, unfunded" and sized 0.] Reason: funding it from
+   the same run's trims would make it fire now, and slows the move to 48%.
+2. Gate 3 before its placebo (S69). [Context only: the status is shown on the row, and the label
+   rests on gates 1, 2, 4 and 5 until S69 passes; if S69 fails it stays context.] Reason:
+   `entry.py`'s thresholds are measured on the history they would be tested on.
+3. How far below cost counts as underwater (gate 1; found by P86). [5% or more below the average
+   cost.] Reason: 40 of the 61 names below cost are 0.1–0.5% below, which is the buy fee on
+   Stockbit lines valued at their own last trade price; the label changes no size, so the number
+   only sets which adds are called an average down.
+
+- [x] **S67 Cost basis in layer 5** (P86-cost-basis). `sources/financer.py`: `Holding` carries
+  `avg_cost` and `cost_value` (None when the statement prints 0, as for an SBN line); `roll`
+  recomputes the average through later trade documents (a buy moves it by its net amount, a sell
+  leaves it). `undervalued.cost_basis_from(statements, market)`: quantity-weighted average cost
+  and quantity per symbol across accounts. Nothing reads it yet: no payload or schema
+  change. The model fingerprint does change (`journal.RULE_GLOBS` hashes `layers/**`) with
+  identical behaviour, so the new segment opens at the phase M fan-in run (S71), not before.
+  Test first: a statement line keeps its cost; a later buy re-averages it; a
+  sell does not; two accounts weight by quantity. Live: the names below cost against the
+  2026-10-31 statement.
+- [x] **S68 Average-down rule** (P87-average-down). `candidates/average_down.py`, pure: gates
+  1–6 over S20's rows, `sizing`'s result, the cost basis and the entry status, with the reason
+  for each name that stops at a gate. Candidates schema minor bump: action `average_down`,
+  `cost` block (`avg_cost`, `new_avg_cost`, `below_cost_pct`). Journalled; the module is hashed
+  by `journal.RULE_GLOBS`. Waits for choices 1–3. Test first: one case per gate.
+  **Done 2026-11-10**: the block is `cost_basis` (the row's `cost` is the execution cost);
+  live, 67 held names, none an average down (BMRI stops at the per-name cap).
+- [x] **S69 Placebo for gate 3** (P88-dip-placebo). On idx-method's `cache/history/`, point in
+  time (levels measured only on bars before each date): 12-month forward total return of adds
+  made in `buy_zone` or `deep` against adds on random days for the same names; phase K's gate
+  numbers. Parallel with S68. A pass makes gate 3 binding; a fail leaves it context.
+  **Result 2026-11-10: insufficient** (1 non-overlapping 12-month window, needs 10; the history
+  starts 2021-11, so about 2035). Gate 3 stays context.
+- [x] **S70 Surfacing** (P89-average-down-ui). Telegram block, brief line, `/portfolio` and
+  `/candidates` columns (cost, below cost %, action).
+- [ ] **S71 Phase M fan-in** (F13-phase-m). Merge `phase-m`, one live run, Progress rows,
+  STATUS, README; CLAUDE.md lines only with your OK.
+
+Parallel groups: S67 → {S68, S69} → S70 → S71.
+
 ## Open questions
 
 - ~~Target weight bands per stance~~: benchmark decided 2026-11-06 (80% IDN as 48 stocks / 32
@@ -1474,6 +1557,9 @@ Parallel groups: S57 → {S58, S61b, S62} → {S59, S63} → {S60, S64} → {S61
   2026-11-09. Design notes left for a later ex-ante review: bonds gated in IDR unhedged mix the
   FX leg into the sign; FRA and ITA bonds are gated on the Bund; USA `flows_treasury` (−2.42) is
   a lead, found in-sample.
+- ~~**Phase M choices 1–3**~~ (average down): all three defaults accepted by the user 2026-11-10
+  (unfunded when the market has no budget; gate 3 context only; underwater at 5% or more below
+  cost); S68 is unblocked.
 - ~~**Phase L choices 1–13**~~ (layer-2 overrides on their history): all 13 defaults accepted by
   the user 2026-11-09; S58 onward is unblocked.
 
@@ -1548,6 +1634,10 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S65 Foreign walk-forward (P83-foreign-walk) | done | 2026-11-09 | this commit (branch `phase-l`) | docs only (1918 total) | all 20 foreign sides failed, none insufficient (USA 6 incl. stocks on SPY 22/21 and 16/27; JPN, EMU, AUS, SGP bonds and currency); best placebo p USA stocks down 0.078, JPN bonds up 0.087; control t −0.21..+0.21; no override may cross a band anywhere; suspect: AUS currency inverted (1-month t −2.39 / −2.51), bonds wrong-signed in IDN, USA, SGP, EMU up (Open questions) |
 | S66 Phase L fan-in (F11-phase-l) | done | 2026-11-09 | merge `a8dd638` | 1919 on main | `assist run --no-send` 14:55 → 15:34 WIB (38 m 37 s, rule history cold 1,916 s): model `sha256:b68e9bce1774…` (0.6.0), journal 573 records, 6 models, chain ok; out/rules/ new fingerprints, both insufficient (bonds enter 3/11 reduce 1/13; stocks 0/14, 7/7); out/overrides/ IDN, USA, JPN, EMU, AUS, SGP all sides failed; no band crossed, FRA / ITA / USA bonds held; IDN stocks 43.5, bonds 49.0, currency 49.3, all neutral; Telegram not sent |
 | S15 Industry-relative value screen (S15-industry-value) | done | 2026-11-09 | this commit (branch `s15`) | 19 industry_value (1937 total) | 119 month ends, 95 scored 2018-11 → 2026-09: top − bottom quintile +0.85%/mo, **failed** t 1.76 < 2.0 (p 0.040, control t 0.37), no candidate; live 2026-11-05 pool 399 in 24 peer groups (14 sub-industries), 60 pass gates and floor; fitted leg alone t 2.44 (diagnostic); 17 s |
+| S67 Cost basis in layer 5 (P86-cost-basis) | done | 2026-11-10 | this commit (branch `phase-m`) | 10 financer, 2 run_undervalued, 1 portfolio expectation updated (1958 total) | `Holding.avg_cost` / `cost_value` (None when the statement prints 0: FR0080), `roll` re-averages through trade documents (a buy by its net amount, a sell in proportion), `undervalued.cost_basis_from`; nothing reads it; live, both accounts: 67 IDN stock names all with a cost, 61 below cost, six at 16% or more below (AMRT −36.7%, KKGI, CTRA, KLBF, TOWR, ASII), BMRI −15.0%, cost Rp58,905,894 vs value Rp53,697,910 (−8.8%); model fingerprint `13d8dceb4fa3…` → `0054161d53f8…` with identical behaviour (segment opens at S71) |
+| S68 Average-down rule (P87-average-down) | done | 2026-11-10 | this commit (branch `phase-m`) | 16 average_down, 4 run_undervalued (1995 total) | `candidates/average_down.py` (`judge`, gates 1–6: underwater at 5%, kept by a passing screen, entry status context, sizing's room, budget, `entry_typical` limits); `assemble(cost_basis=)`: row `cost_basis` and `average_down`, action `average_down` when sized, top-level `average_down` block, candidates schema 1.1.0, journalled; sizes and trims untouched; live (bars 2026-11-05, budget 0): 67 held, 46 stop at gate 1, 20 at gate 2, BMRI (−15.2%) at gate 4 over the 5% cap, none funded or unfunded; model fingerprint `8aeca8e62547…` → `aa9e0c60fe9c…` (a real change; segment opens at S71) |
+| S69 Placebo for gate 3 (P88-dip-placebo) | done | 2026-11-10 | this commit (branch `phase-m`) | 17 dip_gate (1975 total) | `eval/dip_gate.py`: adds in `buy_zone` or `deep` at month ends (levels from bars on or before the date, add at the next session) against the same names on random days, 12-month total return, phase K's gate numbers; live **insufficient**: 1 non-overlapping window of 10 (11 scored months 2024-11 → 2025-10, 1,844 zone adds, 797 names), so gate 3 stays context; diagnostics, overlapping: real +48.4% vs placebo +46.7%, ahead 5 of 11 months, `avoid` 38% winners against 56–59% for the rest; at 3 months 7 windows, also insufficient; model fingerprint `0054161d53f8…` → `8aeca8e62547…` with identical behaviour (segment opens at S71) |
+| S70 Surfacing (P89-average-down-ui) | done | 2026-11-10 | this commit (branch `phase-m`) | 3 brief, 2 view_candidates, 1 view_portfolio, 2 expectations extended (2001 total) | `brief.average_down_view` / `average_down_lines`; Telegram `IDN to average down` block after "to buy" (funded with old → new average cost, unfunded, one line on where the rest stopped); brief Action cell and bullets; `/candidates` columns `Avg cost`, `vs cost` and an *Average down* card; `/portfolio` adds table with `Action` and `Avg cost IDR`, an *Average down* table, and the JSON twin; no run made, fingerprint unchanged from S68 |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

@@ -265,6 +265,63 @@ def _idr(x: float | None) -> str:
     return "n/a" if x is None else f"IDR {x:,.0f}"
 
 
+GATE_NAMES = {2: "not kept by a passing screen", 4: "no room under the caps",
+              5: "not sized"}
+
+
+def average_down_view(p: Mapping) -> dict | None:
+    """The payload's `average_down` block (PLAN S68) sorted for display: `funded` (with the
+    sized amount), `unfunded`, `stopped` (underwater names past gate 1) and counts. None when
+    the payload has no block or no held name."""
+    block = p.get("average_down") or {}
+    names = [n for n in block.get("names") or [] if isinstance(n, Mapping)]
+    if not names:
+        return None
+    sized = {r["symbol"]: r["size"]["idr"] for s in p.get("styles") or []
+             for r in s.get("rows") or [] if r.get("action") == "average_down" and r.get("size")}
+    under = [n for n in names if n.get("gate") != 1]
+    stopped = [n for n in under if n.get("status") == "stopped"]
+    return {"held": len(names), "underwater": len(under),
+            "underwater_pct": block.get("underwater_pct"), "gate3": block.get("gate3"),
+            "funded": [{**n, "idr": sized.get(n["symbol"])} for n in under
+                       if n.get("status") == "average_down"],
+            "unfunded": [n for n in under if n.get("status") == "unfunded"],
+            "stopped": sorted(stopped, key=lambda n: (n.get("below_cost_pct") or 0.0,
+                                                      n["symbol"])),
+            "stops": dict(Counter(n.get("gate") for n in stopped))}
+
+
+def _vs_cost(n: Mapping) -> str:
+    b = n.get("below_cost_pct")
+    return "n/a" if b is None else f"{b:+.1f}% vs cost"
+
+
+def average_down_lines(p: Mapping) -> list[str]:
+    """Plain lines for the brief and Telegram: each funded and unfunded name, then one line on
+    the underwater names that stopped at a gate. Empty when nothing is held."""
+    v = average_down_view(p)
+    if v is None:
+        return []
+    out = []
+    for n in v["funded"]:
+        new = n.get("new_avg_cost")
+        move = "" if new is None else f", average cost {n['avg_cost']:,.0f} → {new:,.0f}"
+        out.append(f"{n['symbol']} {_idr(n.get('idr'))} ({_vs_cost(n)}{move})")
+    for n in v["unfunded"]:
+        out.append(f"{n['symbol']} unfunded ({_vs_cost(n)}): {n['reason']}")
+    pct = v["underwater_pct"]
+    pct = "" if pct is None else f" {pct:g}% or more"
+    if not v["underwater"]:
+        out.append(f"none: no held name is{pct} below cost ({v['held']} held)")
+        return out
+    stops = ", ".join(f"{k} {GATE_NAMES.get(g, f'stopped at gate {g}')}"
+                      for g, k in sorted(v["stops"].items(), key=lambda x: (x[0] or 0)))
+    head = "" if v["funded"] or v["unfunded"] else "none: "
+    out.append(f"{head}{v['underwater']} of {v['held']} held names are{pct} below cost"
+               + (f" ({stops})" if stops else ""))
+    return out
+
+
 def undervalued_lines(p: Mapping) -> list[str]:
     """One market's candidates payload as Markdown lines (a few bullets and one table per
     passing style). Rows are ranked within their style only."""
@@ -309,7 +366,8 @@ def undervalued_lines(p: Mapping) -> list[str]:
         for r in s["rows"]:
             e = r["entry"]
             entry = "n/a" if e["level"] is None else f"{e['level']:,.0f} ({e['basis']})"
-            act = r["action"] if r["size"] is None else f"add {_idr(r['size']['idr'])}"
+            verb = "average down" if r["action"] == "average_down" else "add"
+            act = r["action"] if r["size"] is None else f"{verb} {_idr(r['size']['idr'])}"
             cells = [str(r["rank"]), r["symbol"], r["sector"] or "n/a",
                      f"{r['expected_pt']:.2f}%", f"{r['margin_pt']:+.2f}pt",
                      f"{r['net_margin_pt']:+.2f}pt", entry,
@@ -323,6 +381,8 @@ def undervalued_lines(p: Mapping) -> list[str]:
             out.append(f"- dropped {d['symbol']}: {d['reason']}")
     for x in p["sizing"]["trims"]:
         out.append(f"- trim {x['symbol']} {_idr(x['idr'])}: {x['reason']}")
+    for line in average_down_lines(p):
+        out.append(f"- average down: {line}")
     out.append("")
     return out
 
