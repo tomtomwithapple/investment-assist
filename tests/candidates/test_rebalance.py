@@ -39,3 +39,43 @@ def test_never_sells_more_than_is_held_and_nothing_without_a_need():
     assert sum(x["idr"] for x in out) == pytest.approx(16e6)
     assert pro_rata_sales(HELD, PX, 0.0) == [] and pro_rata_sales({}, PX, 1e6) == []
     assert config()["lot"] == 100
+
+
+# ---------------- redundant first, kept last (P100, PLAN S83) ----------------
+
+from assist.candidates.rebalance import ordered_sales  # noqa: E402
+
+H = {"RED1": 2e6, "RED2": 3e6, "OTH1": 10e6, "OTH2": 10e6, "KEEP": 10e6}
+PR = dict.fromkeys(H, 1000.0)
+
+
+def test_redundant_names_are_sold_in_full_first_in_the_order_given():
+    out = ordered_sales(H, PR, 4e6, redundant=["RED1", "RED2"], protected={"KEEP"})
+    assert [(x["symbol"], x["tier"], x["full"], x["idr"]) for x in out] == [
+        ("RED1", "redundant", True, 2e6), ("RED2", "redundant", False, 2e6)]
+
+
+def test_then_pro_rata_over_the_rest_and_the_kept_names_last():
+    out = ordered_sales(H, PR, 9e6, redundant=["RED1", "RED2"], protected={"KEEP"})
+    by = {x["symbol"]: x for x in out}
+    assert by["RED1"]["full"] and by["RED2"]["full"]
+    assert by["OTH1"]["tier"] == by["OTH2"]["tier"] == "rebalance"
+    assert by["OTH1"]["idr"] == by["OTH2"]["idr"] == 2e6 and "KEEP" not in by
+    # only when the others are sold out do the kept names pay
+    out = ordered_sales(H, PR, 27e6, redundant=["RED1", "RED2"], protected={"KEEP"})
+    by = {x["symbol"]: x for x in out}
+    assert by["KEEP"]["tier"] == "protected" and by["KEEP"]["idr"] == 2e6
+    assert sum(x["idr"] for x in out) == 27e6
+
+
+def test_a_full_sale_takes_the_odd_lot_and_excluded_names_are_skipped():
+    out = ordered_sales({"ODD": 1_419_000.0, "TRIM": 5e6}, {"ODD": 1000.0, "TRIM": 1000.0}, 3e6,
+                        exclude={"TRIM"}, redundant=["TRIM", "ODD"], quantities={"ODD": 1419})
+    assert out == [{"symbol": "ODD", "shares": 1419, "idr": 1_419_000.0, "tier": "redundant",
+                    "full": True}]
+
+
+def test_no_redundant_names_is_plain_pro_rata():
+    plain = pro_rata_sales(HELD, PX, 4e6)
+    assert [{k: x[k] for k in ("symbol", "shares", "idr")}
+            for x in ordered_sales(HELD, PX, 4e6)] == plain

@@ -74,6 +74,7 @@ tiers wait on.
 | L. Layer-2 overrides on their history (point-in-time override gate, all 26 sides failed) | S57–S66, S61b | 11 / 11 |
 | M. Average down on a held name (cost basis in layer 5, gated rule, dip placebo) | S67–S71 | 5 / 5 |
 | N. Guided UI (this week's steps with amount, date, entry price, TP and SL; plain words) | S72–S80 | 9 / 9 |
+| O. The investing principle as rules (keep the screen's names, no redundant industry and size, rebalance respects it) | S81–S84 | 3 / 4 |
 
 ### Open data gaps (fetcher side)
 
@@ -1624,7 +1625,59 @@ on their defaults, still the user's to change.**
 
 Parallel groups: S72 → {S73, S74} → S75 → {S76, S78} → {S77, S79} → S80.
 
+### Phase O — the investing principle as rules (planned 2026-11-10)
+
+**Principle (user, 2026-11-10).** "Hunting the best undervalued stocks with real fundamentals
+along with dividends, so it grows when kept." Diversify, "but avoiding traps like redundant
+sector or industries, but allow when they are different size or market". Reconciled: where a
+tilt applies, redundancy in that sector or industry is allowed; different size is never
+redundant; rebalance sales respect all of it.
+
+**Why.** Checked 2026-11-10 on phase N's run: the guide's 38 rebalance sales are plain pro rata.
+They trim every held name a little, sound dividend payers included, and ignore industry and
+size. Of the 67 held names, 27 share an industry and a size bucket with another held name (18
+groups; the largest is eight mid-cap "Produk Makanan Pertanian" names). Sizing caps names per
+sector and per name only.
+
+**Rules.**
+
+1. *Group.* A name's group is its IDX-IC industry (idx-method `industry_membership`, the
+   58-group level, newest snapshot) and its size bucket. A name with no industry or no market
+   cap has no group and is never redundant. Markets are separate lists, so a US name is never
+   redundant with an Indonesian one.
+2. *Keeper.* Within a group the names are ordered: kept by a placebo-passing screen (margin,
+   high first); then ranked by a passing screen but not kept (margin, high first); then unrated
+   (largest holding first). The first is the keeper; the others are redundant.
+3. *Tilt.* A redundant name is allowed when a passed tilt favours its sector (tilt > 0), or its
+   industry once an industry tilt exists (none today). Decided by the user 2026-11-10: only a
+   favourable tilt counts.
+4. *Buying.* A redundant row that is not allowed gets no new money ("redundant with X"). It is
+   not trimmed for that.
+5. *Rebalance sales*, replacing phase N's pro rata for the part of a cut no trim covers:
+   first the redundant names, in full, the lowest-ordered of the most crowded groups first;
+   then pro rata over the other names no passing screen keeps; last, and only if still needed,
+   pro rata over the kept names.
+
+**Decided by the user 2026-11-10.** Three size buckets by market cap; only a favourable tilt
+allows redundancy. **Built on a default, not confirmed:** the bucket lines, large at Rp 50T or
+more (32 of 963 names), mid from Rp 5T (181), small below; and the industry level (58 groups,
+not the 33 sub-sectors or 101 sub-industries).
+
+- [x] **S81 Groups and keepers** (P98-diversify). `candidates/diversify.py`, pure: size bucket,
+  group, order, keeper, tilt exception. Test first: one case per rule.
+- [x] **S82 Buying and the payload** (P99-diversify-sizing). Profiles (industry, market cap)
+  gathered from idx-method; `sizing.size` skips a row marked redundant; the candidates payload
+  gains a `diversification` block (schema 1.3.0). A model change.
+- [x] **S83 Rebalance sales** (P100-rebalance-order). `rebalance.ordered_sales`: redundant in
+  full first, then pro rata, kept names last; the guide's steps say why. A model change.
+- [ ] **S84 Phase O fan-in** (F15-phase-o). Merge, one live run, Progress rows, STATUS, README.
+
+Parallel groups: S81 → S82 → S83 → S84.
+
 ## Open questions
+
+- **Phase O defaults** (size lines Rp 50T and Rp 5T; the 58-group industry level): built
+  2026-11-10, not yet confirmed by the user.
 
 - **Phase N choices 4, 7, 8, 9** (guided UI: entry cap of +1%, strength labels, tranche dates,
   menu grouping): built on their defaults 2026-11-10, not yet confirmed by the user.
@@ -1746,6 +1799,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S73, S75, S78 Plain words, the guide, brief and Telegram (P91, P93, P96) | done | 2026-11-10 | `c20a346` (branch `phase-n`) | 14 guide, 4 rebalance, 3 plain, 3 e2e expectations extended | `plain.py`; `candidates/rebalance.py` pro-rata sales (hashed); `guide.py` → `out/guide.json` (schema 1.0.0), journalled; brief and Telegram open with the steps; read-only on the 2026-11-10 run: 54 sells Rp 27.1m (1 strong, 15 failed-screen, 38 rebalance) and 2 bucket buys Rp 27.8m (SBN 16.7m, US index fund 11.1m), 3 tranches 11-11 / 11-23 / 12-01 |
 | S76, S77, S79 Home page, navigation, one place per fact (P94, P95, P97) | done | 2026-11-10 | this commit (branch `phase-n`) | 6 view_guide, web / overview / candidates / e2e tests updated (2053 total) | `/` is "This week" (orders by date, legs, take-profit and stop); the old overview is `/background`; grouped navigation; Average down table only on `/portfolio`; style names in plain words; `/signals`, stance pages and trim reasons still show raw terms |
 | S80 Phase N fan-in (F14-phase-n) | done | 2026-11-10 | merge `56c5025` | 2053 on main | `assist run --no-send` 13:19 → 13:26 WIB, exit 0: model `sha256:cf920942a6d4…`, 71 records, journal 715 records, 9 models; `out/guide.json` 54 sells Rp 27.1m (1 strong, 15 failed-screen, 38 rebalance) and 2 bucket buys Rp 27.8m in 3 tranches; candidates schema 1.2.0; local UI restarted; not pushed; CLAUDE.md untouched |
+| S81–S83 Groups and keepers, buying, rebalance sales (P98, P99, P100) | done | 2026-11-10 | this commit (branch `phase-o`) | 8 diversify, 4 rebalance, 4 run_undervalued, 2 guide (2071 total) | `candidates/diversify.py` (industry × size group, keeper by screen rank, favourable-tilt exception); sizing gives a redundant row no new money; candidates schema 1.3.0 `diversification`; `rebalance.ordered_sales` sells redundant names in full first, then pro rata, kept names last; read-only on the 2026-11-10 run: 52 judged, 16 redundant, none allowed; guide 51 sells (16 trims, 16 redundant in full about Rp 7.0m, 19 pro-rata) against 54 before, same Rp 27.1m; trims unchanged; size lines Rp 50T / 5T and the industry level are defaults |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

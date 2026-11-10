@@ -1414,3 +1414,33 @@ slices:
     accept: uv run pytest -q && uv run ruff check .
     estimate: 0.5
     notes: CLAUDE.md only with the user's OK.
+  # ---------------- phase O: the investing principle as rules ----------------
+  - id: P98-diversify
+    title: "PLAN S81: candidates/diversify.py, industry x size groups, keeper, favourable-tilt exception"
+    depends_on: [F14-phase-n]
+    owns: ["src/assist/candidates/diversify.py", "tests/candidates/test_diversify.py", "docs/results/P98-diversify.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+    notes: Three buckets and favourable-only decided 2026-11-10; the lines (Rp 50T, Rp 5T) and the industry level are defaults.
+  - id: P99-diversify-sizing
+    title: "PLAN S82: profiles from idx-method, sizing skips a redundant row, diversification block, candidates schema 1.3.0"
+    depends_on: [P98-diversify]
+    owns: ["src/assist/candidates/sizing.py", "src/assist/layers/undervalued.py", "schema/candidates.schema.json", "tests/test_run_undervalued.py"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+    notes: A model change.
+  - id: P100-rebalance-order
+    title: "PLAN S83: rebalance.ordered_sales, redundant in full first, then pro rata, kept names last; guide steps"
+    depends_on: [P99-diversify-sizing]
+    owns: ["src/assist/candidates/rebalance.py", "src/assist/guide.py", "tests/candidates/test_rebalance.py", "tests/test_guide.py"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+    notes: A model change.
+  - id: F15-phase-o
+    kind: integration
+    title: "PLAN S84: phase O fan-in: merge phase-o to main, one live assist run, Progress rows, STATUS, README"
+    depends_on: [P100-rebalance-order]
+    owns: ["PLAN.md", "README.md", "CLAUDE.md", "docs/results/F15-phase-o.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+    notes: CLAUDE.md only with the user's OK.
