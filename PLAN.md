@@ -1566,7 +1566,10 @@ is labelled as such.
 4. *Nothing to do* lines, when a leg is at target.
 5. Each step: strength, one plain sentence of why, a link to the detail page.
 
-**Phase N choices: open (proposed 2026-11-10, defaults in brackets).** S72 and S73 need none.
+**Phase N choices: 1, 2, 3, 5 and 6 decided by the user 2026-11-10, each the bracketed default
+(pro rata; bucket steps for SBN and US stocks; fair-price take-profit, stop adding and trim to
+half; thesis stop plus a review price that does not sell). 4, 7, 8 and 9 were not asked: built
+on their defaults, still the user's to change.**
 1. The unnamed Rp 10.0m of IDN stock sales. [Pro rata across the held names with no trim
    call, largest holdings first, whole lots, until the leg reaches its target over the ladder.
    Strength "medium: rebalance to the benchmark, not a view on the name".] Reason: unrated
@@ -1621,8 +1624,8 @@ Parallel groups: S72 → {S73, S74} → S75 → {S76, S78} → {S77, S79} → S8
 
 ## Open questions
 
-- **Phase N choices 1–9** (guided UI): defaults proposed 2026-11-10 (Phase N section); S74 and
-  S75 wait for them.
+- **Phase N choices 4, 7, 8, 9** (guided UI: entry cap of +1%, strength labels, tranche dates,
+  menu grouping): built on their defaults 2026-11-10, not yet confirmed by the user.
 
 - ~~Target weight bands per stance~~: benchmark decided 2026-11-06 (80% IDN as 48 stocks / 32
   SBN, 20% US stocks; phase I). The ±5 pt tilt and S20a's 5% per-name cap are still the
