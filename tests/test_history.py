@@ -158,6 +158,19 @@ def test_rules_call_while_every_input_is_known(base):
     assert s.values["earnings_yield"] == pytest.approx(12.0)
 
 
+def test_stocks_only_with_a_valuation_spec_passes_through(base):
+    """Review R-stocks-valuation: `assets` leaves bonds out; `stocks_spec` reaches the rule.
+    r1 with no `damodaran_crp` table has no hurdle, so the stocks rule makes no call."""
+    src = sources()
+    h = H.build(src, H.month_ends(D("2022-03-31"), D("2022-03-31")), today=TODAY,
+                assets=("stocks",), stocks_spec="r1")
+    assert set(h) == {"stocks"}
+    r = h["stocks"].row(D("2022-03-31"))
+    assert r.call == "no_call" and r.values["hurdle"] is None
+    assert any(m.startswith("hurdle: ") and "damodaran_crp" in m for m in r.missing)
+    assert base["stocks"].row(D("2022-03-31")).call == "enter"  # the locked default
+
+
 def test_stocks_macro_is_layer_1_held_at_50(base):
     s = base["stocks"].row(D("2022-03-31"))
     assert s.values["macro_score"] == pytest.approx(50.0)  # no override components in the fakes

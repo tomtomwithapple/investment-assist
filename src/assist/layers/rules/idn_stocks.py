@@ -34,6 +34,14 @@ verdict (P74), a hold never.
 
 PHEI is for the owner's local use only: drivers and details carry derived numbers (EY − 10Y, the
 real yield, the implied ERP), never the raw IGSYC 10Y.
+
+Valuation specs (`spec`, review R-stocks-valuation, not adopted): `SPEC_LOCKED` ("k") is the rule
+above and the default. `SPEC_R1` ("r1") is the review's ex-ante prototype: implied ERP = EY − real
+10Y (no `G_REAL`: the EY already carries the growth retained earnings buy) against US ERP + IDN
+CRP − IDN default spread (Damodaran's local risk-free rate is the local bond yield less the
+default spread, so the raw SBN 10Y already holds that part of the CRP). The default spread is
+Damodaran's rating-based `default_spread` for IDN (dbnomics `damodaran_crp`, store only), with
+the CRP's lag and maximum age; without it r1 has no hurdle, so no valuation call.
 """
 
 from __future__ import annotations
@@ -66,6 +74,11 @@ from assist.stance import LADDER_SPACING_DAYS, LADDER_TRANCHES
 __all__ = [
     "HURDLE",
     "IDN_CRP",
+    "IDN_DS",
+    "SPEC",
+    "SPECS",
+    "SPEC_LOCKED",
+    "SPEC_R1",
     "US_ERP",
     "FactorSnapshots",
     "IdnStocks",
@@ -80,6 +93,11 @@ __all__ = [
 SUBJECT, ASSET = "IDN", "stocks"
 PHEI_NAME = "idxscape_phei"
 US_ERP, IDN_CRP, HURDLE = "us.erp.implied", "idn.crp", "idn.erp.hurdle"  # fractions
+IDN_DS = "idn.default_spread"  # fraction; from damodaran_crp, not a dbnomics series id
+
+SPEC_LOCKED, SPEC_R1 = "k", "r1"  # valuation specs (review R-stocks-valuation)
+SPECS = (SPEC_LOCKED, SPEC_R1)
+SPEC = SPEC_LOCKED  # the running rule; r1 is a prototype, not adopted
 
 G_REAL = 2.0  # % long-run real earnings growth added to the EY
 ERP_BAND = 1.0  # pt, implied ERP − hurdle
@@ -89,9 +107,10 @@ MACRO_HIGH, MACRO_LOW = 55.0, 45.0
 # A row dated this long before `as_of` counts as published, whatever its recorded date says.
 # Damodaran posts the month's ERP in its first days; a CRP snapshot ~6 weeks after its date.
 LAG = {**BOND_LAG, US_ERP: timedelta(days=10), IDN_CRP: timedelta(days=45),
-       HURDLE: timedelta(days=45)}
+       HURDLE: timedelta(days=45), IDN_DS: timedelta(days=45)}
 MAX_AGE = {"phei": timedelta(days=7), "factors": timedelta(days=14), "jci": timedelta(days=7),
-           US_ERP: timedelta(days=70), HURDLE: timedelta(days=70), IDN_CRP: timedelta(days=450)}
+           US_ERP: timedelta(days=70), HURDLE: timedelta(days=70), IDN_CRP: timedelta(days=450),
+           IDN_DS: timedelta(days=450)}
 PROXY_CALL_AGE = timedelta(days=90)  # an older proxy 10Y gives no call (as P31)
 READ_BACK = {"monthly": timedelta(days=800), "crp": timedelta(days=900),
              "jci": timedelta(days=60)}
@@ -127,6 +146,7 @@ class IdnStocks:
     risks: tuple[str, ...]
     stale_inputs: tuple[str, ...] = ()
     sources: tuple[str, ...] = ()
+    spec: str = SPEC_LOCKED
 
     def signal(self, name: str) -> Signal | None:
         return next((s for s in self.signals if s.name == name), None)
@@ -339,10 +359,41 @@ def _ten_year(b: _Builder, phei: dict | None, dbn: dict | None) -> tuple[Row | N
     return ten, True
 
 
-def _hurdle(b: _Builder, dbn: dict | None) -> float | None:
-    """US ERP + IDN CRP in %, from their newest known points; `idn.erp.hurdle` as fallback."""
+def _default_spread(b: _Builder, source) -> Row | None:
+    """IDN's rating-based default spread (fraction) from the newest Damodaran snapshot known on
+    `as_of` (the CRP's lag), as a Row; None (named stale) when the store or row is missing."""
+    read = getattr(source, "damodaran_crp", None)
+    if read is None:
+        b.stale.append(f"{source.name} damodaran_crp (not served)")
+        return None
+    try:
+        found = read(["IDN"])
+    except SourceUnavailable as e:
+        b.stale.append(f"{e.source} damodaran_crp IDN default_spread ({e.reason})")
+        return None
+    rows = sorted((Row(IDN_DS, r["snapshot_date"], float(r["default_spread"]), None,
+                       source.name)
+                   for r in found if r.get("default_spread") is not None
+                   and r["snapshot_date"] + LAG[IDN_DS] <= b.as_of), key=lambda r: r.date)
+    return b.last({IDN_DS: rows}, IDN_DS, source.name, MAX_AGE[IDN_DS])
+
+
+def _hurdle(b: _Builder, dbn: dict | None, ds: Row | None = None,
+            spec: str = SPEC_LOCKED) -> float | None:
+    """US ERP + IDN CRP in %, from their newest known points; `idn.erp.hurdle` as fallback.
+    Spec r1 subtracts the IDN default spread `ds` (no `ds`, no hurdle)."""
     if dbn is None:
         return None
+    if spec == SPEC_R1:
+        if ds is None:
+            return None
+        h = _hurdle(b, dbn)
+        if h is None:
+            return None
+        h -= 100 * ds.value
+        b.drivers.append(f"r1 hurdle {h:.2f}% over the raw SBN 10Y (less IDN default spread "
+                         f"{100 * ds.value:.2f}% {ds.date:%Y-%m}, Damodaran via dbnomics)")
+        return h
     erp = (dbn.get(US_ERP) or [None])[-1]
     crp = (dbn.get(IDN_CRP) or [None])[-1]
     if erp is not None and crp is not None:
@@ -365,7 +416,7 @@ def _hurdle(b: _Builder, dbn: dict | None) -> float | None:
 
 
 def _valuation(b: _Builder, ey: float | None, ten: Row | None, proxy: bool, cpi: Row | None,
-               hurdle: float | None) -> tuple[int | None, dict]:
+               hurdle: float | None, spec: str = SPEC_LOCKED) -> tuple[int | None, dict]:
     out: dict = {"gap": None, "real": None, "implied": None}
     if ey is None or ten is None:
         return None, out
@@ -378,11 +429,13 @@ def _valuation(b: _Builder, ey: float | None, ten: Row | None, proxy: bool, cpi:
     if cpi is None or hurdle is None:
         return None, out
     real = ten.value - cpi.value
-    implied = ey + G_REAL - real
+    growth = G_REAL if spec == SPEC_LOCKED else 0.0
+    implied = ey + growth - real
     diff = implied - hurdle
     out.update(real=real, implied=implied)
     direction = _direction(diff, ERP_BAND)
-    detail = (f"implied ERP {implied:.2f}% = EY {ey:.2f}% + {G_REAL:.1f}% real growth − real "
+    grown = f" + {growth:.1f}% real growth" if growth else ""
+    detail = (f"implied ERP {implied:.2f}% = EY {ey:.2f}%{grown} − real "
               f"10Y {real:.2f}% (CPI {cpi.value:.2f}% {cpi.date:%Y-%m}); vs hurdle {hurdle:.2f}%")
     call_dir: int | None = direction
     if proxy and b.as_of - ten.date > PROXY_CALL_AGE:
@@ -498,22 +551,26 @@ def idn_stocks(
     idxmethod: Source | None = None,
     snapshots: FactorSnapshots | None = None,
     worldbankscape: WorldbankscapeSource | None = None,
+    spec: str = SPEC,
 ) -> IdnStocks:
     """The IDN stocks market rule on `as_of`. Sources default to the configured stores;
     `signals` defaults to P18's `idn_signals`, `score` to worldbankscape's IDN stocks. A store
     that is missing or locked is named in `stale_inputs`, never raised; a missing input makes it
-    a no_call."""
+    a no_call. `spec` picks the valuation spec (`SPEC`, the locked one, by default)."""
+    if spec not in SPECS:
+        raise ValueError(f"unknown valuation spec {spec!r}; known: {', '.join(SPECS)}")
     b = _Builder(as_of)
     phei_rows = b.read(phei or PheiSource.from_config(), [IGSYC_10Y], READ_BACK["monthly"])
-    dbn_rows = b.read(dbnomics or DbnomicsSource.from_config(),
-                      [PROXY_10Y, DBN_CPI, US_ERP, IDN_CRP, HURDLE], READ_BACK["crp"])
+    dbnomics = dbnomics or DbnomicsSource.from_config()
+    dbn_rows = b.read(dbnomics, [PROXY_10Y, DBN_CPI, US_ERP, IDN_CRP, HURDLE], READ_BACK["crp"])
     bps_rows = b.read(bps or BpsLookerSource.from_config(), [CPI_YOY], READ_BACK["monthly"])
 
     ey, pe, on = _earnings_yield(b, snapshots or FactorSnapshots.from_config())
     ten, proxy = _ten_year(b, phei_rows, dbn_rows)
     cpi, _ = _cpi(b, bps_rows, dbn_rows, overrides)
-    hurdle = _hurdle(b, dbn_rows)
-    valuation, v = _valuation(b, ey, ten, proxy, cpi, hurdle)
+    ds = _default_spread(b, dbnomics) if spec == SPEC_R1 and dbn_rows is not None else None
+    hurdle = _hurdle(b, dbn_rows, ds, spec)
+    valuation, v = _valuation(b, ey, ten, proxy, cpi, hurdle, spec)
     flows = _flows(b, signals if signals is not None else idn_signals(as_of))
     macro, adjusted = _macro(b, score, worldbankscape, overrides)
     _jci(b, idxmethod or JciSource.from_config())
@@ -545,4 +602,5 @@ def idn_stocks(
         regime=None if regime is None else regime.state,
         drivers=tuple(dict.fromkeys(b.drivers)), risks=tuple(dict.fromkeys(b.risks)),
         stale_inputs=tuple(dict.fromkeys(b.stale)), sources=tuple(dict.fromkeys(b.sources)),
+        spec=spec,
     )

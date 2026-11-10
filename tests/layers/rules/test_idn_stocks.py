@@ -560,3 +560,82 @@ def test_month_end_closes():
            (date(2026, 9, 1), None)]
     rows = [Row(JCI, d, v, None, "x") for d, v in pts]
     assert month_end_closes(rows) == [(date(2026, 8, 31), 2.0), (date(2026, 9, 30), 3.0)]
+
+
+# ---------------- valuation spec r1 (review R-stocks-valuation, prototype) ----------------
+
+
+class FakeDbnCrp(Fake):
+    """dbnomics with the `damodaran_crp` table: IDN default spreads per snapshot."""
+
+    def __init__(self, base: Fake, spreads: dict[date, float] | None = None, error=None):
+        super().__init__(base.name, base._rows)
+        self.spreads, self.crp_error = spreads or {}, error
+
+    def damodaran_crp(self, iso3=None, snapshot=None):
+        if self.crp_error:
+            raise SourceUnavailable(self.name, self.crp_error)
+        return [{"snapshot_date": d, "iso3": "IDN", "default_spread": v}
+                for d, v in sorted(self.spreads.items())]
+
+
+def dbn_crp(spreads=None, **kw) -> FakeDbnCrp:
+    return FakeDbnCrp(dbn_source(**kw), {date(2026, 1, 1): 0.015} if spreads is None else spreads)
+
+
+def test_spec_default_is_the_locked_rule():
+    import importlib
+
+    mod = importlib.import_module("assist.layers.rules.idn_stocks")
+
+    assert mod.SPEC == mod.SPEC_LOCKED == "k" and mod.G_REAL == 2.0 and mod.ERP_BAND == 1.0
+    s = run(dbnomics=dbn_crp())
+    assert s.spec == "k" and s.hurdle == pytest.approx(6.0)
+    assert s.implied_erp == pytest.approx(10.0 + 2.0 - 4.0)
+
+
+def test_r1_drops_growth_and_nets_the_default_spread():
+    s = run(dbnomics=dbn_crp(), spec="r1")
+    assert s.spec == "r1"
+    assert s.implied_erp == pytest.approx(10.0 - 4.0)  # EY − real 10Y, no G_REAL
+    assert s.hurdle == pytest.approx(4.0 + 2.0 - 1.5)  # US ERP + CRP − default spread
+    assert s.signal("implied_erp_vs_hurdle").value == pytest.approx(6.0 - 4.5)
+    assert s.call == "enter"
+    assert any(d.startswith("r1 hurdle 4.50% over the raw SBN 10Y (less IDN default spread "
+                            "1.50% 2026-01") for d in s.drivers)
+    assert not any("real growth" in sig.detail for sig in s.signals)
+
+
+def test_r1_band_unchanged():
+    # EY 9: implied 5.0 vs hurdle 4.5 → +0.5, inside ±ERP_BAND; locked: 7 vs 6 → +1, cheap
+    s = run(dbnomics=dbn_crp(), spec="r1", snapshots=FakeSnapshots(factors(ey=9.0)))
+    assert s.signal("implied_erp_vs_hurdle").direction == 0 and s.call == "hold"
+    k = run(dbnomics=dbn_crp(), snapshots=FakeSnapshots(factors(ey=9.0)))
+    assert k.signal("implied_erp_vs_hurdle").direction == 1
+
+
+def test_r1_default_spread_respects_the_crp_lag():
+    # the 2026-10-01 snapshot is inside the 45-day lag on 10-23: the January one stands
+    s = run(dbnomics=dbn_crp({date(2026, 1, 1): 0.015, date(2026, 10, 1): 0.05}), spec="r1")
+    assert s.hurdle == pytest.approx(4.5)
+
+
+@pytest.mark.parametrize("src", [
+    lambda: dbn_crp({}),
+    lambda: FakeDbnCrp(dbn_source(), error="locked"),
+    lambda: dbn_source(),  # no damodaran_crp table served
+])
+def test_r1_without_default_spread_makes_no_valuation_call(src):
+    s = run(dbnomics=src(), spec="r1")
+    assert s.hurdle is None and s.call == "no_call"
+    assert any("damodaran_crp" in x or "default_spread" in x for x in s.stale_inputs)
+
+
+def test_r1_fallback_hurdle_also_nets_the_default_spread():
+    s = run(dbnomics=dbn_crp(us_erp=None, crp=None, hurdle=0.06), spec="r1")
+    assert s.hurdle == pytest.approx(6.0 - 1.5)
+
+
+def test_unknown_spec_raises():
+    with pytest.raises(ValueError, match="unknown valuation spec"):
+        run(spec="x")

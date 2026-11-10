@@ -53,7 +53,7 @@ from assist.eval.placebo import edge, forward_returns
 from assist.layers import regime as regime_layer
 from assist.layers.bonds.idn import PROXY_10Y, IdnBonds, bond_returns, idn_bonds
 from assist.layers.overrides import idn_overrides
-from assist.layers.rules.idn_stocks import IdnStocks, idn_stocks, month_end_closes
+from assist.layers.rules.idn_stocks import SPEC, IdnStocks, idn_stocks, month_end_closes
 from assist.layers.signals import idn_signals
 from assist.layers.types import AssetScore
 from assist.sources.base import Row, SourceUnavailable
@@ -287,7 +287,8 @@ def _stocks_missing(s: IdnStocks) -> tuple[str, ...]:
         if s.real_yield is None and s.hurdle is not None:
             out.append("CPI: " + _reason(stale, ("cpi", "CPI", "bps-looker ("), "no CPI"))
         if s.hurdle is None:
-            out.append("hurdle: " + _reason(stale, ("erp", "crp", "dbnomics ("), "no hurdle"))
+            out.append("hurdle: " + _reason(stale, ("erp", "crp", "default_spread", "dbnomics ("),
+                                               "no hurdle"))
     if s.signal("idx_foreign_flow") is None:
         out.append("foreign flow: " + _reason(stale, ("IDX_NET_FOREIGN", "idxscape ("),
                                               "no signal"))
@@ -403,42 +404,56 @@ def ten_year_months(idn: Any, end: date) -> list[tuple[date, float]]:
 # ---------------- build ----------------
 
 
-def rules_on(day: date, src: HistorySources) -> tuple[IdnBonds, IdnStocks]:
-    """Both rules on `day`, with every input as known that day (as `pipeline.gather_idn`)."""
+def rules_on(day: date, src: HistorySources, *, stocks_spec: str = SPEC,
+             assets: Sequence[str] = ASSETS) -> tuple[IdnBonds | None, IdnStocks | None]:
+    """The rules in `assets` on `day` (None for one left out), with every input as known that
+    day (as `pipeline.gather_idn`); `stocks_spec` is the stocks rule's valuation spec."""
     idn = src.idn
     reg = regime_layer.classify(regime_layer.read_inputs(day, src.fred))
     ov = idn_overrides(day, bps=idn.bps, bisfetcher=idn.bisfetcher, dbnomics=idn.dbnomics,
                        satudatascape=idn.satudatascape)
     sig = idn_signals(day, idxscape=idn.idxscape, kseistat=idn.kseistat, tic=idn.tic)
-    bonds = idn_bonds(day, reg, ov, sig, phei=idn.phei, dbnomics=idn.dbnomics, bps=idn.bps,
-                      idxscape=idn.usdidr or idn.idxscape)
-    stocks = idn_stocks(day, reg, ov, sig, held_score(day), phei=idn.phei, dbnomics=idn.dbnomics,
-                        bps=idn.bps, idxmethod=idn.idxmethod, snapshots=idn.snapshots)
+    bonds = stocks = None
+    if "bonds" in assets:
+        bonds = idn_bonds(day, reg, ov, sig, phei=idn.phei, dbnomics=idn.dbnomics, bps=idn.bps,
+                          idxscape=idn.usdidr or idn.idxscape)
+    if "stocks" in assets:
+        stocks = idn_stocks(day, reg, ov, sig, held_score(day), phei=idn.phei,
+                            dbnomics=idn.dbnomics, bps=idn.bps, idxmethod=idn.idxmethod,
+                            snapshots=idn.snapshots, spec=stocks_spec)
     return bonds, stocks
 
 
 def build(src: HistorySources, dates: Sequence[date], *, today: date,
           horizon: int = HORIZON, fingerprint: str | None = None,
           store_dates: Mapping[str, str | None] | None = None,
-          progress: Callable[[date], None] | None = None) -> dict[str, RuleHistory]:
-    """Both rules on each of `dates`, with their forward returns as known on `today`."""
+          progress: Callable[[date], None] | None = None, stocks_spec: str = SPEC,
+          assets: Sequence[str] = ASSETS) -> dict[str, RuleHistory]:
+    """The rules in `assets` (both by default) on each of `dates`, with their forward returns
+    as known on `today`; `stocks_spec` is the stocks rule's valuation spec."""
     dates = sorted(dates)
+    assets = tuple(a for a in ASSETS if a in assets)
     horizon_end = today - timedelta(days=1)
-    stock_fwd = stock_forward(_rows(src.idn.idxmethod, JCI, horizon_end), horizon, today)
-    bond_fwd = bond_forward(ten_year_months(src.idn, horizon_end), horizon, today)
-    rows: dict[str, list[HistoryRow]] = {a: [] for a in ASSETS}
+    stock_fwd = (stock_forward(_rows(src.idn.idxmethod, JCI, horizon_end), horizon, today)
+                 if "stocks" in assets else {})
+    bond_fwd = (bond_forward(ten_year_months(src.idn, horizon_end), horizon, today)
+                if "bonds" in assets else {})
+    rows: dict[str, list[HistoryRow]] = {a: [] for a in assets}
     for day in dates:
         if progress is not None:
             progress(day)
-        b, s = rules_on(day, src)
-        rows["bonds"].append(HistoryRow(day, b.call, b.proposed_stance, _bonds_missing(b),
-                                        b.ten_year_source, bond_fwd.get(_key(day)), b.regime,
-                                        _bonds_values(b), b.stale_inputs))
-        rows["stocks"].append(HistoryRow(day, s.call, s.proposed_stance, _stocks_missing(s),
-                                         s.ten_year_source, stock_fwd.get(_key(day)), s.regime,
-                                         _stocks_values(s), s.stale_inputs))
+        b, s = rules_on(day, src, stocks_spec=stocks_spec, assets=assets)
+        if b is not None:
+            rows["bonds"].append(HistoryRow(day, b.call, b.proposed_stance, _bonds_missing(b),
+                                            b.ten_year_source, bond_fwd.get(_key(day)),
+                                            b.regime, _bonds_values(b), b.stale_inputs))
+        if s is not None:
+            rows["stocks"].append(HistoryRow(day, s.call, s.proposed_stance,
+                                             _stocks_missing(s), s.ten_year_source,
+                                             stock_fwd.get(_key(day)), s.regime,
+                                             _stocks_values(s), s.stale_inputs))
     return {a: RuleHistory(a, tuple(rows[a]), horizon, fingerprint, dict(store_dates or {}))
-            for a in ASSETS}
+            for a in assets}
 
 
 # ---------------- cache ----------------
