@@ -44,9 +44,24 @@ def test_two_kept_names_keep_the_higher_margin():
     assert v["BBNI"]["redundant"] is False and v["BMRI"]["redundant"] is True
 
 
-def test_unrated_names_keep_the_largest_holding():
-    v = by(judge(["BJBR", "BTPS"], P, held={"BJBR": 1e6, "BTPS": 4e6}))
-    assert v["BTPS"]["keeper"] == "BTPS" and v["BJBR"]["redundant"] is True
+def test_unrated_names_keep_the_highest_dividend_yield():
+    p = {**P, "BJBR": {**P["BJBR"], "div_yield": 7.5}, "BTPS": {**P["BTPS"], "div_yield": 4.0}}
+    held = {"BJBR": 1e6, "BTPS": 4e6}  # BTPS is the larger holding, BJBR pays more
+    v = by(judge(["BJBR", "BTPS"], p, held=held))
+    assert v["BJBR"]["keeper"] == "BJBR" and v["BTPS"]["redundant"] is True
+    assert v["BJBR"]["div_yield"] == 7.5
+    # a name with no yield comes after one with a yield, whatever is held
+    p["BTPS"] = {**P["BTPS"], "div_yield": None}
+    assert by(judge(["BJBR", "BTPS"], p, held=held))["BTPS"]["redundant"] is True
+    p["BJBR"] = {**P["BJBR"], "div_yield": 0.0}
+    # neither pays: the larger holding is kept
+    assert by(judge(["BJBR", "BTPS"], p, held=held))["BTPS"]["keeper"] == "BTPS"
+
+
+def test_a_rated_name_beats_a_higher_yield():
+    p = {**P, "BBNI": {**P["BBNI"], "div_yield": 12.0}}
+    v = by(judge(["BMRI", "BBNI"], p, ranked={"BMRI": -1.0}))
+    assert v["BMRI"]["keeper"] == "BMRI"
 
 
 def test_a_different_size_or_industry_is_never_redundant():

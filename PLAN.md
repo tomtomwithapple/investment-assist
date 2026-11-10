@@ -1659,9 +1659,10 @@ sector and per name only.
    pro rata over the kept names.
 
 **Decided by the user 2026-11-10.** Three size buckets by market cap; only a favourable tilt
-allows redundancy. **Built on a default, not confirmed:** the bucket lines, large at Rp 50T or
-more (32 of 963 names), mid from Rp 5T (181), small below; and the industry level (58 groups,
-not the 33 sub-sectors or 101 sub-industries).
+allows redundancy; the bucket lines, large at Rp 50T or more (32 of 963 names), mid from Rp 5T
+(181), small below; the industry level (58 groups); and, changing rule 2, **unrated names keep
+the highest dividend yield** (the screener's `div_yield`; a name with no yield after those
+with one, then the larger holding), in place of the largest holding.
 
 - [x] **S81 Groups and keepers** (P98-diversify). `candidates/diversify.py`, pure: size bucket,
   group, order, keeper, tilt exception. Test first: one case per rule.
@@ -1676,11 +1677,12 @@ Parallel groups: S81 → S82 → S83 → S84.
 
 ## Open questions
 
-- **Phase O defaults** (size lines Rp 50T and Rp 5T; the 58-group industry level): built
-  2026-11-10, not yet confirmed by the user.
+- ~~**Phase O defaults**~~ (size lines Rp 50T and Rp 5T; the 58-group industry level):
+  confirmed by the user 2026-11-10, with the keeper among unrated names changed to the highest
+  dividend yield.
 
-- **Phase N choices 4, 7, 8, 9** (guided UI: entry cap of +1%, strength labels, tranche dates,
-  menu grouping): built on their defaults 2026-11-10, not yet confirmed by the user.
+- ~~**Phase N choices 4, 7, 8, 9**~~ (guided UI: entry cap of +1%, strength labels, tranche
+  dates, menu grouping): the defaults confirmed by the user 2026-11-10.
 
 - ~~Target weight bands per stance~~: benchmark decided 2026-11-06 (80% IDN as 48 stocks / 32
   SBN, 20% US stocks; phase I). The ±5 pt tilt and S20a's 5% per-name cap are still the
@@ -1801,6 +1803,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S80 Phase N fan-in (F14-phase-n) | done | 2026-11-10 | merge `56c5025` | 2053 on main | `assist run --no-send` 13:19 → 13:26 WIB, exit 0: model `sha256:cf920942a6d4…`, 71 records, journal 715 records, 9 models; `out/guide.json` 54 sells Rp 27.1m (1 strong, 15 failed-screen, 38 rebalance) and 2 bucket buys Rp 27.8m in 3 tranches; candidates schema 1.2.0; local UI restarted; not pushed; CLAUDE.md untouched |
 | S81–S83 Groups and keepers, buying, rebalance sales (P98, P99, P100) | done | 2026-11-10 | this commit (branch `phase-o`) | 8 diversify, 4 rebalance, 4 run_undervalued, 2 guide (2071 total) | `candidates/diversify.py` (industry × size group, keeper by screen rank, favourable-tilt exception); sizing gives a redundant row no new money; candidates schema 1.3.0 `diversification`; `rebalance.ordered_sales` sells redundant names in full first, then pro rata, kept names last; read-only on the 2026-11-10 run: 52 judged, 16 redundant, none allowed; guide 51 sells (16 trims, 16 redundant in full about Rp 7.0m, 19 pro-rata) against 54 before, same Rp 27.1m; trims unchanged; size lines Rp 50T / 5T and the industry level are defaults |
 | S84 Phase O fan-in (F15-phase-o) | done | 2026-11-10 | merge `55dec7a` | 2071 on main | `assist run --no-send` 13:56 → 14:03 WIB, exit 0: model `sha256:427a7008dd87…`, journal 786 records, 10 models; candidates schema 1.3.0 (52 judged, 16 redundant, none allowed); guide 51 sells Rp 27.1m and 2 bucket buys Rp 27.8m; local UI restarted; not pushed; CLAUDE.md untouched |
+| S81b Keeper by dividend yield (P98b-keeper-yield) | done | 2026-11-10 | this commit (branch `o-keeper-yield`) | 2 diversify (1 replaced), fixtures (2072 total) | unrated names in a group keep the highest `div_yield` (user 2026-11-10), then the larger holding; `diversification.names[].div_yield`, candidates schema 1.3.1; read-only on the 2026-11-10 run: still 16 redundant of 52, but larger holdings (TOWR, KLBF, TOTO, TPMA, SICO now go, ISAT, TSPC, SPTO, KKGI, MYOH stay), so the guide has 33 sells (16 trims, 16 redundant, 1 pro-rata) against 51, same Rp 27.1m |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

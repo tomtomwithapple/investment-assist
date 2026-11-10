@@ -415,7 +415,7 @@ def test_average_down_unfunded_when_the_market_has_no_budget():
     p, rows, names = _ad({"BMRI": 20e6, "JPFA": 5e6, "GGRM": 5e6},
                          {"BMRI": (1200.0, 20_000.0), "JPFA": (1002.0, 5_000.0),
                           "GGRM": (80_000.0, 100.0)})
-    assert p["schema_version"] == "1.3.0"
+    assert p["schema_version"] == "1.3.1"
     assert (p["average_down"]["underwater_pct"], p["average_down"]["gate3"]) == (5.0, "context")
     assert p["config"]["average_down"]["underwater_pct"] == 5.0
     # BMRI: 16.7% below cost, kept, room, no budget: shown, sized 0, still "hold"
@@ -490,8 +490,8 @@ BANKS = [cand("BMRI", "Keuangan", 16.25, 2.51), cand("BBNI", "Keuangan", 15.5, 1
 PROFILES = {"BMRI": {"sector": "Keuangan", "industry": "Bank", "mktcap": 400e12},
             "BBNI": {"sector": "Keuangan", "industry": "Bank", "mktcap": 150e12},
             "BJBR": {"sector": "Keuangan", "industry": "Bank", "mktcap": 9e12},
-            "GGRM": {"sector": "Primer", "industry": "Rokok", "mktcap": 30e12},
-            "HMSP": {"sector": "Primer", "industry": "Rokok", "mktcap": 40e12}}
+            "GGRM": {"sector": "Primer", "industry": "Rokok", "mktcap": 30e12, "div_yield": 3.0},
+            "HMSP": {"sector": "Primer", "industry": "Rokok", "mktcap": 40e12, "div_yield": 8.0}}
 
 
 def _div(tilt_res=None, holdings=None):
@@ -526,8 +526,8 @@ def test_a_favourable_passed_tilt_allows_the_redundant_row():
     assert names["BBNI"]["allowed"] is False and rows["BBNI"]["action"] == "watch"
 
 
-def test_a_held_redundant_name_is_not_trimmed_and_unrated_names_keep_the_largest():
-    p, rows, names = _div(holdings={"BBNI": 20e6, "GGRM": 5e6, "HMSP": 8e6})
+def test_a_held_redundant_name_is_not_trimmed_and_unrated_names_keep_the_best_yield():
+    p, rows, names = _div(holdings={"BBNI": 20e6, "GGRM": 9e6, "HMSP": 8e6})
     assert not any(t["symbol"] == "BBNI" for t in p["sizing"]["trims"])
     assert rows["BBNI"]["action"] == "hold"
     assert (names["GGRM"]["redundant"], names["GGRM"]["keeper"], names["GGRM"]["basis"]) == (
