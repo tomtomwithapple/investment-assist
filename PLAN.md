@@ -74,6 +74,7 @@ tiers wait on.
 | L. Layer-2 overrides on their history (point-in-time override gate, all 26 sides failed) | S57–S66, S61b | 11 / 11 |
 | M. Average down on a held name (cost basis in layer 5, gated rule, dip placebo) | S67–S71 | 5 / 5 |
 | N. Guided UI (this week's steps with amount, date, entry price, TP and SL; plain words) | S72–S80 | 9 / 9 |
+| O. The investing principle as rules (keep the screen's names, no redundant industry and size, rebalance respects it) | S81–S84 | 0 / 4 |
 
 ### Open data gaps (fetcher side)
 
@@ -1624,7 +1625,59 @@ on their defaults, still the user's to change.**
 
 Parallel groups: S72 → {S73, S74} → S75 → {S76, S78} → {S77, S79} → S80.
 
+### Phase O — the investing principle as rules (planned 2026-11-10)
+
+**Principle (user, 2026-11-10).** "Hunting the best undervalued stocks with real fundamentals
+along with dividends, so it grows when kept." Diversify, "but avoiding traps like redundant
+sector or industries, but allow when they are different size or market". Reconciled: where a
+tilt applies, redundancy in that sector or industry is allowed; different size is never
+redundant; rebalance sales respect all of it.
+
+**Why.** Checked 2026-11-10 on phase N's run: the guide's 38 rebalance sales are plain pro rata.
+They trim every held name a little, sound dividend payers included, and ignore industry and
+size. Of the 67 held names, 27 share an industry and a size bucket with another held name (18
+groups; the largest is eight mid-cap "Produk Makanan Pertanian" names). Sizing caps names per
+sector and per name only.
+
+**Rules.**
+
+1. *Group.* A name's group is its IDX-IC industry (idx-method `industry_membership`, the
+   58-group level, newest snapshot) and its size bucket. A name with no industry or no market
+   cap has no group and is never redundant. Markets are separate lists, so a US name is never
+   redundant with an Indonesian one.
+2. *Keeper.* Within a group the names are ordered: kept by a placebo-passing screen (margin,
+   high first); then ranked by a passing screen but not kept (margin, high first); then unrated
+   (largest holding first). The first is the keeper; the others are redundant.
+3. *Tilt.* A redundant name is allowed when a passed tilt favours its sector (tilt > 0), or its
+   industry once an industry tilt exists (none today). Decided by the user 2026-11-10: only a
+   favourable tilt counts.
+4. *Buying.* A redundant row that is not allowed gets no new money ("redundant with X"). It is
+   not trimmed for that.
+5. *Rebalance sales*, replacing phase N's pro rata for the part of a cut no trim covers:
+   first the redundant names, in full, the lowest-ordered of the most crowded groups first;
+   then pro rata over the other names no passing screen keeps; last, and only if still needed,
+   pro rata over the kept names.
+
+**Decided by the user 2026-11-10.** Three size buckets by market cap; only a favourable tilt
+allows redundancy. **Built on a default, not confirmed:** the bucket lines, large at Rp 50T or
+more (32 of 963 names), mid from Rp 5T (181), small below; and the industry level (58 groups,
+not the 33 sub-sectors or 101 sub-industries).
+
+- [ ] **S81 Groups and keepers** (P98-diversify). `candidates/diversify.py`, pure: size bucket,
+  group, order, keeper, tilt exception. Test first: one case per rule.
+- [ ] **S82 Buying and the payload** (P99-diversify-sizing). Profiles (industry, market cap)
+  gathered from idx-method; `sizing.size` skips a row marked redundant; the candidates payload
+  gains a `diversification` block (schema 1.3.0). A model change.
+- [ ] **S83 Rebalance sales** (P100-rebalance-order). `rebalance.ordered_sales`: redundant in
+  full first, then pro rata, kept names last; the guide's steps say why. A model change.
+- [ ] **S84 Phase O fan-in** (F15-phase-o). Merge, one live run, Progress rows, STATUS, README.
+
+Parallel groups: S81 → S82 → S83 → S84.
+
 ## Open questions
+
+- **Phase O defaults** (size lines Rp 50T and Rp 5T; the 58-group industry level): built
+  2026-11-10, not yet confirmed by the user.
 
 - **Phase N choices 4, 7, 8, 9** (guided UI: entry cap of +1%, strength labels, tranche dates,
   menu grouping): built on their defaults 2026-11-10, not yet confirmed by the user.
