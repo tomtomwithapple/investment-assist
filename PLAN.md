@@ -70,7 +70,7 @@ tiers wait on.
 | J. Review quick fixes (fingerprint scope, rebalance vs tilt, docs, USA universe) | S41–S44 | 4 / 4 |
 | K. Rules on their history, home regime (point-in-time rule gate, IDN home regime) | S45–S56 | 12 / 12 |
 | L. Layer-2 overrides on their history (point-in-time override gate, all 26 sides failed) | S57–S66, S61b | 11 / 11 |
-| M. Average down on a held name (cost basis in layer 5, gated rule, dip placebo) | S67–S71 | 3 / 5 |
+| M. Average down on a held name (cost basis in layer 5, gated rule, dip placebo) | S67–S71 | 4 / 5 |
 
 ### Open data gaps (fetcher side)
 
@@ -1518,7 +1518,7 @@ was taken after S69 came back insufficient, so gate 3 is context.
   numbers. Parallel with S68. A pass makes gate 3 binding; a fail leaves it context.
   **Result 2026-11-10: insufficient** (1 non-overlapping 12-month window, needs 10; the history
   starts 2021-11, so about 2035). Gate 3 stays context.
-- [ ] **S70 Surfacing** (P89-average-down-ui). Telegram block, brief line, `/portfolio` and
+- [x] **S70 Surfacing** (P89-average-down-ui). Telegram block, brief line, `/portfolio` and
   `/candidates` columns (cost, below cost %, action).
 - [ ] **S71 Phase M fan-in** (F13-phase-m). Merge `phase-m`, one live run, Progress rows,
   STATUS, README; CLAUDE.md lines only with your OK.
@@ -1637,6 +1637,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S67 Cost basis in layer 5 (P86-cost-basis) | done | 2026-11-10 | this commit (branch `phase-m`) | 10 financer, 2 run_undervalued, 1 portfolio expectation updated (1958 total) | `Holding.avg_cost` / `cost_value` (None when the statement prints 0: FR0080), `roll` re-averages through trade documents (a buy by its net amount, a sell in proportion), `undervalued.cost_basis_from`; nothing reads it; live, both accounts: 67 IDN stock names all with a cost, 61 below cost, six at 16% or more below (AMRT −36.7%, KKGI, CTRA, KLBF, TOWR, ASII), BMRI −15.0%, cost Rp58,905,894 vs value Rp53,697,910 (−8.8%); model fingerprint `13d8dceb4fa3…` → `0054161d53f8…` with identical behaviour (segment opens at S71) |
 | S68 Average-down rule (P87-average-down) | done | 2026-11-10 | this commit (branch `phase-m`) | 16 average_down, 4 run_undervalued (1995 total) | `candidates/average_down.py` (`judge`, gates 1–6: underwater at 5%, kept by a passing screen, entry status context, sizing's room, budget, `entry_typical` limits); `assemble(cost_basis=)`: row `cost_basis` and `average_down`, action `average_down` when sized, top-level `average_down` block, candidates schema 1.1.0, journalled; sizes and trims untouched; live (bars 2026-11-05, budget 0): 67 held, 46 stop at gate 1, 20 at gate 2, BMRI (−15.2%) at gate 4 over the 5% cap, none funded or unfunded; model fingerprint `8aeca8e62547…` → `aa9e0c60fe9c…` (a real change; segment opens at S71) |
 | S69 Placebo for gate 3 (P88-dip-placebo) | done | 2026-11-10 | this commit (branch `phase-m`) | 17 dip_gate (1975 total) | `eval/dip_gate.py`: adds in `buy_zone` or `deep` at month ends (levels from bars on or before the date, add at the next session) against the same names on random days, 12-month total return, phase K's gate numbers; live **insufficient**: 1 non-overlapping window of 10 (11 scored months 2024-11 → 2025-10, 1,844 zone adds, 797 names), so gate 3 stays context; diagnostics, overlapping: real +48.4% vs placebo +46.7%, ahead 5 of 11 months, `avoid` 38% winners against 56–59% for the rest; at 3 months 7 windows, also insufficient; model fingerprint `0054161d53f8…` → `8aeca8e62547…` with identical behaviour (segment opens at S71) |
+| S70 Surfacing (P89-average-down-ui) | done | 2026-11-10 | this commit (branch `phase-m`) | 3 brief, 2 view_candidates, 1 view_portfolio, 2 expectations extended (2001 total) | `brief.average_down_view` / `average_down_lines`; Telegram `IDN to average down` block after "to buy" (funded with old → new average cost, unfunded, one line on where the rest stopped); brief Action cell and bullets; `/candidates` columns `Avg cost`, `vs cost` and an *Average down* card; `/portfolio` adds table with `Action` and `Avg cost IDR`, an *Average down* table, and the JSON twin; no run made, fingerprint unchanged from S68 |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

@@ -390,3 +390,61 @@ def test_override_gate_line_names_passes_and_crossings():
 
 def test_no_layer2_no_override_gate_line():
     assert brief.override_gate_line(current()) is None
+
+
+# ---------------- average down (P89, PLAN S70) ----------------
+
+
+def _down_payload(names, rows=()):
+    return {"market": "IDN", "styles": [{"style": "dividend_value", "passed": True,
+                                         "rows": list(rows)}],
+            "sizing": {"trims": [], "budget_idr": 0.0},
+            "average_down": {"underwater_pct": 5.0, "gate3": "context", "names": list(names)}}
+
+
+def _down_name(sym, status, gate, below, reason="r", avg=1000.0, new=None):
+    return {"symbol": sym, "status": status, "gate": gate, "reason": reason, "avg_cost": avg,
+            "quantity": 100.0, "price": avg * (1 + below / 100), "below_cost_pct": below,
+            "new_avg_cost": new, "entry_status": None}
+
+
+def test_average_down_lines_none_with_where_the_names_stopped():
+    from assist import brief, pipeline
+
+    p = _down_payload([_down_name("AMRT", "stopped", 2, -35.0),
+                       _down_name("BMRI", "stopped", 4, -15.2),
+                       _down_name("KLBF", "stopped", 2, -18.6),
+                       _down_name("BBCA", "stopped", 1, -0.2)])
+    line = ("none: 3 of 4 held names are 5% or more below cost "
+            "(2 not kept by a passing screen, 1 no room under the caps)")
+    assert brief.average_down_lines(p) == [line]
+    assert [n["symbol"] for n in brief.average_down_view(p)["stopped"]] == [
+        "AMRT", "KLBF", "BMRI"]  # deepest first
+    assert f"IDN to average down: {line}" in pipeline.trade_lines([p])
+
+
+def test_average_down_lines_funded_and_unfunded():
+    from assist import brief, pipeline
+
+    row = {"symbol": "BMRI", "rank": 1, "action": "average_down",
+           "size": {"idr": 3e6, "tranches": [], "reason": "x"}}
+    p = _down_payload([_down_name("BMRI", "average_down", None, -15.2, avg=4244.0, new=4180.0),
+                       _down_name("TLKM", "unfunded", 5, -8.0, reason="no budget: x"),
+                       _down_name("AMRT", "stopped", 2, -35.0)], rows=[row])
+    assert brief.average_down_lines(p) == [
+        "BMRI IDR 3,000,000 (-15.2% vs cost, average cost 4,244 → 4,180)",
+        "TLKM unfunded (-8.0% vs cost): no budget: x",
+        "3 of 3 held names are 5% or more below cost (1 not kept by a passing screen)"]
+    text = "\n".join(pipeline.trade_lines([p]))
+    assert "IDN to average down (2):\n  BMRI IDR 3,000,000" in text
+    assert "IDN to buy (1, IDR 3.0m)" in text  # the average down is still a buy
+
+
+def test_average_down_lines_nothing_held_or_nothing_underwater():
+    from assist import brief, pipeline
+
+    assert brief.average_down_lines(_down_payload([])) == []
+    assert brief.average_down_lines({"market": "USA", "styles": []}) == []
+    assert not any("average down" in x for x in pipeline.trade_lines([_down_payload([])]))
+    p = _down_payload([_down_name("BBCA", "stopped", 1, -0.2)])
+    assert brief.average_down_lines(p) == ["none: no held name is 5% or more below cost (1 held)"]

@@ -1029,7 +1029,8 @@ def _m(idr: float) -> str:
 def trade_lines(payloads: Sequence[Mapping], stances: Sequence[Mapping] = ()) -> list[str]:
     """Per market: its leg's rebalance vs tilt label when its stance is given (S42), every name
     sized to sell (`sizing.trims`, largest first, with its reason), then every name sized to buy
-    (a row's `size`), or one line saying there is none."""
+    (a row's `size`), or one line saying there is none; then the held names to average down
+    (S70: funded with the old and new average cost, unfunded, and how many stopped where)."""
     lines: list[str] = []
     for p in payloads:
         mkt, sizing = p["market"], p.get("sizing") or {}
@@ -1057,6 +1058,12 @@ def trade_lines(payloads: Sequence[Mapping], stances: Sequence[Mapping] = ()) ->
             budget = sizing.get("budget_idr")
             why = "" if not budget else f" (IDR {_m(budget)} budget unspent)"
             lines.append(f"{mkt} to buy: none{why}")
+        down = brief.average_down_lines(p)
+        if len(down) == 1 and down[0].startswith("none"):
+            lines.append(f"{mkt} to average down: {down[0]}")
+        elif down:
+            lines.append(f"{mkt} to average down ({len(down) - 1}):")
+            lines += [f"  {x}" for x in down]
     return lines
 
 

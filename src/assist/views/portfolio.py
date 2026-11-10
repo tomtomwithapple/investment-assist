@@ -25,7 +25,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from assist import web
+from assist import brief, web
 from assist.stance import mandate_summary, split_text
 from assist.views import candidates as cand
 from assist.views.overview import TONE
@@ -394,6 +394,23 @@ def unmapped(p: Mapping) -> str:
 # ---------------- trims and adds ----------------
 
 
+def _signed_pct(x: Any) -> str:
+    return DASH if not isinstance(x, (int, float)) or isinstance(x, bool) else f"{x:+.1f}"
+
+
+def _cost_move(a: Mapping) -> str:
+    """Old → new average cost of an average down; a dash for a plain add."""
+    if a.get("avg_cost") is None:
+        return DASH
+    new = a.get("new_avg_cost")
+    return idr(a["avg_cost"]) + ("" if new is None else f" → {idr(new)}")
+
+
+def _down_status(n: Mapping) -> str:
+    s = str(n.get("status") or "").replace("_", " ")
+    return f"{s} (gate {n['gate']})" if n.get("status") == "stopped" else s
+
+
 def trades(markets: Sequence[cand.Market]) -> tuple[str, list[dict]]:
     data, parts = [], []
     for m in markets:
@@ -405,18 +422,35 @@ def trades(markets: Sequence[cand.Market]) -> tuple[str, list[dict]]:
         for style in _l(p.get("styles")):
             for r in _l(style.get("rows")):
                 size = _d(r.get("size"))
-                if r.get("action") == "add" and size:
+                if r.get("action") in ("add", "average_down") and size:
+                    down = r.get("action") == "average_down"
+                    cb = _d(r.get("cost_basis"))
                     adds.append({"symbol": r.get("symbol"), "name": r.get("name"),
                                  "style": style.get("style"), "idr": size.get("idr"),
+                                 "action": "average down" if down else "add",
+                                 "avg_cost": cb.get("avg_cost") if down else None,
+                                 "new_avg_cost": cb.get("new_avg_cost") if down else None,
+                                 "below_cost_pct": cb.get("below_cost_pct") if down else None,
                                  "tranches": len(_l(size.get("tranches"))),
                                  "reason": size.get("reason")})
+        view = brief.average_down_view(p) if isinstance(p, Mapping) else None
+        down = [] if view is None else [
+            {k: n.get(k) for k in ("symbol", "status", "gate", "reason", "avg_cost", "price",
+                                   "below_cost_pct", "new_avg_cost", "entry_status")}
+            for n in (*view["funded"], *view["unfunded"], *view["stopped"])]
         data.append({"market": m.key, "problem": m.problem, "trims": trims, "adds": adds,
+                     "average_down": down,
                      "budget_idr": sz.get("budget_idr"), "unspent_idr": sz.get("unspent_idr")})
         tr = [f"<tr><td>{_t(t['symbol'])}</td>" + _num_td(idr(t["idr"]))
               + f"<td>{_t(t['reason'])}</td></tr>" for t in trims]
         ad = [f"<tr><td>{_t(a['symbol'])}{' ' + _t(a['name']) if a['name'] else ''}</td>"
-              f"<td>{_t(a['style'])}</td>" + _num_td(idr(a["idr"])) + _num_td(_t(a["tranches"]))
+              f"<td>{_t(a['style'])}</td><td>{_t(a['action'])}</td>" + _num_td(idr(a["idr"]))
+              + _num_td(_t(a["tranches"])) + _num_td(_cost_move(a))
               + f"<td>{_t(a['reason'])}</td></tr>" for a in adds]
+        dn = [f"<tr><td>{_t(n['symbol'])}</td><td>{_t(_down_status(n))}</td>"
+              + _num_td(idr(n["avg_cost"])) + _num_td(idr(n["price"]))
+              + _num_td(_signed_pct(n["below_cost_pct"]))
+              + f"<td>{_t(n['entry_status'])}</td><td>{_t(n['reason'])}</td></tr>" for n in down]
         problem = web.notice(f"{m.file}: {m.problem}") if m.problem else ""
         parts.append(
             f'<h3><a href="/candidates/{esc(m.key)}">{esc(m.key)}</a></h3>{problem}'
@@ -425,7 +459,12 @@ def trades(markets: Sequence[cand.Market]) -> tuple[str, list[dict]]:
             + "<p><strong>Trims</strong></p>"
             + _table(("Name", "Amount IDR", "Reason"), tr, "no trims")
             + "<p><strong>Adds</strong></p>"
-            + _table(("Name", "Style", "Amount IDR", "Tranches", "Reason"), ad, "no adds"))
+            + _table(("Name", "Style", "Action", "Amount IDR", "Tranches", "Avg cost IDR",
+                      "Reason"), ad, "no adds")
+            + "<p><strong>Average down</strong> <span class=\"muted\">(held names 5% or more "
+              "below their average cost; cost basis changes no size)</span></p>"
+            + _table(("Name", "Status", "Avg cost IDR", "Price IDR", "vs cost %", "Entry status",
+                      "Reason"), dn, "no held name is 5% or more below cost"))
     if not parts:
         return _card("trades", "Trims and adds", f'<p class="muted">{esc(cand.EMPTY)}</p>'), data
     return _card("trades", "Trims and adds from the candidate lists", "".join(parts)), data

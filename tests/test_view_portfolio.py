@@ -172,7 +172,9 @@ def test_json_twin(out):
     by = {c["market"]: c for c in d["candidates"]}
     assert [t["symbol"] for t in by["IDN"]["trims"]] == ["AMRT", "BBNI", "BMRI"]
     assert by["AUS"]["adds"] == [{"symbol": "JPFA", "name": None, "style": by["AUS"]["adds"][0][
-        "style"], "idr": 1500000.0, "tranches": 3, "reason": "quarter-Kelly, capped at 5%"}]
+        "style"], "idr": 1500000.0, "action": "add", "avg_cost": None, "new_avg_cost": None,
+        "below_cost_pct": None, "tranches": 3, "reason": "quarter-Kelly, capped at 5%"}]
+    assert by["AUS"]["average_down"] == []
 
 
 # ---------------- failures ----------------
@@ -295,3 +297,21 @@ def test_stance_page_shows_the_split(tmp_path):
 def test_route_is_registered():
     assert any(rx.pattern == r"^/portfolio$" for rx, _ in web.ROUTES)
     assert _get(Path("/nonexistent"), "/portfolio/x").status == 404
+
+
+# ---------------- average down (P89, PLAN S70) ----------------
+
+
+def test_average_down_is_listed_with_the_adds_and_in_its_own_table(out):
+    from test_view_candidates import _with_average_down
+
+    _with_average_down(out)
+    r = _get(out, "/portfolio.json")
+    aus = {c["market"]: c for c in json.loads(r.body)["candidates"]}["AUS"]
+    assert [(a["symbol"], a["action"], a["avg_cost"], a["new_avg_cost"]) for a in aus["adds"]] \
+        == [("JPFA", "average down", 2000.0, 1890.0)]
+    assert [(n["symbol"], n["status"], n["gate"]) for n in aus["average_down"]] == [
+        ("JPFA", "average_down", None), ("BMRI", "unfunded", 5), ("AMRT", "stopped", 2)]
+    html = _get(out, "/portfolio").body
+    assert "<td>average down</td>" in html and "2,000 → 1,890" in html
+    assert "<td>stopped (gate 2)</td>" in html and "<td>unfunded</td>" in html
