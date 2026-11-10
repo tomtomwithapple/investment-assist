@@ -59,7 +59,7 @@ from typing import Any, NamedTuple
 
 import jsonschema
 
-from assist.candidates import average_down, costs, sizing
+from assist.candidates import average_down, costs, exits, sizing
 from assist.candidates import hurdle as hurdle_mod
 from assist.layers.portfolio import classify
 from assist.layers.types import DISCLAIMER, SCHEMA_DIR, Regime
@@ -88,7 +88,7 @@ __all__ = [
 ]
 
 SCHEMA = SCHEMA_DIR / "candidates.schema.json"
-SCHEMA_VERSION = "1.1.0"  # 1.1.0: action `average_down`, `cost_basis`, `average_down` (S68)
+SCHEMA_VERSION = "1.2.0"  # 1.1.0: average down (S68); 1.2.0: the row's `exits` (S74)
 STYLES = ("dividend_value", "garp")  # S15's industry_value has no expected return: not a style
 TRANCHE_IDR = 10e6  # P21's DEFAULT_ORDER: the tranche costs and capacity are judged at
 DROP_FLAGS = ("over_participation", "below_one_lot")
@@ -290,6 +290,9 @@ def _style(style: str, res: Mapping, sectors: Mapping[str, dict],
                      "flags": list(cost.flags)},
             "held": False, "held_idr": 0.0, "action": "watch", "size": None,
             "cost_basis": None, "average_down": None,
+            "exits": exits.exits(style, cost.price, c.get("legs"),
+                                 None if hurdle_pt is None else hurdle_pt + shift,
+                                 e.get("levels")),
         })
     rows.sort(key=lambda r: (-r["margin_pt"], r["symbol"]))
     for i, r in enumerate(rows, 1):
@@ -324,6 +327,7 @@ def config(tilt_fp: str | None, caps: Mapping | None, screens: Mapping[str, Mapp
     """What the payload and every journalled row carry besides the model fingerprint."""
     out = {"tilt_fingerprint": tilt_fp, "hurdle": dict(hurdle_mod.CONFIG),
            "sizing": sizing.config(caps), "average_down": average_down.config(),
+           "exits": exits.config(),
            "tranche_idr": TRANCHE_IDR,
            "round_trips_per_year": 1,
            "screens": {k: dict(v.get("fingerprint") or {}) for k, v in sorted(screens.items())}}

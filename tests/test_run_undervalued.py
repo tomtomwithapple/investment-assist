@@ -415,7 +415,7 @@ def test_average_down_unfunded_when_the_market_has_no_budget():
     p, rows, names = _ad({"BMRI": 20e6, "JPFA": 5e6, "GGRM": 5e6},
                          {"BMRI": (1200.0, 20_000.0), "JPFA": (1002.0, 5_000.0),
                           "GGRM": (80_000.0, 100.0)})
-    assert p["schema_version"] == "1.1.0"
+    assert p["schema_version"] == "1.2.0"
     assert (p["average_down"]["underwater_pct"], p["average_down"]["gate3"]) == (5.0, "context")
     assert p["config"]["average_down"]["underwater_pct"] == 5.0
     # BMRI: 16.7% below cost, kept, room, no budget: shown, sized 0, still "hold"
@@ -467,3 +467,17 @@ def test_without_a_cost_basis_nothing_is_an_average_down():
     row = p["styles"][0]["rows"][0]
     assert row["action"] == "add" and row["cost_basis"] is None
     assert row["average_down"] == {"status": "stopped", "gate": 1, "reason": "no cost basis"}
+
+
+# ---------------- exits (P92, PLAN S74) ----------------
+
+
+def test_rows_carry_entry_cap_take_profit_and_review_price():
+    div = [cand("BMRI", "Keuangan", 16.25, 2.51, legs={"yield_pt": 12.0, "g_pt": 4.25})]
+    p = valid(build(inputs({"dividend_value": screen("dividend_value", cands=div)})))
+    e = p["styles"][0]["rows"][0]["exits"]
+    assert e["entry_cap"] == 1010.0  # the fixture price 1,000 + 1%
+    # fair price = 1,000 x 12 / (13.74 - 4.25) = 1,264.5, on the 5-rupiah tick
+    assert (e["take_profit"], e["take_profit_basis"]) == (1260.0, "fair_price")
+    assert e["review_at"] == 800.0  # the fixture's entry_deep
+    assert p["config"]["exits"]["entry_cap_pct"] == 1.0
