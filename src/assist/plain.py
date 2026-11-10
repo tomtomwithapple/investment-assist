@@ -43,22 +43,20 @@ STRENGTH = {
 MARKET = {"IDN": "Indonesian", "USA": "US", "JPN": "Japanese", "AUS": "Australian",
           "SGP": "Singapore", "KOR": "Korean", "TWN": "Taiwanese", "EMU": "euro-area"}
 ASSET = {"stocks": "stocks", "bonds": "bonds", "currency": "cash", "commodities": "commodities"}
-_TABLES = (REGIME, DOLLAR, STANCE, STYLE, STRENGTH)
+_TABLES = {"regime": REGIME, "dollar": DOLLAR, "stance": STANCE, "style": STYLE,
+           "strength": STRENGTH}
 
 
-def label(term: str | None) -> str:
-    """The plain label of a raw term; the term itself (underscores as spaces) when unknown."""
-    for t in _TABLES:
-        if term in t:
-            return t[term][0]
-    return str(term or "").replace("_", " ")
+def label(kind: str, term: str | None) -> str:
+    """The plain label of a raw term of `kind` (regime, dollar, stance, style, strength; "neutral"
+    is both a regime and a stance); the term itself, underscores as spaces, when unknown."""
+    t = _TABLES[kind]
+    return t[term][0] if term in t else str(term or "").replace("_", " ")
 
 
-def meaning(term: str | None) -> str | None:
-    for t in _TABLES:
-        if term in t:
-            return t[term][1]
-    return None
+def meaning(kind: str, term: str | None) -> str | None:
+    t = _TABLES[kind]
+    return t[term][1] if term in t else None
 
 
 def leg(market: str, asset: str) -> str:

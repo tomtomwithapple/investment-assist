@@ -71,7 +71,7 @@ tiers wait on.
 | K. Rules on their history, home regime (point-in-time rule gate, IDN home regime) | S45–S56 | 12 / 12 |
 | L. Layer-2 overrides on their history (point-in-time override gate, all 26 sides failed) | S57–S66, S61b | 11 / 11 |
 | M. Average down on a held name (cost basis in layer 5, gated rule, dip placebo) | S67–S71 | 5 / 5 |
-| N. Guided UI (this week's steps with amount, date, entry price, TP and SL; plain words) | S72–S80 | 1 / 9 |
+| N. Guided UI (this week's steps with amount, date, entry price, TP and SL; plain words) | S72–S80 | 8 / 9 |
 
 ### Open data gaps (fetcher side)
 
@@ -1601,22 +1601,22 @@ on their defaults, still the user's to change.**
   input explains what it measures and when it votes, on hover, focus or tap; thresholds checked
   against `layers.regime.RULES`. The empty `/industries` page says what is missing
   (idx-method's `api_raw`).
-- [ ] **S73 Plain words** (P91-plain-words). `assist/plain.py`: one table of term → plain label
+- [x] **S73 Plain words** (P91-plain-words). `assist/plain.py`: one table of term → plain label
   and one-line meaning (regime states, dollar, stances, styles, trim reasons, gates), used by
   every page as hover text and by S75's sentences. No model change.
-- [ ] **S74 Exits and entry prices** (P92-exits). `candidates/exits.py`, pure: entry price per
+- [x] **S74 Exits and entry prices** (P92-exits). `candidates/exits.py`, pure: entry price per
   tranche, take-profit (fair price) and the stop-loss pair per sized row; candidates schema
   minor bump. Waits for choices 4–6. A model change (hashed).
-- [ ] **S75 The guide** (P93-guide). `assist/guide.py`, pure: stances + candidates + layer 5 →
+- [x] **S75 The guide** (P93-guide). `assist/guide.py`, pure: stances + candidates + layer 5 →
   ordered steps with amount, shares, dates, prices, strength and why; `schema/guide.schema.json`,
   `out/guide.json`, journalled. Waits for choices 1–3, 7, 8. A model change where choice 1
   names new sales.
-- [ ] **S76 Home page** (P94-this-week). `/` becomes "This week": the steps, then one line per
+- [x] **S76 Home page** (P94-this-week). `/` becomes "This week": the steps, then one line per
   leg (held, target, gap). The stance grid moves to `/background`.
-- [ ] **S77 Navigation** (P95-nav). This week, Portfolio, Why, Track record, Background;
+- [x] **S77 Navigation** (P95-nav). This week, Portfolio, Why, Track record, Background;
   choice 9.
-- [ ] **S78 Brief and Telegram** (P96-guide-notify). Both open with the same steps.
-- [ ] **S79 One place per fact** (P97-dedupe). Average down only on `/portfolio`; style names,
+- [x] **S78 Brief and Telegram** (P96-guide-notify). Both open with the same steps.
+- [x] **S79 One place per fact** (P97-dedupe). Average down only on `/portfolio`; style names,
   trim reasons and stances shown in plain words with the raw term on hover.
 - [ ] **S80 Phase N fan-in** (F14-phase-n). Merge, one live run, Progress rows, STATUS, README.
 
@@ -1740,6 +1740,9 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S70 Surfacing (P89-average-down-ui) | done | 2026-11-10 | this commit (branch `phase-m`) | 3 brief, 2 view_candidates, 1 view_portfolio, 2 expectations extended (2001 total) | `brief.average_down_view` / `average_down_lines`; Telegram `IDN to average down` block after "to buy" (funded with old → new average cost, unfunded, one line on where the rest stopped); brief Action cell and bullets; `/candidates` columns `Avg cost`, `vs cost` and an *Average down* card; `/portfolio` adds table with `Action` and `Avg cost IDR`, an *Average down* table, and the JSON twin; no run made, fingerprint unchanged from S68 |
 | S71 Phase M fan-in (F13-phase-m) | done | 2026-11-10 | merge `bc595b9` | 2001 on main | `assist run` 11:37 → 11:44 WIB (6 m 56 s), exit 0: model `sha256:aa9e0c60fe9c…`, 70 records, journal 644 records, 8 models; `out/candidates` schema 1.1.0; IDN 67 held, none an average down (46 gate 1, 20 gate 2, BMRI gate 4); Telegram not sent (not configured in the shell, no marker written); not pushed; CLAUDE.md untouched |
 | S72 Hover explanations (P90-regime-hover) | done | 2026-11-10 | this commit (branch `phase-n`) | 11 view_regime (2012 total) | `views/regime.py` `EXPLAIN`, `HOME_EXPLAIN`, `.tip` span (hover, focus, tap) on the 9 global and 4 home inputs; thresholds in words tested against `layers.regime.RULES` and the file's home rule; `/industries` empty text names idx-method's empty `api_raw` and the 16:30 close job; no model change |
+| S74 Exits and entry prices (P92-exits) | done | 2026-11-10 | `1bcd11e` (branch `phase-n`) | 12 exits, 1 run_undervalued | `candidates/exits.py`: entry cap (close + 1%), take-profit at the fair price (dividend screen; none for GARP), thesis stop and a review price that never sells; row `exits`, candidates schema 1.2.0; no size changes |
+| S73, S75, S78 Plain words, the guide, brief and Telegram (P91, P93, P96) | done | 2026-11-10 | `c20a346` (branch `phase-n`) | 14 guide, 4 rebalance, 3 plain, 3 e2e expectations extended | `plain.py`; `candidates/rebalance.py` pro-rata sales (hashed); `guide.py` → `out/guide.json` (schema 1.0.0), journalled; brief and Telegram open with the steps; read-only on the 2026-11-10 run: 54 sells Rp 27.1m (1 strong, 15 failed-screen, 38 rebalance) and 2 bucket buys Rp 27.8m (SBN 16.7m, US index fund 11.1m), 3 tranches 11-11 / 11-23 / 12-01 |
+| S76, S77, S79 Home page, navigation, one place per fact (P94, P95, P97) | done | 2026-11-10 | this commit (branch `phase-n`) | 6 view_guide, web / overview / candidates / e2e tests updated (2053 total) | `/` is "This week" (orders by date, legs, take-profit and stop); the old overview is `/background`; grouped navigation; Average down table only on `/portfolio`; style names in plain words; `/signals`, stance pages and trim reasons still show raw terms |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

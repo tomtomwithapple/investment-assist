@@ -133,7 +133,7 @@ def _step(side: str, kind: str, market: str, asset: str, *, symbol: str | None, 
 
 
 def _passing(p: Mapping) -> list[str]:
-    return [plain.label(s["style"]) for s in p.get("styles") or [] if s.get("passed")]
+    return [plain.label("style", s["style"]) for s in p.get("styles") or [] if s.get("passed")]
 
 
 def _held(p: Mapping) -> dict[str, dict]:
@@ -201,8 +201,9 @@ def _stock_steps(p: Mapping, st: Mapping | None, gap_idr: float, day: date) -> l
                 tr.append({"date": d.isoformat(), "idr": x["idr"], "shares": x["shares"],
                            "price": price})
             down = r.get("action") == "average_down"
-            why = (f"Passes the {plain.label(s['style'])} with {r['margin_pt']:+.1f} points over "
-                   "the required return.")
+            screen = plain.label("style", s["style"])
+            why = (f"Passes the {screen} with {r['margin_pt']:+.1f} points over the required "
+                   "return.")
             if down:
                 below = (r.get("cost_basis") or {}).get("below_cost_pct")
                 why += (" You already hold it" + ("" if below is None
@@ -316,8 +317,8 @@ def build(day: date, stances: Sequence[Mapping], candidates: Sequence[Mapping],
         "as_of": day.isoformat(),
         "model_fingerprint": fingerprint,
         "regime": regime,
-        "headline": plain.label(regime) if regime else "No regime read this run",
-        "headline_note": (plain.meaning(regime) or "") if regime else "",
+        "headline": plain.label("regime", regime) if regime else "No regime read this run",
+        "headline_note": (plain.meaning("regime", regime) or "") if regime else "",
         "split": split,
         "portfolio_value_idr": value,
         "legs": legs,

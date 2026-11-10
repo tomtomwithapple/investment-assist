@@ -115,16 +115,17 @@ def test_run_writes_valid_stances_journal_brief_and_sends_once(paths, wbs, finan
     v = stance_validator()
     for name, blob in files.items():
         payload = json.loads(blob)
-        if name != "guide.json":  # the guide has its own schema (tests/test_guide.py)
-            assert not list(v.iter_errors(payload))
         assert payload["model_fingerprint"] == fp
         assert payload["as_of"] == DAY.isoformat()
         assert payload["regime"] == "neutral"
+        if name == "guide.json":  # the guide has its own schema (tests/test_guide.py)
+            continue
+        assert not list(v.iter_errors(payload))
         assert "regime" not in payload["stale_inputs"]
         assert "financer" not in payload["stale_inputs"]
 
     j = journal.Journal(paths.journal)
-    assert j.verify() == len(files) + 1  # one regime record + one per stance
+    assert j.verify() == len(files) + 1  # one regime record + one per stance and the guide
     kinds = [r["kind"] for r in j.read()]
     assert kinds.count("stance") == 3 and kinds.count("regime") == 1
     assert j.fingerprints() == [fp]

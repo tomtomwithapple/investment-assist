@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from assist import brief, web
+from assist import brief, plain, web
 from assist.views.overview import TONE
 from assist.web import esc
 
@@ -223,7 +223,12 @@ def _style(s: Mapping) -> str:
                          else f"{_num(s['quarters'], 'd')} quarters",
                          f"pool {_num(s.get('pool'), 'd')}",
                          f"{len(rows)} name(s)" if rows else "no names") if x]
-    head = (f"<header><h2>{_text(s.get('style'))}</h2>{_verdict_chip(s.get('passed'))}</header>"
+    raw = str(s.get("style") or "")
+    name = plain.label("style", raw)
+    tip = plain.meaning("style", raw)
+    title = (f'<span title="{esc(tip)}">{esc(name[0].upper() + name[1:])}</span> '
+             f'<code class="muted">{esc(raw)}</code>' if tip else _text(s.get("style")))
+    head = (f"<header><h2>{title}</h2>{_verdict_chip(s.get('passed'))}</header>"
             f"<p>{_text(s.get('verdict'))}</p>"
             f'<p class="muted">{" · ".join(stats)}</p>')
     table = ""
@@ -240,8 +245,22 @@ def _style(s: Mapping) -> str:
             f"{head}{table}{drop}</section>")
 
 
+def _average_down_link(p: Mapping) -> str:
+    """PLAN S79: one place per fact. The average-down table lives on /portfolio; here one line
+    says how many held names are underwater and links there."""
+    v = brief.average_down_view(p)
+    if v is None:
+        return ""
+    return _card("average-down", "Average down",
+                 f'<p>{v["underwater"]} of {v["held"]} held names are '
+                 f'{_num(v["underwater_pct"], "g")}% or more below their average cost; '
+                 f'{len(v["funded"])} to average down, {len(v["unfunded"])} unfunded. '
+                 'The table is on <a href="/portfolio">Portfolio</a>.</p>')
+
+
 def _average_down(p: Mapping) -> str:
-    """PLAN S70: the held names 5% or more below cost and where each stopped (S68's block)."""
+    """PLAN S70: the held names 5% or more below cost and where each stopped (S68's block).
+    Kept for callers that want the full table; the page links to /portfolio (S79)."""
     v = brief.average_down_view(p)
     if v is None:
         return ""
@@ -289,7 +308,7 @@ def market(m: Market) -> str:
                   _tilt(_d(p.get("tilt"))),
                   *(_style(_d(s)) for s in _l(p.get("styles"))),
                   _sizing(_d(p.get("sizing"))),
-                  _average_down(p),
+                  _average_down_link(p),
                   _card("stale", "Stale inputs", _list(_l(p.get("stale_inputs")))),
                   _card("sources", "Sources", _list(_l(p.get("sources"))))]
     parts.append("</section><!-- /market -->")

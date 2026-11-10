@@ -151,11 +151,11 @@ def test_other_methods_are_refused(base):
     assert _get(url + "/hello/ann", "POST").status_code == 501
 
 
-def test_root_is_the_overview(base):
+def test_root_is_this_week(base):
     url, _ = base
     r = _get(url + "/")
     assert r.status_code == 200 and "location" not in r.headers
-    assert '<a href="/" class="active">Overview</a>' in r.text
+    assert '<a href="/" class="active">This week</a>' in r.text
     for href, label in web.NAV:
         assert f'href="{href}"' in r.text and label in r.text
 
@@ -235,6 +235,10 @@ def test_flows_is_served_over_http_with_its_nav_link(base):
     assert _get(url + "/flows/2026-10").status_code == 404
 
 
-def test_nav_order_reads_from_regime_to_status():
-    assert [h for h, _ in web.NAV] == ["/", "/regime", "/signals", "/candidates", "/industries",
-                                       "/portfolio", "/flows", "/paper", "/journal", "/status"]
+def test_nav_reads_what_to_do_then_why_then_the_track_record():
+    assert [h for h, _ in web.NAV] == ["/", "/portfolio", "/candidates", "/regime", "/signals",
+                                       "/industries", "/paper", "/journal", "/status", "/flows",
+                                       "/background"]
+    assert [g for g, _ in web.NAV_GROUPS] == [None, "Why", "Track record", "More"]
+    page = web.layout("t", "", "/")
+    assert '<span class="group">Why:</span>' in page
