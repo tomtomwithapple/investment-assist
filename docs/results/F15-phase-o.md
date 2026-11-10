@@ -5,7 +5,7 @@ changed. Heuristic, not investment advice.
 
 - **Merge**: `phase-o` (S81–S83) into `main` with `--no-ff`: `55dec7a`. Not pushed. 2071 tests
   passed on main, ruff clean.
-- **`assist run --no-send`**, 14:09 → 14:16 WIB, exit 0. Telegram not sent, no marker touched.
+- **`assist run --no-send`**, 13:56 → 14:03 WIB, exit 0. Telegram not sent, no marker touched.
 - **New journal segment** `sha256:427a7008dd87…` (diversify, sizing and rebalance are hashed).
   Journal: 715 → 786 records, 9 → 10 models.
 - **`out/candidates/IDN.json`** schema 1.3.0: 52 names judged, 16 redundant, none allowed (the
