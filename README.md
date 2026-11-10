@@ -64,7 +64,8 @@ because a worktree's `../` is not the siblings root.
 4 candidates, 5 portfolio), writes one stance per subject × asset, journals every decision with
 the model fingerprint, writes the brief and sends one Telegram message a day. The message opens
 with the disclaimer and "Paper only, not an order", then the undervalued IDN and USA lists and
-every name sized to sell or buy per market, each market labelled with its stocks leg's split
+every name sized to sell or buy per market and the held names to average down (a sized add on a
+held name 5% or more below its average cost; cost basis changes no size), each market labelled with its stocks leg's split
 into a rebalance to the 48/32/20 benchmark and the model's tilt; stances and regime stay in the
 brief. A missing, locked
 or stale store is reported and lowers confidence; only a missing layer 1 stops the run.
