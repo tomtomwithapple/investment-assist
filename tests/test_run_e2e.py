@@ -109,20 +109,23 @@ def test_run_writes_valid_stances_journal_brief_and_sends_once(paths, wbs, finan
     res = _run(paths, wbs, financer, telegram)
     assert res.ok
     files = _out_bytes(paths.out)
-    assert sorted(files) == ["GOLD/commodities.json", "IDN/bonds.json", "IDN/stocks.json"]
+    assert sorted(files) == ["GOLD/commodities.json", "IDN/bonds.json", "IDN/stocks.json",
+                             "guide.json"]  # S75: this week's steps
     fp = journal.model_fingerprint()
     v = stance_validator()
-    for blob in files.values():
+    for name, blob in files.items():
         payload = json.loads(blob)
-        assert not list(v.iter_errors(payload))
         assert payload["model_fingerprint"] == fp
         assert payload["as_of"] == DAY.isoformat()
         assert payload["regime"] == "neutral"
+        if name == "guide.json":  # the guide has its own schema (tests/test_guide.py)
+            continue
+        assert not list(v.iter_errors(payload))
         assert "regime" not in payload["stale_inputs"]
         assert "financer" not in payload["stale_inputs"]
 
     j = journal.Journal(paths.journal)
-    assert j.verify() == len(files) + 1  # one regime record + one per stance
+    assert j.verify() == len(files) + 1  # one regime record + one per stance and the guide
     kinds = [r["kind"] for r in j.read()]
     assert kinds.count("stance") == 3 and kinds.count("regime") == 1
     assert j.fingerprints() == [fp]
@@ -149,7 +152,7 @@ def test_rerun_with_unchanged_inputs_is_byte_identical_and_send_is_skipped(
     assert second.brief_path.read_bytes() == brief_before
     assert second.notify["skipped"] is True
     assert len(telegram[0]) == 1  # no second HTTP call
-    assert journal.Journal(paths.journal).verify() == 8  # every run is journalled
+    assert journal.Journal(paths.journal).verify() == 10  # every run is journalled (+ guide)
 
 
 def test_stale_out_files_from_an_earlier_run_are_removed(paths, wbs, financer):
@@ -232,4 +235,4 @@ def test_cli_run_regime_journal(paths, wbs, financer, monkeypatch, capsys):
 
     assert cli.main(["journal"]) == 0
     out = capsys.readouterr().out
-    assert "4 record(s)" in out and "chain ok" in out
+    assert "5 record(s)" in out and "chain ok" in out  # 3 stances, regime, guide

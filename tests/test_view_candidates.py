@@ -304,14 +304,17 @@ def test_average_down_columns_and_card(out):
     row = re.search(r'<tr data-symbol="JPFA">(.*?)</tr>', body, re.S).group(1)
     cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
     assert cells[3] == "average_down" and cells[-3:-1] == ["2,000", "-12.5%"]
-    card = _card(body, "average-down")
+    card = _card(body, "average-down")  # S79: one line and a link, the table is on /portfolio
     assert "3 of 4 held names are 5% or more below their average cost" in card
-    assert "Entry status is context" in card
-    names = re.findall(r"<tr><td>([A-Z]+)</td>", card)
-    assert names == ["JPFA", "BMRI", "AMRT"]  # funded, unfunded, stopped; gate 1 left out
-    assert "<td>stopped (gate 2)</td>" in card and "<td>unfunded</td>" in card
-    assert "<td>1,890</td>" in card and "trim in full: fails its screen" in card
+    assert "1 to average down, 1 unfunded" in card and 'href="/portfolio"' in card
+    assert "<table" not in card
 
 
 def test_no_average_down_card_without_the_block(out):
     assert 'class="card average-down"' not in _get(out, "/candidates/IDN").body
+
+
+def test_style_headings_are_in_plain_words_with_the_raw_name(out):
+    s = _style(_get(out, "/candidates/IDN").body, "dividend_value")
+    assert ">Dividend screen</span> <code class=\"muted\">dividend_value</code>" in s
+    assert 'title="Dividend yield plus sustainable growth' in s

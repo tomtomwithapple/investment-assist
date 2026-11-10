@@ -227,6 +227,21 @@
             }
           ]
         },
+        "exits": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Execution guidance (schema 1.2.0, PLAN S74): changes no size and no name.",
+          "required": ["entry_cap", "take_profit", "take_profit_basis", "take_profit_action", "thesis_stop", "review_at", "review_note"],
+          "properties": {
+            "entry_cap": {"type": ["number", "null"], "description": "The first tranche buys at market, not above this price (last close + 1%)."},
+            "take_profit": {"type": ["number", "null"], "description": "The fair price: where the margin over the required return reaches 0; null when the style has no closed form."},
+            "take_profit_basis": {"enum": ["fair_price", "none"]},
+            "take_profit_action": {"type": "string", "description": "What reaching the take-profit means."},
+            "thesis_stop": {"type": "string", "description": "The stop that sells: the name fails its screen."},
+            "review_at": {"type": ["number", "null"], "description": "The name's own deep-drawdown level, when below the price: a flag, never a sale."},
+            "review_note": {"type": "string"}
+          }
+        },
         "average_down": {
           "description": "The average-down verdict of a held name (schema 1.1.0); null when not held.",
           "anyOf": [{"type": "null"}, {"$ref": "#/$defs/average_down_verdict"}]

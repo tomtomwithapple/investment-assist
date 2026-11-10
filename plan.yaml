@@ -1355,3 +1355,62 @@ slices:
     accept: uv run pytest -q && uv run ruff check .
     estimate: 0.5
     notes: CLAUDE.md only with the user's OK.
+  # ---------------- phase N: guided UI ----------------
+  - id: P90-regime-hover
+    title: "PLAN S72: hover explanations on /regime (global and home inputs); the empty /industries page says what is missing"
+    depends_on: [F13-phase-m, P49-tier-ui]
+    owns: ["src/assist/views/regime.py", "src/assist/views/industries.py", "tests/test_view_regime.py"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.25
+  - id: P91-plain-words
+    title: "PLAN S73: plain.py, raw term to plain label and meaning"
+    depends_on: [P90-regime-hover]
+    owns: ["src/assist/plain.py", "tests/test_plain.py"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.25
+  - id: P92-exits
+    title: "PLAN S74: candidates/exits.py, entry cap, fair-price take-profit, thesis stop and review price; candidates schema 1.2.0"
+    depends_on: [P90-regime-hover]
+    owns: ["src/assist/candidates/exits.py", "tests/candidates/test_exits.py", "src/assist/layers/undervalued.py", "schema/candidates.schema.json", "tests/test_run_undervalued.py", "docs/results/P92-exits.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+    notes: Choices 5 and 6 decided 2026-11-10; choice 4 on its default. A model change.
+  - id: P93-guide
+    title: "PLAN S75: guide.py and candidates/rebalance.py, this week's steps to out/guide.json, journalled"
+    depends_on: [P91-plain-words, P92-exits]
+    owns: ["src/assist/guide.py", "src/assist/candidates/rebalance.py", "schema/guide.schema.json", "src/assist/pipeline.py", "tests/test_guide.py", "tests/candidates/test_rebalance.py", "tests/test_run_e2e.py", "docs/results/P93-guide.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 1
+    notes: Choices 1-3 decided 2026-11-10; 7 and 8 on their defaults. A model change (rebalance.py names new sales).
+  - id: P94-this-week
+    title: "PLAN S76: / is This week (orders by date); the old overview moves to /background"
+    depends_on: [P93-guide]
+    owns: ["src/assist/views/guide.py", "src/assist/views/overview.py", "src/assist/web.py", "tests/test_view_guide.py", "tests/test_view_overview.py", "tests/test_web.py", "tests/test_ui_e2e.py", "docs/results/P94-this-week.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+  - id: P95-nav
+    title: "PLAN S77: grouped navigation (This week, Portfolio, Why, Track record, More)"
+    depends_on: [P94-this-week]
+    owns: ["src/assist/web.py", "tests/test_web.py"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.25
+  - id: P96-guide-notify
+    title: "PLAN S78: the brief and Telegram open with this week's steps"
+    depends_on: [P93-guide]
+    owns: ["src/assist/pipeline.py", "src/assist/brief.py", "tests/test_guide.py"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.25
+  - id: P97-dedupe
+    title: "PLAN S79: Average down table only on /portfolio; style names in plain words"
+    depends_on: [P94-this-week]
+    owns: ["src/assist/views/candidates.py", "tests/test_view_candidates.py"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.25
+  - id: F14-phase-n
+    kind: integration
+    title: "PLAN S80: phase N fan-in: merge phase-n to main, one live assist run, Progress rows, STATUS, README"
+    depends_on: [P95-nav, P96-guide-notify, P97-dedupe]
+    owns: ["PLAN.md", "README.md", "CLAUDE.md", "docs/results/F14-phase-n.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+    notes: CLAUDE.md only with the user's OK.

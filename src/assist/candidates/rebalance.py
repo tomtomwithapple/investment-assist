@@ -1,0 +1,60 @@
+"""Which held names pay for a leg's cut when the screens name too few (PLAN S75, phase N
+choice 1, user 2026-11-10): **pro rata**.
+
+A market's stocks may sit far above their target (IDN stocks 96.9% against 48%) while sizing's
+trims, which need a screen's verdict, cover only part of the gap. The rest is taken pro rata
+from the held names that have no trim call: each sells the same fraction of its holding, in
+whole board lots; what rounding leaves over goes one lot at a time to the largest holdings
+first, never past the amount needed and never past what is held. It takes no view on any name:
+it is a rebalance, and the guide labels it so.
+
+Pure, and hashed by `journal.RULE_GLOBS`: this decides which names are sold and how much.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Mapping
+
+from assist.candidates.costs import LOT
+
+__all__ = ["config", "pro_rata_sales"]
+
+VERSION = "0.1.0"
+
+
+def config() -> dict:
+    return {"rebalance_version": VERSION, "rule": "pro rata over held names with no trim call, "
+            "whole lots, leftover to the largest holdings first", "lot": LOT}
+
+
+def pro_rata_sales(held: Mapping[str, float], prices: Mapping[str, float | None],
+                   need_idr: float, exclude: Iterable[str] = (), lot: int = LOT) -> list[dict]:
+    """[{symbol, shares, idr}] summing to at most `need_idr`, by symbol. `held` is IDR held per
+    symbol, `prices` today's price; a name with no price, or less than one lot, sells nothing."""
+    skip = set(exclude)
+    pool = {}
+    for sym, idr in held.items():
+        price = prices.get(sym)
+        if sym in skip or not price or price <= 0 or idr <= 0:
+            continue
+        lots = int(idr / price // lot)
+        if lots > 0:
+            pool[sym] = (float(price), lots, float(idr))
+    total = sum(v[2] for v in pool.values())
+    if need_idr <= 0 or total <= 0:
+        return []
+    f = min(1.0, need_idr / total)
+    sell = {s: min(lots, int(f * idr / price // lot)) for s, (price, lots, idr) in pool.items()}
+    left = need_idr - sum(sell[s] * lot * pool[s][0] for s in pool)
+    order = sorted(pool, key=lambda s: (-pool[s][2], s))
+    moved = True
+    while moved:
+        moved = False
+        for s in order:
+            price, lots, _ = pool[s]
+            if sell[s] < lots and price * lot <= left:
+                sell[s] += 1
+                left -= price * lot
+                moved = True
+    return [{"symbol": s, "shares": sell[s] * lot, "idr": sell[s] * lot * pool[s][0]}
+            for s in sorted(pool) if sell[s] > 0]

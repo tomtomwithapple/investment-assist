@@ -26,9 +26,15 @@ from urllib.parse import unquote
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8790
 DISCLAIMER = "Heuristic, not investment advice."
-NAV = (("/", "Overview"), ("/regime", "Regime"), ("/signals", "Signals"),
-       ("/candidates", "Candidates"), ("/industries", "Industries"), ("/portfolio", "Portfolio"),
-       ("/flows", "Flows"), ("/paper", "Paper"), ("/journal", "Journal"), ("/status", "Status"))
+# PLAN S77: what to do first, then why, then the track record, then the background.
+NAV_GROUPS = (
+    (None, (("/", "This week"), ("/portfolio", "Portfolio"))),
+    ("Why", (("/candidates", "Candidates"), ("/regime", "Regime"), ("/signals", "Signals"),
+             ("/industries", "Industries"))),
+    ("Track record", (("/paper", "Paper"), ("/journal", "Journal"), ("/status", "Status"))),
+    ("More", (("/flows", "Flows"), ("/background", "Background"))),
+)
+NAV = tuple(item for _, items in NAV_GROUPS for item in items)
 ALIASES = {"/json": "/status.json"}
 
 esc = html.escape
@@ -92,8 +98,11 @@ def active_nav(path: str) -> str | None:
 
 
 def layout(title: str, body: str, active: str | None) -> str:
-    nav = " ".join(f'<a href="{h}"{" class=\"active\"" if h == active else ""}>{label}</a>'
-                   for h, label in NAV)
+    nav = " ".join(
+        (f'<span class="group">{esc(group)}:</span> ' if group else "")
+        + " ".join(f'<a href="{h}"{" class=\"active\"" if h == active else ""}>{label}</a>'
+                   for h, label in items)
+        for group, items in NAV_GROUPS)
     return PAGE.format(title=esc(title), nav=nav, body=body, disclaimer=DISCLAIMER)
 
 
@@ -114,6 +123,7 @@ main {{ max-width:980px; margin:0 auto; }}
 nav {{ display:flex; gap:14px; flex-wrap:wrap; margin:0 0 14px; }}
 nav a {{ color:var(--muted); text-decoration:none; }}
 nav a.active {{ color:var(--fg); font-weight:600; }}
+nav .group {{ color:var(--muted); font-size:12px; margin-left:6px; }}
 a {{ color:inherit; }}
 h1 {{ font-size:20px; margin:0 0 4px; }}
 h2 {{ font-size:15px; margin:0; }}
@@ -148,8 +158,13 @@ footer {{ color:var(--muted); font-size:12px; margin-top:24px; }}
 # ---------------- routes ----------------
 
 
+def _guide(app: App, m: re.Match[str]) -> View:
+    from assist.views import guide  # views import this module at load time, so import late
+    return guide.page(app, m)
+
+
 def _overview(app: App, m: re.Match[str]) -> View:
-    from assist.views import overview  # views import this module at load time, so import late
+    from assist.views import overview
     return overview.page(app, m)
 
 
@@ -213,7 +228,8 @@ def _journal(app: App, m: re.Match[str]) -> View:
     return paper.journal(app, m)
 
 
-ROUTES: list[Route] = [(re.compile(r"^/$"), _overview),
+ROUTES: list[Route] = [(re.compile(r"^/$"), _guide),
+                       (re.compile(r"^/background$"), _overview),
                        (re.compile(r"^/stance/([^/]+)/([^/]+)$"), _stance),
                        (re.compile(r"^/candidates$"), _candidates),
                        (re.compile(r"^/candidates/([^/]+)$"), _market),

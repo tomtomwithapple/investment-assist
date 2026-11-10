@@ -96,7 +96,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from assist import brief, journal, layers_out, notify, override_history, stance
+from assist import brief, guide, journal, layers_out, notify, override_history, stance
 from assist.candidates import peers as peer_cmp
 from assist.candidates import tiers_replay
 from assist.eval import gate as rule_gate
@@ -1001,14 +1001,19 @@ def _journal_idn_overrides(j: journal.Journal, layers: Layers, stances: Mapping,
 # ---------------- notify ----------------
 
 
+GUIDE_TELEGRAM_STEPS = 12  # the message stays short; the rest is on the home page
+
+
 def message(*, day: date, brief_path: Path | None, undervalued: Sequence[Mapping] = (),
-            stances: Sequence[Mapping] = ()) -> str:
+            stances: Sequence[Mapping] = (), guide_payload: Mapping | None = None) -> str:
     """The Telegram text: `notify.header` (title, disclaimer, paper-only line, S42), per market
     (IDN, then USA) the undervalued top 5, then the names sized to sell or buy (`sizing`), each
     market's list labelled with its stocks leg's rebalance vs tilt (`notify.leg_line`). On a
     home (IDN) risk_off one line after the header (S54). Stances, regime and the portfolio legs
     are in the brief."""
     lines = notify.header(day)
+    if guide_payload is not None:  # S78: this week's steps first
+        lines += ["This week:", *guide.lines(guide_payload, limit=GUIDE_TELEGRAM_STEPS), ""]
     home = brief.home_message_line(stances)  # S54: one line on a home risk_off
     if home:
         lines += [home, ""]
@@ -1163,6 +1168,34 @@ class RunResult:
     tier_replay: Path | None = None
     layer_files: list[Path] = field(default_factory=list)
     home: HomeRegime | None = None
+    guide: dict | None = None
+
+
+def write_guide(day: date, stances: Sequence[Mapping], undervalued: Sequence[Mapping],
+                fp: str, out_dir: Path) -> tuple[dict | None, list[str]]:
+    """This week's steps (S75) → (the payload written to out/guide.json, stale inputs). Never
+    raises: the stances are already written."""
+    try:
+        payload = journal.jsonable(guide.build(day, stances, undervalued, fp))
+        errors = list(guide.validator().iter_errors(payload))
+        if errors:
+            raise ValueError(f"guide payload fails the schema: {errors[0].message}")
+        guide.write(payload, out_dir)
+        return payload, []
+    except Exception as e:  # noqa: BLE001 - the guide never fails the run
+        first = str(e).splitlines()[0][:160] if str(e) else ""
+        return None, [f"guide failed: {type(e).__name__}: {first}"]
+
+
+def _journal_guide(j: journal.Journal, g: Mapping | None, fp: str, run_id: str | None) -> None:
+    """One `guide` record: the legs and every step as written."""
+    if g is None:
+        return
+    j.record(kind="guide", fingerprint=fp, as_of=g["as_of"], run_id=run_id,
+             inputs={"config": g["config"], "legs": g["legs"],
+                     "portfolio_value_idr": g["portfolio_value_idr"]},
+             outputs={"steps": g["steps"], "totals": g["totals"], "notes": g["notes"],
+                      "moves_stance": False})
 
 
 def write_peers(day: date, gather: Callable[[date], dict] | None,
@@ -1269,15 +1302,20 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
     res.undervalued, uv_stale = _undervalued(day, sources, layers, res.stances, fp, paths)
     res.peers, peer_stale = write_peers(day, sources.peers, paths.out)
     res.tier_replay, tr_stale = write_tier_replay(day, sources.tier_replay, paths.out)
-    res.stale_inputs = sorted({*res.stale_inputs, *uv_stale, *peer_stale, *tr_stale})
+    res.guide, guide_stale = write_guide(day, res.stances, res.undervalued, fp, paths.out)
+    res.stale_inputs = sorted({*res.stale_inputs, *uv_stale, *peer_stale, *tr_stale,
+                               *guide_stale})
     res.run_id = _journal(j, layers, res.stances, fp)
     _journal_undervalued(j, res.undervalued, fp, res.run_id)
     _journal_peers(j, res.peers, fp, res.run_id)
     _journal_tier_replay(j, res.tier_replay, fp, res.run_id)
+    _journal_guide(j, res.guide, fp, res.run_id)
 
     health = _never_fail("doctor", sources.doctor, brief.health_lines, day)
     paper_track = _never_fail("paper tracking", sources.paper, brief.paper_lines, day, j)
     text = brief.build_brief(paths.out, paths.snapshots, health=health, paper=paper_track)
+    if res.guide is not None:  # S78: the brief opens with the same steps as the home page
+        text = brief.with_guide(text, guide.lines(res.guide))
     res.brief_path = paths.briefs / f"{day.isoformat()}.md"
     _write_if_changed(res.brief_path, text)
     brief.save_snapshot(paths.out, paths.snapshots, day.isoformat())
@@ -1285,7 +1323,7 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
 
     if send:
         msg = message(day=day, brief_path=res.brief_path, undervalued=res.undervalued,
-                      stances=res.stances)
+                      stances=res.stances, guide_payload=res.guide)
         res.notify = notify.send(msg, kind="brief", day=day, state_dir=paths.notify,
                                  **dict(notify_kw or {}))
     return res

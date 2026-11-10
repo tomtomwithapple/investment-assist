@@ -28,7 +28,7 @@ FP = "sha256:" + "c" * 64
 HELP = ("local pages: stances, regime, signals, candidates, industries, portfolio, flows, "
         "paper, journal, source health")
 
-PAGES = ["/", "/stance/IDN/bonds", "/stance/IDN/stocks", "/stance/USA/bonds",
+PAGES = ["/", "/background", "/stance/IDN/bonds", "/stance/IDN/stocks", "/stance/USA/bonds",
          "/stance/GOLD/commodities", "/candidates", "/candidates/IDN", "/candidates/USA",
          "/candidates/AUS", "/industries", "/regime", "/signals", "/signals/IDN",
          "/portfolio", "/flows", "/flows/2026-10", "/paper", "/journal", "/status"]

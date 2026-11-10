@@ -1,4 +1,5 @@
-"""The overview page (/): the regime and dollar banner, a country x asset stance grid and the
+"""The background page (/background; the home page until PLAN S76): the regime and dollar
+banner, a country x asset stance grid and the
 commodities below it, from `brief.load_out(app.out_dir)` (out/{SUBJECT}/*.json only).
 
 Regime and dollar are printed as the brief prints them (one value, or mixed and grouped by
@@ -18,7 +19,7 @@ from urllib.parse import quote
 from assist import brief, web
 from assist.web import esc
 
-TITLE = "Assist Overview"
+TITLE = "Assist Background"
 COLUMNS = ("stocks", "bonds", "currency")
 STANCES = ("overweight", "neutral", "underweight", "avoid")
 TONE = {"overweight": "good", "neutral": "muted", "underweight": "bad", "avoid": "bad"}
@@ -118,7 +119,11 @@ def _commodities(d: Mapping) -> str:
 
 
 def body(d: Mapping) -> str:
-    parts = ["<h1>Overview</h1>", *(web.notice(p) for p in d["problems"])]
+    parts = ["<h1>Background</h1>",
+             '<p class="muted">Every country and commodity the model scores. Only Indonesian '
+             "stocks, Indonesian bonds and US stocks are in your benchmark; the rest target 0% "
+             'and are context. What to do: <a href="/">This week</a>.</p>',
+             *(web.notice(p) for p in d["problems"])]
     if not d["countries"] and not d["commodities"]:
         return "".join([*parts, web.notice(EMPTY)])
     parts.append(_banner(d))

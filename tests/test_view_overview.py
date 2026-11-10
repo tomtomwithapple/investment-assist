@@ -23,7 +23,7 @@ def _app(out_dir: Path) -> web.App:
                    paper=lambda until: None, health=lambda: None)
 
 
-def _get(out_dir: Path, path: str = "/") -> web.Response:
+def _get(out_dir: Path, path: str = "/background") -> web.Response:
     return web.dispatch(_app(out_dir), web.ROUTES, path)
 
 
@@ -40,11 +40,11 @@ def _row(html: str, subject: str) -> str:
     return m.group(1)
 
 
-def test_root_is_the_overview_not_a_redirect():
+def test_background_is_the_old_overview_not_a_redirect():
     r = _get(FIXTURE)
     assert r.status == 200 and r.location is None
-    assert "<title>Assist Overview</title>" in r.body
-    assert '<a href="/" class="active">Overview</a>' in r.body
+    assert "<title>Assist Background</title>" in r.body
+    assert '<a href="/background" class="active">Background</a>' in r.body
     assert web.DISCLAIMER in r.body
 
 
@@ -94,7 +94,7 @@ def test_commodities_in_their_own_table():
 
 
 def test_json_twin_is_the_rows_used():
-    r = _get(FIXTURE, "/.json")
+    r = _get(FIXTURE, "/background.json")
     assert r.status == 200 and r.ctype == "application/json"
     data = json.loads(r.body)
     assert data["as_of"] == "2026-10-13"
@@ -112,7 +112,7 @@ def test_json_twin_is_the_rows_used():
 
 
 def test_counts_cover_every_stance():
-    data = json.loads(_get(FIXTURE, "/.json").body)
+    data = json.loads(_get(FIXTURE, "/background.json").body)
     assert data["counts"] == {"overweight": 1, "neutral": 1, "underweight": 2, "avoid": 0}
 
 
@@ -127,7 +127,8 @@ def test_problems_are_a_notice_and_values_are_escaped(copy):
     assert EVIL not in r.body and "<script>" not in r.body
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in r.body  # stale tooltip
     assert '<p class="notice">IDN/&lt;script&gt;x.json: not readable JSON' in r.body
-    assert json.loads(_get(copy, "/.json").body)["problems"][0].startswith("IDN/<script>x.json")
+    problems = json.loads(_get(copy, "/background.json").body)["problems"]
+    assert problems[0].startswith("IDN/<script>x.json")
 
 
 def test_empty_out_says_run_assist_run(tmp_path):
@@ -136,7 +137,7 @@ def test_empty_out_says_run_assist_run(tmp_path):
         assert r.status == 200
         assert "no stances in out/ yet: run `assist run`" in r.body
         assert "<table" not in r.body
-        data = json.loads(_get(out, "/.json").body)
+        data = json.loads(_get(out, "/background.json").body)
         assert data["countries"] == [] and data["commodities"] == [] and data["as_of"] is None
 
 
