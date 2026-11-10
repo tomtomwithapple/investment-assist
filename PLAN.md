@@ -1482,8 +1482,8 @@ today if none were held", plus a falling-knife guard and room under the caps.
 **Decided.** No change to the screens, the hurdle, `CAPS`, the ladder, the budget formula or
 any phase K, phase L or S15 number. Slices land on branch `phase-m`; the fan-in merges to main.
 
-**Phase M choices: open (proposed 2026-11-10, defaults in brackets).** S67 needs none; S68
-waits for all three.
+**Phase M choices: decided by the user 2026-11-10, all three defaults as bracketed.** Choice 2
+was taken after S69 came back insufficient, so gate 3 is context.
 1. Money when the market is over its target. [Keep the budget rule: a name that clears gates
    1–4 with no budget is shown as "average down, unfunded" and sized 0.] Reason: funding it from
    the same run's trims would make it fire now, and slows the move to 48%.
@@ -1555,8 +1555,9 @@ Parallel groups: S67 → {S68, S69} → S70 → S71.
   2026-11-09. Design notes left for a later ex-ante review: bonds gated in IDR unhedged mix the
   FX leg into the sign; FRA and ITA bonds are gated on the Bund; USA `flows_treasury` (−2.42) is
   a lead, found in-sample.
-- **Phase M choices 1–3** (average down): how far below cost counts as underwater; money when the market is over its target; gate 3
-  before its placebo. Defaults proposed 2026-11-10 (Phase M section); S68 waits for them.
+- ~~**Phase M choices 1–3**~~ (average down): all three defaults accepted by the user 2026-11-10
+  (unfunded when the market has no budget; gate 3 context only; underwater at 5% or more below
+  cost); S68 is unblocked.
 - ~~**Phase L choices 1–13**~~ (layer-2 overrides on their history): all 13 defaults accepted by
   the user 2026-11-09; S58 onward is unblocked.
 
