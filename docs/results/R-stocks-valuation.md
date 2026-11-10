@@ -151,3 +151,143 @@ trailing rather than forward earnings (about +0.4pt at 6% EY and 7% nominal grow
 above the cost of capital (EY then understates the expected return).
 
 <!-- results below were added after the run -->
+
+## 3. Prototype
+
+The spec above was committed as `a3df8de` before any code or run. The prototype was committed as
+`a7d653f`.
+
+- `src/assist/layers/rules/idn_stocks.py`: `idn_stocks(..., spec=SPEC)`, with `SPEC =
+  SPEC_LOCKED = "k"` (the locked rule, the default) and `SPEC_R1 = "r1"`. In r1:
+  - `_valuation` adds no growth;
+  - `_hurdle` subtracts the default spread that `_default_spread` reads from
+    `damodaran_crp` (IDN rows, `snapshot_date` + 45 days ≤ as_of, max age 450 days);
+  - a missing spread gives no hurdle.
+  `IdnStocks.spec` records which spec ran. `G_REAL`, `ERP_BAND` and every phase K number are
+  untouched.
+- `src/assist/history.py`: `rules_on` and `build` take `stocks_spec` and `assets` (stocks only,
+  so the run skips the bonds rule). Defaults are unchanged.
+- Tests: 9 new cases in `tests/layers/rules/test_idn_stocks.py`:
+  - the default is still the locked rule;
+  - r1's ERP and hurdle arithmetic;
+  - `ERP_BAND` is unchanged;
+  - the spread respects the CRP's lag;
+  - no spread (empty, locked, no table) gives no call;
+  - the fallback hurdle also nets the spread;
+  - an unknown spec raises.
+  1 new case in `tests/test_history.py` (stocks only, the spec passes through).
+- **Full suite: 2081 passed, 1 skipped** (`uv run pytest -q`; the skip is the absent
+  worldbankscape checkout).
+
+**Fingerprints.** The flag alone changes them, even with the default `k`:
+- stocks rule `sha256:457c6c858be4…` (main) → `sha256:4f659ec6313a…` (branch);
+- bonds rule `sha256:f9be0b944e8e…` → `sha256:ccbe7ef6b7c1…` (it hashes `history.py`);
+- the model fingerprint changes too (`layers/**`, branch `sha256:e509720344cb…`).
+
+An adoption would open a new journal segment and reset each rule's live monitor (`since`). To
+keep the bonds fingerprint, it should ship r1 as the only spec, edit only `idn_stocks.py`, and
+leave out the `history.py` plumbing used for this run.
+
+## 4. Results: point-in-time history and gate, r1 vs locked
+
+Run on 2026-11-10 with the real stores read-only (`ASSIST_SIBLINGS_ROOT=/Users/tommy/Projects`),
+`history.build` on the 120 month ends 2016-11 → 2026-10, stocks only, both specs in parallel:
+1395 s for k and 1383 s for r1. The gate is `eval/gate.evaluate_gate` on those rows (window,
+horizon 3, stride 3, block 3, `MIN_N` 10, seed as live; no journal records). **Check:** the
+spec-k rerun matches the live `out/rules/IDN-stocks.json` (fingerprint `457c6c85…`) on all 120
+calls, with the same implied ERP − hurdle to 4 decimals. So the plumbing change does not alter
+the locked rule.
+
+| | locked (k) | r1 |
+|---|---:|---:|
+| calls (120 months) | hold 23, reduce 19, no_call 78 | hold 22, reduce 20, no_call 78 |
+| cheap months (diff ≥ +1.0), all 120 / 42 called | **0 / 0** | **0 / 0** |
+| rich months (diff ≤ −1.0), all 120 / 42 called | 115 / 37 | 117 / 39 |
+| peak implied ERP − hurdle | +0.19pt (2022-12) | −0.19pt (2022-12) |
+| mean over the 42 called months | −3.61pt | −3.65pt |
+| enter months | none | none |
+| call changes | — | 2022-11 hold → reduce (diff −0.63 → −1.02) |
+| gate window | 2021-10 → 2026-07 | 2021-10 → 2026-07 |
+| **enter side** (enter vs hold + reduce) | on 0 / off 14, insufficient, t 0.00, p 0.807, control t 0.00 | the same: on 0 / off 14, insufficient, t 0.00, p 0.807, control t 0.00 |
+| **reduce side** (reduce vs enter + hold) | on 7 / off 7, insufficient, p 0.427; mean on −0.17%, off +0.72% | the same: on 7 / off 7, insufficient, p 0.427; mean on −0.17%, off +0.72% (2022-11 is not a stride-3 window) |
+| valuation-only diagnostic (2016-11 → 2026-07) | on 0 / off 34 | on 0 / off 34 |
+
+The prediction written in §2 held: **0 cheap months, the enter side unreachable**, and the gate
+numbers are identical. The per-month shift r1 − k ranged from −0.41 to +0.54pt over all 120
+months (default spread 1.59–2.54%), as the arithmetic `−2.0 + DS` says.
+
+## 5. Sensitivity (diagnostics only: NOT a basis for choosing a spec)
+
+These variants were computed after the run, on the 42 called months of the locked rows. Each one
+is a forking path, and picking among them by their cheap count is exactly the post-hoc fitting
+the placebo cannot catch. They show *where* the gap is, nothing more.
+
+Components (percent, mean / min / max): EY 5.35 / 3.38 / 7.70; real 10Y 3.59 / 1.39 / 6.25; US
+ERP 4.81 / 3.70 / 6.21; CRP 2.57 / 1.84 / 3.29; default spread 1.96 / 1.62 / 2.33.
+
+| variant | cheap | rich | mean diff | peak |
+|---|---:|---:|---:|---:|
+| locked: EY + 2 − real − (US + CRP) | 0 | 37 | −3.61 | +0.19 |
+| **r1: EY − real − (US + CRP − DS)** | **0** | **39** | **−3.65** | **−0.19** |
+| drop `G_REAL` only | 0 | 42 | −5.61 | −1.81 |
+| net DS only, keep `G_REAL` | 3 | 28 | −1.65 | +1.81 |
+| drop CRP only, keep `G_REAL` | 10 | 25 | −1.04 | +2.07 |
+| drop both `G_REAL` and CRP | 0 | 32 | −3.04 | +0.07 |
+
+What drives the gap:
+- The two double counts **roughly cancel**. `G_REAL` adds 2.0pt to the ERP, and the default
+  spread over-charges the hurdle by about 2.0pt. Fixing both moves the diff by only −0.04pt on
+  average.
+- The variants that produce cheap months (net DS only: 3; drop CRP only: 10) each fix one
+  error and keep the other. Neither is a principled spec.
+- **The gap is structural.** Under r1, a cheap month needs a JCI EY of about 10.0% on average
+  (actual mean 5.35%; short by 1.2–7.4pt, mean 4.65pt). The required real return is real
+  SBN 3.6% + US ERP 4.8% + (CRP − DS) 0.6% ≈ 9.0%. A JCI at P/E ~19 does not clear that
+  against a ~3.6% real SBN yield. That is a reading of the market, not an arithmetic slip.
+
+Two measurement points that were not in the spec, noted for later:
+- **Free-float weighting.** JCI is free-float weighted. The rule weights by total market cap,
+  which over-weights low-float, high-P/E names (DCII P/E 368, BREN 103, DNET 132, SMMA 100;
+  together about 11% of total cap on 2026-11-05). On the screener snapshots that carry
+  `ff_mktcap`, a free-float weighted EY is higher by 0.9–1.3pt: 6.43 vs 5.51% (08-31),
+  7.01 vs 6.02% (10-12), 9.01 vs 7.75% (11-05). `factor_series` (the history) has no free
+  float, so this could not be tested on the 120 months. It ties to the open question *JCI P/E
+  level*. Even +1.3pt would not close a ~4.7pt mean gap.
+- **The estimator mismatch (§1c)** has no constant sign, so it explains no constant bias.
+
+## 6. Risks of post-hoc fitting
+
+- The reviewer knew P68's headline numbers before writing §2. The spec was fixed on Damodaran's
+  convention and the Gordon identity, with no free parameter, and committed before the run. Its
+  outcome (0 cheap months) was predicted in writing. Nothing was chosen to make enter reachable.
+- Any change now made *because* enter is unreachable would be outcome-driven. That covers
+  lowering `ERP_BAND`, dropping the CRP, switching to a free-float EY "to get calls", or putting
+  a growth term back. A rule that never says enter is not evidence that the rule is wrong; JCI
+  may simply have been dear against SBN all through 2021–2026.
+- The 2022-11 reduce that r1 adds falls on no stride-3 window, so the gate cannot tell the
+  specs apart on this sample. The reduce side is 3 short per side either way.
+
+## 7. Recommendation (the decision is the user's)
+
+- **On principle: r1 is the correct construction, and the locked rule's two errors are
+  real.** `G_REAL` is a full double count. The CRP is double counted only by its
+  default-spread part.
+- **On the evidence: adopting r1 changes nothing measurable.** It gives 0 cheap months (as
+  before), identical enter and reduce gate numbers, and one call changed in 120 (2022-11 hold →
+  reduce).
+- **Recommendation: needs more data. Do not adopt now**, and do not treat it as urgent.
+  Adopting would cost a new fingerprint (a new journal segment, and the live monitor resets)
+  for no change in any verdict.
+- **Fold r1 in at the next valuation-leg change that has to happen anyway**, as one model
+  change with its own gate. The obvious candidates:
+  - a free-float EY history (ask idx-method for `ff_mktcap` in `factor_series`);
+  - the 10Y hole being filled;
+  - the same default-spread fix in `candidates/hurdle.py` (P34).
+  Until then, the docstring line "adding the CRP is conservative" in `idn_stocks.py:16-17`
+  understates the issue. It is the default-spread part of the CRP that is double counted, and
+  it is cancelled by `G_REAL`.
+- **Leave `ERP_BAND` and the other phase K numbers as they are.** Nothing here shows that any
+  of them is wrong on principle.
+
+Scripts (session scratchpad, not committed): `rsv/run.py` (stocks-only history for one spec),
+`rsv/analyse.py` (calls, gate, diagnostics, sensitivity).
