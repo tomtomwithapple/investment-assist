@@ -70,6 +70,7 @@ tiers wait on.
 | J. Review quick fixes (fingerprint scope, rebalance vs tilt, docs, USA universe) | S41–S44 | 4 / 4 |
 | K. Rules on their history, home regime (point-in-time rule gate, IDN home regime) | S45–S56 | 12 / 12 |
 | L. Layer-2 overrides on their history (point-in-time override gate, all 26 sides failed) | S57–S66, S61b | 11 / 11 |
+| M. Average down on a held name (cost basis in layer 5, gated rule, dip placebo) | S67–S71 | 0 / 5 |
 
 ### Open data gaps (fetcher side)
 
@@ -1442,6 +1443,75 @@ brackets and its reason.
 
 Parallel groups: S57 → {S58, S61b, S62} → {S59, S63} → {S60, S64} → {S61, S65} → S66.
 
+### Phase M — average down on a held name (planned 2026-11-10)
+
+**Why.** Nothing decides when a held name that has fallen deserves more money. Checked
+2026-11-10 (run of 2026-11-09, statement of 2026-10-31):
+
+- financer stores `avg_cost_minor` and `unrealised_minor` per holding; the adapter's `Holding`
+  keeps only symbol, name, quantity, value and currency, so layer 5 has no cost basis.
+- `sizing.size` adds to a held name only as any other add: it passes a placebo-passing screen
+  with margin > 0, the market has budget and the name is under the per-name cap.
+- `entry.py`'s status (`avoid`, `wait`, `buy_zone`, `deep`) gates nothing; its thresholds are
+  in-sample and may not change a stance before a placebo control.
+- IDN stocks are 96.9% of the portfolio against a 48% target, so the budget is 0. Nine holdings
+  are 16–37% below cost; AMRT, PWON and BBNI are "trim in full: fails its screen". BMRI is the
+  only held name that passes (−16.5% vs cost, margin 4.1pt, status `deep`) and it is over the 5%
+  cap, so it is trimmed to the cap. No name would qualify today.
+
+**Principle.** Cost basis is a label, never a signal. The test is "would the model buy this
+today if none were held", plus a falling-knife guard and room under the caps.
+
+**Flow.** A held name gets `average_down` only if it clears every gate, in order:
+
+1. *Underwater*: price below its average cost (label only).
+2. *Thesis intact*: ranked and kept by a placebo-passing screen, `net_margin_pt` > 0. Otherwise
+   the existing trim applies.
+3. *Not a falling knife*: entry status is not `avoid`, and is `buy_zone` or `deep`.
+4. *Room*: holding below the per-name cap, sector cap not full, tranche under
+   `max_participation`.
+5. *Money*: the market's budget is above 0.
+6. *Timing*: a ladder on global or home risk_off, else one lump; later tranches limited at
+   `entry_typical`.
+7. *Output*: row action `average_down` with the old and the new average cost, a Telegram block
+   "IDN to average down", a journal record.
+
+**Decided.** No change to the screens, the hurdle, `CAPS`, the ladder, the budget formula or
+any phase K, phase L or S15 number. Slices land on branch `phase-m`; the fan-in merges to main.
+
+**Phase M choices: open (proposed 2026-11-10, defaults in brackets).** S67 needs neither; S68
+waits for both.
+1. Money when the market is over its target. [Keep the budget rule: a name that clears gates
+   1–4 with no budget is shown as "average down, unfunded" and sized 0.] Reason: funding it from
+   the same run's trims would make it fire now, and slows the move to 48%.
+2. Gate 3 before its placebo (S69). [Context only: the status is shown on the row, and the label
+   rests on gates 1, 2, 4 and 5 until S69 passes; if S69 fails it stays context.] Reason:
+   `entry.py`'s thresholds are measured on the history they would be tested on.
+
+- [ ] **S67 Cost basis in layer 5** (P86-cost-basis). `sources/financer.py`: `Holding` carries
+  `avg_cost` and `cost_value` (None when the statement prints 0, as for an SBN line); `roll`
+  recomputes the average through later trade documents (a buy moves it by its net amount, a sell
+  leaves it). `undervalued.cost_basis_from(statements, market)`: quantity-weighted average cost
+  and quantity per symbol across accounts. Nothing reads it yet: no payload, schema or
+  fingerprint change. Test first: a statement line keeps its cost; a later buy re-averages it; a
+  sell does not; two accounts weight by quantity. Live: the names below cost against the
+  2026-10-31 statement.
+- [ ] **S68 Average-down rule** (P87-average-down). `candidates/average_down.py`, pure: gates
+  1–6 over S20's rows, `sizing`'s result, the cost basis and the entry status, with the reason
+  for each name that stops at a gate. Candidates schema minor bump: action `average_down`,
+  `cost` block (`avg_cost`, `new_avg_cost`, `below_cost_pct`). Journalled; the module is hashed
+  by `journal.RULE_GLOBS`. Waits for choices 1 and 2. Test first: one case per gate.
+- [ ] **S69 Placebo for gate 3** (P88-dip-placebo). On idx-method's `cache/history/`, point in
+  time (levels measured only on bars before each date): 12-month forward total return of adds
+  made in `buy_zone` or `deep` against adds on random days for the same names; phase K's gate
+  numbers. Parallel with S68. A pass makes gate 3 binding; a fail leaves it context.
+- [ ] **S70 Surfacing** (P89-average-down-ui). Telegram block, brief line, `/portfolio` and
+  `/candidates` columns (cost, below cost %, action).
+- [ ] **S71 Phase M fan-in** (F13-phase-m). Merge `phase-m`, one live run, Progress rows,
+  STATUS, README; CLAUDE.md lines only with your OK.
+
+Parallel groups: S67 → {S68, S69} → S70 → S71.
+
 ## Open questions
 
 - ~~Target weight bands per stance~~: benchmark decided 2026-11-06 (80% IDN as 48 stocks / 32
@@ -1474,6 +1544,8 @@ Parallel groups: S57 → {S58, S61b, S62} → {S59, S63} → {S60, S64} → {S61
   2026-11-09. Design notes left for a later ex-ante review: bonds gated in IDR unhedged mix the
   FX leg into the sign; FRA and ITA bonds are gated on the Bund; USA `flows_treasury` (−2.42) is
   a lead, found in-sample.
+- **Phase M choices 1–2** (average down): money when the market is over its target; gate 3
+  before its placebo. Defaults proposed 2026-11-10 (Phase M section); S68 waits for them.
 - ~~**Phase L choices 1–13**~~ (layer-2 overrides on their history): all 13 defaults accepted by
   the user 2026-11-09; S58 onward is unblocked.
 

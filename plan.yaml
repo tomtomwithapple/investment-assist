@@ -1315,3 +1315,41 @@ slices:
     notes: >-
       Record the old and new model fingerprints, out/overrides/ and out/rules/ states (rules
       rebuild cold if P85 landed). CLAUDE.md only with the user's OK.
+  # ---------------- phase M: average down on a held name ----------------
+  - id: P86-cost-basis
+    title: "PLAN S67: financer Holding carries avg_cost and cost_value, re-averaged through rolled trade documents; undervalued.cost_basis_from per market"
+    depends_on: []
+    owns: ["src/assist/sources/financer.py", "tests/sources/test_financer.py", "src/assist/layers/undervalued.py", "tests/test_run_undervalued.py", "tests/fixtures/financer/**", "docs/results/P86-cost-basis.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+    notes: >-
+      Nothing reads the cost basis yet: no payload, schema or fingerprint change. A printed
+      average cost of 0 is None. Live: names below cost against the latest statement.
+  - id: P87-average-down
+    title: "PLAN S68: candidates/average_down.py, gates 1-6, action average_down and cost block in the candidates schema, journalled"
+    depends_on: [P86-cost-basis]
+    owns: ["src/assist/candidates/average_down.py", "tests/candidates/test_average_down.py", "src/assist/layers/undervalued.py", "schema/candidates.schema.json", "src/assist/pipeline.py", "src/assist/journal.py", "docs/results/P87-average-down.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 1
+    notes: Waits for phase M choices 1 and 2. A live model change (new journal segment).
+  - id: P88-dip-placebo
+    title: "PLAN S69: placebo for gate 3: adds in buy_zone or deep against random days, levels point in time, phase K gate numbers"
+    depends_on: [P86-cost-basis]
+    owns: ["src/assist/eval/dip_gate.py", "tests/eval/test_dip_gate.py", "docs/results/P88-dip-placebo.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 1
+    notes: No threshold changes; entry.py's levels as written, measured only on bars before each date.
+  - id: P89-average-down-ui
+    title: "PLAN S70: average down in Telegram, the brief, /portfolio and /candidates"
+    depends_on: [P87-average-down, P88-dip-placebo]
+    owns: ["src/assist/pipeline.py", "src/assist/brief.py", "src/assist/views/portfolio.py", "src/assist/views/candidates.py", "tests/test_brief.py", "tests/test_view_portfolio.py", "tests/test_view_candidates.py", "docs/results/P89-average-down-ui.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+  - id: F13-phase-m
+    kind: integration
+    title: "PLAN S71: phase M fan-in: merge phase-m to main, one live assist run, Progress rows, STATUS, README"
+    depends_on: [P89-average-down-ui]
+    owns: ["PLAN.md", "README.md", "CLAUDE.md", "docs/results/F13-phase-m.md"]
+    accept: uv run pytest -q && uv run ruff check .
+    estimate: 0.5
+    notes: CLAUDE.md only with the user's OK.
