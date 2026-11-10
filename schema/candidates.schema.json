@@ -119,6 +119,37 @@
         "fingerprint": {"type": "string"}
       }
     },
+    "diversification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "size_lines", "names"],
+      "description": "PLAN S82 (schema 1.3.0): one verdict per held or kept name. A redundant name that is not allowed gets no new money and is first in line when the leg is cut; it is never trimmed for that alone.",
+      "properties": {
+        "level": {"type": "string", "description": "The idx-method industry_membership column used as the industry."},
+        "size_lines": {"type": "object", "description": "Market cap in IDR at or above which a name is large / mid."},
+        "names": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["symbol", "sector", "industry", "mktcap", "size", "group_size", "position", "keeper", "redundant", "allowed", "basis"],
+            "properties": {
+              "symbol": {"type": "string"},
+              "sector": {"type": ["string", "null"]},
+              "industry": {"type": ["string", "null"]},
+              "mktcap": {"type": ["number", "null"]},
+              "size": {"enum": ["large", "mid", "small", null]},
+              "group_size": {"type": "integer", "minimum": 1},
+              "position": {"type": "integer", "minimum": 1, "description": "Order within the group; 1 is the keeper."},
+              "keeper": {"type": "string"},
+              "redundant": {"type": "boolean"},
+              "allowed": {"type": "boolean", "description": "Redundant, but a passed tilt favours its sector or industry."},
+              "basis": {"enum": ["kept by a passing screen", "ranked by a passing screen", "unrated"]}
+            }
+          }
+        }
+      }
+    },
     "average_down": {
       "type": "object",
       "additionalProperties": false,

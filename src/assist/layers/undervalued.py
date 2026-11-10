@@ -59,7 +59,7 @@ from typing import Any, NamedTuple
 
 import jsonschema
 
-from assist.candidates import average_down, costs, exits, sizing
+from assist.candidates import average_down, costs, diversify, exits, sizing
 from assist.candidates import hurdle as hurdle_mod
 from assist.layers.portfolio import classify
 from assist.layers.types import DISCLAIMER, SCHEMA_DIR, Regime
@@ -88,7 +88,7 @@ __all__ = [
 ]
 
 SCHEMA = SCHEMA_DIR / "candidates.schema.json"
-SCHEMA_VERSION = "1.2.0"  # 1.1.0: average down (S68); 1.2.0: the row's `exits` (S74)
+SCHEMA_VERSION = "1.3.0"  # 1.1.0 average down (S68); 1.2.0 `exits` (S74); 1.3.0 diversification
 STYLES = ("dividend_value", "garp")  # S15's industry_value has no expected return: not a style
 TRANCHE_IDR = 10e6  # P21's DEFAULT_ORDER: the tranche costs and capacity are judged at
 DROP_FLAGS = ("over_participation", "below_one_lot")
@@ -121,6 +121,8 @@ class UndervaluedInputs:
     lot: int = costs.LOT  # shares per board lot (US: 1)
     sector_buckets: bool = True  # False: every name its own sector (no SIC in sec-edgar)
     config: dict = field(default_factory=dict)  # market-specific settings for the journal
+    # S82: sym → {sector, industry, mktcap} for every name that may be held or ranked
+    profiles: dict[str, dict] = field(default_factory=dict)
 
 
 @cache
@@ -327,7 +329,7 @@ def config(tilt_fp: str | None, caps: Mapping | None, screens: Mapping[str, Mapp
     """What the payload and every journalled row carry besides the model fingerprint."""
     out = {"tilt_fingerprint": tilt_fp, "hurdle": dict(hurdle_mod.CONFIG),
            "sizing": sizing.config(caps), "average_down": average_down.config(),
-           "exits": exits.config(),
+           "exits": exits.config(), "diversify": diversify.config(),
            "tranche_idr": TRANCHE_IDR,
            "round_trips_per_year": 1,
            "screens": {k: dict(v.get("fingerprint") or {}) for k, v in sorted(screens.items())}}
@@ -406,6 +408,20 @@ def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
             r["price"] = r["price"] / scale
         if not inp.sector_buckets:
             r["sector"] = r.get("sector") or r["symbol"]
+    # S82: one name per industry and size, unless a favourable tilt applies. Names the passing
+    # screens ranked but did not keep are sold in full by sizing, so they are in no group.
+    kept_margin = {r["symbol"]: r["margin_pt"] for r in rows if r.get("passes")}
+    leaving = {sym for sym in held if any_passed and sym in ranking and sym not in kept_margin}
+    judged = diversify.judge(
+        (set(held) | set(kept_margin)) - leaving, inp.profiles, kept=kept_margin,
+        ranked={s: r.get("margin_pt") for s, r in ranking.items()}, held=held,
+        sector_tilts={k: v["tilt"] for k, v in sectors.items()} if t_passed else None)
+    blocked = {v["symbol"]: v for v in judged if v["redundant"] and not v["allowed"]}
+    for r in rows:
+        v = blocked.get(r["symbol"])
+        if v is not None and r.get("passes"):
+            r["redundant"] = (f"redundant with {v['keeper']} (same industry, same size: "
+                              f"{v['industry']}, {v['size']})")
     plan = {k: {"levels": v.get("levels")} for k, v in inp.plan.items()}
     st = stance or {}
     sz = sizing.size(rows, st, portfolio_value_idr or 0.0, held if any_passed else {},
@@ -469,6 +485,8 @@ def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
                    "unspent_idr": sz.unspent_idr,
                    "trims": trims_out, "excluded": excluded_out,
                    "fingerprint": sz.fingerprint},
+        "diversification": {"level": diversify.LEVEL,
+                            "size_lines": dict(diversify.SIZE_LINES), "names": judged},
         "average_down": {"underwater_pct": average_down.UNDERWATER_PCT,
                          "gate3": average_down.GATE3, "names": names},
         "config": config(tilt_block["fingerprint"], caps, inp.screens, inp.config),
@@ -605,14 +623,44 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
         plan, st = entry_plan(stocks, symbols=syms, factors=table, as_of=as_of,
                               order_idr=TRANCHE_IDR)
         stale += st
+    profiles, st = _profiles(table, day)
+    stale += st
     return UndervaluedInputs(
-        market="IDN", bar_date=as_of, screens=screens, tilt=t,
+        market="IDN", bar_date=as_of, screens=screens, tilt=t, profiles=profiles,
         factors={s: table[s] for s in syms if s in table} | {
             s: table[s] for s in (r["symbol"] for x in screens.values()
                                   for r in x.get("ranking") or []) if s in table},
         plan=plan, stale_inputs=tuple(stale),
         sources=(SOURCE, "dbnomics", "idxscape", "bisfetcher", "bps-looker", "worldbankscape",
                  "sec-edgar"))
+
+
+def _profiles(table: Mapping[str, Mapping], day: date) -> tuple[dict[str, dict], list[str]]:
+    """sym → {sector, industry, mktcap}: the newest idx-method `industry_membership` snapshot on
+    or before `day` (read-only) and the screener's market cap. A missing table is a stale input
+    and no profiles, so nothing is called redundant."""
+    import sqlite3
+
+    from assist.sources.base import SourceUnavailable
+    from assist.sources.idxmethod_series import IdxMethodSeries
+
+    try:
+        with IdxMethodSeries.from_config()._con("industry_membership") as con:
+            rows = con.execute(
+                "select symbol, sector, industry from industry_membership where date = "
+                "(select max(date) from industry_membership where date <= ?)",
+                (day.isoformat(),)).fetchall()
+    except SourceUnavailable as e:
+        return {}, [f"{e.stale_input}: no industry groups, nothing judged redundant"]
+    except sqlite3.Error as e:
+        return {}, [f"idx-method industry_membership ({type(e).__name__}): nothing judged "
+                    "redundant"]
+    if not rows:
+        return {}, ["idx-method industry_membership (no snapshot by the run date): nothing "
+                    "judged redundant"]
+    return {sym: {"sector": sec, "industry": ind,
+                  "mktcap": (table.get(sym) or {}).get("mktcap")}
+            for sym, sec, ind in rows}, []
 
 
 # ---------------- US (F6, PLAN S21) ----------------

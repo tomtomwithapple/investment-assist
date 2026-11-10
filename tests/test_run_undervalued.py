@@ -415,7 +415,7 @@ def test_average_down_unfunded_when_the_market_has_no_budget():
     p, rows, names = _ad({"BMRI": 20e6, "JPFA": 5e6, "GGRM": 5e6},
                          {"BMRI": (1200.0, 20_000.0), "JPFA": (1002.0, 5_000.0),
                           "GGRM": (80_000.0, 100.0)})
-    assert p["schema_version"] == "1.2.0"
+    assert p["schema_version"] == "1.3.0"
     assert (p["average_down"]["underwater_pct"], p["average_down"]["gate3"]) == (5.0, "context")
     assert p["config"]["average_down"]["underwater_pct"] == 5.0
     # BMRI: 16.7% below cost, kept, room, no budget: shown, sized 0, still "hold"
@@ -481,3 +481,61 @@ def test_rows_carry_entry_cap_take_profit_and_review_price():
     assert (e["take_profit"], e["take_profit_basis"]) == (1260.0, "fair_price")
     assert e["review_at"] == 800.0  # the fixture's entry_deep
     assert p["config"]["exits"]["entry_cap_pct"] == 1.0
+
+
+# ---------------- diversification (P99, PLAN S82) ----------------
+
+BANKS = [cand("BMRI", "Keuangan", 16.25, 2.51), cand("BBNI", "Keuangan", 15.5, 1.76),
+         cand("BJBR", "Keuangan", 15.0, 1.26)]
+PROFILES = {"BMRI": {"sector": "Keuangan", "industry": "Bank", "mktcap": 400e12},
+            "BBNI": {"sector": "Keuangan", "industry": "Bank", "mktcap": 150e12},
+            "BJBR": {"sector": "Keuangan", "industry": "Bank", "mktcap": 9e12},
+            "GGRM": {"sector": "Primer", "industry": "Rokok", "mktcap": 30e12},
+            "HMSP": {"sector": "Primer", "industry": "Rokok", "mktcap": 40e12}}
+
+
+def _div(tilt_res=None, holdings=None):
+    inp = inputs({"dividend_value": screen("dividend_value", cands=BANKS)}, tilt_res=tilt_res)
+    inp.profiles = PROFILES
+    st = stance("overweight", current=10.0, target=15.0)
+    p = valid(build(inp, st=st, holdings=holdings or {}))
+    return p, {r["symbol"]: r for r in p["styles"][0]["rows"]}, {
+        v["symbol"]: v for v in p["diversification"]["names"]}
+
+
+def test_a_redundant_row_gets_no_new_money_and_a_different_size_does():
+    p, rows, names = _div()
+    assert rows["BMRI"]["action"] == "add" and rows["BJBR"]["action"] == "add"  # mid cap bank
+    assert rows["BBNI"]["action"] == "watch" and rows["BBNI"]["size"] is None
+    assert {"symbol": "BBNI", "reason": "redundant with BMRI (same industry, same size: Bank, "
+            "large)"} in p["sizing"]["excluded"]
+    assert (names["BBNI"]["redundant"], names["BBNI"]["keeper"]) == (True, "BMRI")
+    assert names["BJBR"]["redundant"] is False and names["BJBR"]["size"] == "mid"
+    assert p["config"]["diversify"]["size_lines"]["large"] == 50e12
+
+
+def test_a_favourable_passed_tilt_allows_the_redundant_row():
+    t = tilt(passed=True)
+    for s in t["tilts"]:
+        if s["sector"] == "Keuangan":
+            s["tilt"] = 0.25
+    _, rows, names = _div(tilt_res=t)
+    assert names["BBNI"]["allowed"] is True and rows["BBNI"]["action"] == "add"
+    # the fixture tilt marks Keuangan down (-0.3): passed, but not favourable
+    _, rows, names = _div(tilt_res=tilt(passed=True))
+    assert names["BBNI"]["allowed"] is False and rows["BBNI"]["action"] == "watch"
+
+
+def test_a_held_redundant_name_is_not_trimmed_and_unrated_names_keep_the_largest():
+    p, rows, names = _div(holdings={"BBNI": 20e6, "GGRM": 5e6, "HMSP": 8e6})
+    assert not any(t["symbol"] == "BBNI" for t in p["sizing"]["trims"])
+    assert rows["BBNI"]["action"] == "hold"
+    assert (names["GGRM"]["redundant"], names["GGRM"]["keeper"], names["GGRM"]["basis"]) == (
+        True, "HMSP", "unrated")
+
+
+def test_without_profiles_nothing_is_redundant():
+    p = valid(build(inputs({"dividend_value": screen("dividend_value", cands=BANKS)}),
+                    st=stance("overweight", current=10.0, target=15.0)))
+    assert not any(v["redundant"] for v in p["diversification"]["names"])
+    assert all(r["action"] == "add" for r in p["styles"][0]["rows"])

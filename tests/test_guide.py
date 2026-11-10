@@ -215,3 +215,47 @@ def test_write_guide_never_raises(tmp_path):
     assert stale == [] and (tmp_path / "guide.json").is_file() and g["steps"]
     g, stale = pipeline.write_guide(DAY, [{"bad": 1}], [], "x", tmp_path)
     assert g is None and stale[0].startswith("guide failed: KeyError")
+
+
+# ---------------- the principle in the sell order (P100, PLAN S83) ----------------
+
+
+def _dv(sym, position, keeper, redundant, basis="unrated", allowed=False, size=3):
+    return {"symbol": sym, "sector": "Primer", "industry": "Produk Makanan Pertanian",
+            "mktcap": 9e12, "size": "mid", "group_size": size, "position": position,
+            "keeper": keeper, "redundant": redundant, "allowed": allowed, "basis": basis}
+
+
+def test_redundant_names_are_sold_first_and_the_kept_name_last():
+    names = [name("JPFA", 1000.0, 3000), name("LSIP", 1000.0, 2000), name("TAPG", 1000.0, 4000),
+             name("OTHR", 1000.0, 20_000), name("BMRI", 1000.0, 20_000)]
+    c = cands(names=names, value=100e6)
+    c["diversification"] = {"names": [
+        _dv("TAPG", 1, "TAPG", False), _dv("JPFA", 2, "TAPG", True),
+        _dv("LSIP", 3, "TAPG", True),
+        {**_dv("BMRI", 1, "BMRI", False, basis="kept by a passing screen", size=1),
+         "industry": "Bank"},
+        {**_dv("OTHR", 1, "OTHR", False, size=1), "industry": "Semen"}]}
+    g = valid(build(DAY, [stance("IDN", "stocks", 55.0, 48.0)], [c], None))  # cut 7m
+    by = {s["symbol"]: s for s in g["steps"]}
+    # BMRI is kept by the screen: untouched. TAPG, the group's keeper, is unrated like OTHR, so
+    # both take their pro-rata share of what the redundant names did not cover
+    assert set(by) == {"LSIP", "JPFA", "OTHR", "TAPG"}
+    assert by["TAPG"]["tags"] == ["rebalance"]
+    assert [s["symbol"] for s in g["steps"]][:1] != ["TAPG"]
+    assert by["LSIP"]["tags"] == ["redundant", "all of it"] and by["LSIP"]["shares"] == 2000
+    assert by["JPFA"]["tags"] == ["redundant", "all of it"] and by["JPFA"]["shares"] == 3000
+    assert "TAPG is the one to keep" in by["JPFA"]["why"]
+    assert "3 mid companies in the same industry (Produk Makanan Pertanian)" in by["JPFA"]["why"]
+    assert by["OTHR"]["tags"] == ["rebalance"]
+    assert by["OTHR"]["idr"] + by["TAPG"]["idr"] == 2e6
+    assert g["totals"]["sell_idr"] == 7e6
+
+
+def test_an_allowed_redundant_name_is_not_singled_out():
+    names = [name("JPFA", 1000.0, 3000), name("TAPG", 1000.0, 4000)]
+    c = cands(names=names, value=100e6)
+    c["diversification"] = {"names": [_dv("TAPG", 1, "TAPG", False, size=2),
+                                      _dv("JPFA", 2, "TAPG", True, allowed=True, size=2)]}
+    g = valid(build(DAY, [stance("IDN", "stocks", 51.0, 48.0)], [c], None))
+    assert all(s["tags"] == ["rebalance"] for s in g["steps"])

@@ -18,6 +18,9 @@
   `LADDER_TRANCHES` × `LADDER_SPACING_DAYS` unless the stance names its own), else one lump.
   Tranches are whole board lots at today's price; with `entry.entry_plan` levels the later
   tranches carry its typical then deep entry price as a limit, where below today's price.
+- **Redundancy (S82).** A row carrying `redundant` (set by the caller from
+  `candidates.diversify`: same industry and size as a better-ranked name, no favourable tilt)
+  gets no new money and is listed in `excluded`. It is not trimmed for that.
 - **Trims.** A held name that is not in the list, fails it, or whose margin is ≤ 0 is trimmed
   in full; one above the per-name cap is trimmed back to it.
 
@@ -171,6 +174,8 @@ def size(
     ok: list[Mapping] = []
     for sym, r in sorted(rows.items()):
         why = _fails(r)
+        if why is None and r.get("redundant"):
+            why = str(r["redundant"])  # S82: no new money for a redundant name; never a trim
         if why is None and not (r.get("vol_1y") or 0) > 0:
             why = "no vol_1y"
         if why is None and not (r.get("price") or 0) > 0:

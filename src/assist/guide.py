@@ -4,8 +4,9 @@ ordered list of orders a reader can follow without analysing anything.
 For each leg of the benchmark (`stance.BENCHMARK_PCT`: IDN stocks, IDN bonds, USA stocks):
 
 - **Sell steps.** Each of sizing's trims (a name over the per-name cap, or one its screen no
-  longer rates), then, when those do not cover the leg's cut, the **pro-rata rebalance** of
-  `candidates.rebalance` over the other held names (choice 1).
+  longer rates), then, when those do not cover the leg's cut, `candidates.rebalance`: the
+  redundant names in full first (`candidates.diversify`, phase O), then pro rata over the other
+  held names (phase N choice 1), the names a passing screen keeps last.
 - **Buy steps.** Each sized row, with its entry price per tranche, take-profit and stop
   (`candidates.exits`, choices 4–6).
 - **Bucket steps** (choices 2 and 3) for money a leg must gain or lose that no name carries:
@@ -229,17 +230,38 @@ def _stock_steps(p: Mapping, st: Mapping | None, gap_idr: float, day: date) -> l
         if need >= MIN_STEP_IDR:
             prices = {s: h["price"] for s, h in held.items()}
             values = {s: h["idr"] for s, h in held.items() if h["idr"]}
-            sales = rebalance.pro_rata_sales(values, prices, need,
-                                             exclude={t["symbol"] for t in trims})
+            trimmed = {t["symbol"] for t in trims}
+            div = {v["symbol"]: v for v in (p.get("diversification") or {}).get("names") or []}
+            red = sorted((v for v in div.values() if v["redundant"] and not v["allowed"]
+                          and v["symbol"] in values and v["symbol"] not in trimmed),
+                         key=lambda v: (-v["position"], values[v["symbol"]], v["symbol"]))
+            keep = {v["symbol"] for v in div.values()
+                    if v["basis"] == "kept by a passing screen"
+                    and not (v["redundant"] and not v["allowed"])}
+            sales = rebalance.ordered_sales(
+                values, prices, need, exclude=trimmed, redundant=[v["symbol"] for v in red],
+                protected=keep, quantities={s: h["quantity"] for s, h in held.items()})
             share = "" if cur is None or tgt is None else (
                 f" {leg[0].upper() + leg[1:]} are {cur:.1f}% of your portfolio against a "
                 f"{tgt:.0f}% target.")
             for x in sales:
+                v = div.get(x["symbol"]) or {}
+                if x["tier"] == "redundant":
+                    why = (f"You hold {v['group_size']} {v['size']} companies in the same "
+                           f"industry ({v['industry']}); {v['keeper']} is the one to keep. "
+                           "Selling this one cuts the leg without losing a kind of business.")
+                    tags = ["redundant", "all of it"] if x["full"] else ["redundant"]
+                elif x["tier"] == "protected":
+                    why = ("Its share of the cut after everything else was sold; the screen "
+                           "still rates it." + share)
+                    tags = ["rebalance"]
+                else:
+                    why, tags = "Its share of the cut, not a view on the stock." + share, [
+                        "rebalance"]
                 steps.append(_step(
                     "sell", "name", market, "stocks", symbol=x["symbol"], what=x["symbol"],
                     tranches=_sell_tranches(x["shares"], x["idr"], prices[x["symbol"]], dates),
-                    strength="medium", detail="/portfolio", tags=["rebalance"],
-                    why="Its share of the cut, not a view on the stock." + share))
+                    strength="medium", detail="/portfolio", tags=tags, why=why))
             left = need - sum(x["idr"] for x in sales)
             if left >= MIN_STEP_IDR and not sales:
                 steps.append(_step(
