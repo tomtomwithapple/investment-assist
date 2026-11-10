@@ -107,7 +107,8 @@ sources:
         http: /api/latest?format=csv
         column: date
         sql: select max(date) from series_latest where date <= current_date
-        max_age_days: 14
+        # newest point is monthly (Damodaran, 1st of month): 14 days read stale mid-month
+        max_age_days: 40
 
   satudatascape:
     repo: satudatascape
