@@ -119,6 +119,36 @@
         "fingerprint": {"type": "string"}
       }
     },
+    "average_down": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["underwater_pct", "gate3", "names"],
+      "description": "PLAN S68 (schema 1.1.0): one verdict per held name of this market, a row or not. Cost basis decides no size.",
+      "properties": {
+        "underwater_pct": {"type": "number", "description": "% below the average cost that counts as underwater."},
+        "gate3": {"enum": ["context", "binding"], "description": "Whether the entry status may stop an average down: binding only after its placebo passes."},
+        "names": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["symbol", "status", "gate", "reason", "avg_cost", "quantity", "price", "below_cost_pct", "new_avg_cost", "entry_status"],
+            "properties": {
+              "symbol": {"type": "string"},
+              "status": {"enum": ["average_down", "unfunded", "stopped"]},
+              "gate": {"type": ["integer", "null"], "minimum": 1, "maximum": 5},
+              "reason": {"type": "string"},
+              "avg_cost": {"type": ["number", "null"]},
+              "quantity": {"type": ["number", "null"]},
+              "price": {"type": ["number", "null"]},
+              "below_cost_pct": {"type": ["number", "null"]},
+              "new_avg_cost": {"type": ["number", "null"]},
+              "entry_status": {"type": ["string", "null"]}
+            }
+          }
+        }
+      }
+    },
     "config": {"type": "object", "description": "What the model fingerprint does not show by name: the tilt yaml hash, hurdle constants, sizing caps and each screen's CONFIG."},
     "stale_inputs": {"type": "array", "items": {"type": "string", "minLength": 1}},
     "sources": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
@@ -127,6 +157,16 @@
   "$defs": {
     "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
     "texts": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "average_down_verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "gate", "reason"],
+      "properties": {
+        "status": {"enum": ["average_down", "unfunded", "stopped"], "description": "average_down: cleared every gate and sized; unfunded: cleared gates 1, 2 and 4 but the market has no budget, sized 0; stopped: at `gate`."},
+        "gate": {"type": ["integer", "null"], "minimum": 1, "maximum": 5, "description": "The gate it stopped at (1 underwater, 2 thesis, 4 room, 5 money); null when it cleared all. Gate 3 (entry status) is context."},
+        "reason": {"type": "string"}
+      }
+    },
     "row": {
       "type": "object",
       "additionalProperties": false,
@@ -169,7 +209,28 @@
         },
         "held": {"type": "boolean"},
         "held_idr": {"type": "number", "minimum": 0},
-        "action": {"enum": ["add", "hold", "watch"], "description": "add: sized; hold: held, nothing to add; watch: passes, not sized (see sizing.excluded)."},
+        "action": {"enum": ["add", "average_down", "hold", "watch"], "description": "add: sized; average_down: a sized add on a held name 5% or more below its average cost (PLAN S68); hold: held, nothing to add; watch: passes, not sized (see sizing.excluded)."},
+        "cost_basis": {
+          "description": "Layer 5's cost basis of a held name (schema 1.1.0). A label, never a signal.",
+          "anyOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["avg_cost", "quantity", "below_cost_pct", "new_avg_cost"],
+              "properties": {
+                "avg_cost": {"type": "number", "description": "Quantity-weighted average cost per share across accounts (financer)."},
+                "quantity": {"type": "number"},
+                "below_cost_pct": {"type": ["number", "null"], "description": "Price against the average cost, %; negative = below cost."},
+                "new_avg_cost": {"type": ["number", "null"], "description": "Average cost after the sized tranches, all filled at today's price, buy fee included; null when nothing is sized."}
+              }
+            }
+          ]
+        },
+        "average_down": {
+          "description": "The average-down verdict of a held name (schema 1.1.0); null when not held.",
+          "anyOf": [{"type": "null"}, {"$ref": "#/$defs/average_down_verdict"}]
+        },
         "size": {
           "anyOf": [
             {"type": "null"},

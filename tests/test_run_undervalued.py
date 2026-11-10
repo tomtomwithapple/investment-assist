@@ -398,3 +398,72 @@ def test_run_is_byte_identical_on_rerun_and_survives_a_failing_source(
 def test_run_without_the_source_writes_no_candidates(paths, wbs, financer):  # noqa: F811
     res = _run(paths, wbs, financer, send=False)
     assert res.ok and not (paths.out / "candidates").exists()
+
+
+# ---------------- average down (P87, PLAN S68) ----------------
+
+
+def _ad(holdings, basis, st=None, **kw):
+    p = valid(uv.assemble(inputs({"dividend_value": screen("dividend_value", cands=DIV)}, **kw),
+                          day=DAY, stance=st or stance(), portfolio_value_idr=1e9,
+                          holdings=holdings, regime=REGIME, fingerprint=FP, cost_basis=basis))
+    return p, {r["symbol"]: r for r in p["styles"][0]["rows"]}, {
+        v["symbol"]: v for v in p["average_down"]["names"]}
+
+
+def test_average_down_unfunded_when_the_market_has_no_budget():
+    p, rows, names = _ad({"BMRI": 20e6, "JPFA": 5e6, "GGRM": 5e6},
+                         {"BMRI": (1200.0, 20_000.0), "JPFA": (1002.0, 5_000.0),
+                          "GGRM": (80_000.0, 100.0)})
+    assert p["schema_version"] == "1.1.0"
+    assert (p["average_down"]["underwater_pct"], p["average_down"]["gate3"]) == (5.0, "context")
+    assert p["config"]["average_down"]["underwater_pct"] == 5.0
+    # BMRI: 16.7% below cost, kept, room, no budget: shown, sized 0, still "hold"
+    assert names["BMRI"]["status"] == "unfunded" and names["BMRI"]["gate"] == 5
+    assert rows["BMRI"]["action"] == "hold" and rows["BMRI"]["size"] is None
+    assert rows["BMRI"]["average_down"] == {"status": "unfunded", "gate": 5,
+                                            "reason": names["BMRI"]["reason"]}
+    assert rows["BMRI"]["cost_basis"]["below_cost_pct"] == pytest.approx(-16.667, abs=1e-3)
+    assert rows["BMRI"]["cost_basis"]["new_avg_cost"] is None
+    # JPFA: a fee-sized gap stops at gate 1; ELSA is not held
+    assert (names["JPFA"]["status"], names["JPFA"]["gate"]) == ("stopped", 1)
+    assert rows["ELSA"]["cost_basis"] is None and rows["ELSA"]["average_down"] is None
+    # GGRM: held at 50,000 (value / quantity), 37.5% below cost, no passing screen kept it:
+    # gate 2, and not a row
+    assert (names["GGRM"]["gate"], names["GGRM"]["price"]) == (2, 50_000.0)
+    assert "not rated by any passing screen" in names["GGRM"]["reason"]
+
+
+def test_average_down_funded_is_an_add_with_the_new_average_and_typical_limits():
+    st = stance("overweight", current=10.0, target=15.0,
+                entry={"style": "ladder", "tranches": 3, "spacing_days": 10})
+    p, rows, names = _ad({"BMRI": 20e6}, {"BMRI": (1200.0, 20_000.0)}, st=st)
+    r = rows["BMRI"]
+    assert r["action"] == "average_down" and names["BMRI"]["status"] == "average_down"
+    assert names["BMRI"]["gate"] is None
+    assert [t["limit"] for t in r["size"]["tranches"]] == [None, 900.0, 900.0]  # entry_typical
+    assert r["cost_basis"]["avg_cost"] == 1200.0
+    assert 1000.0 < r["cost_basis"]["new_avg_cost"] < 1200.0
+    # the size is sizing's own: the label changes no amount
+    plain = build(inputs({"dividend_value": screen("dividend_value", cands=DIV)}), st=st,
+                  holdings={"BMRI": 20e6})
+    assert r["size"]["idr"] == plain["styles"][0]["rows"][0]["size"]["idr"]
+    assert rows["JPFA"]["action"] == "add" and rows["JPFA"]["average_down"] is None
+
+
+def test_average_down_entry_status_is_context():
+    plan = {s: {"levels": levels(s, status="avoid"), "cost": cost()}
+            for s in ("BMRI", "JPFA", "ELSA")}
+    st = stance("overweight", current=10.0, target=15.0)
+    _, rows, names = _ad({"BMRI": 20e6}, {"BMRI": (1200.0, 20_000.0)}, st=st, plan=plan)
+    assert names["BMRI"]["entry_status"] == "avoid"
+    assert rows["BMRI"]["action"] == "average_down"
+
+
+def test_without_a_cost_basis_nothing_is_an_average_down():
+    st = stance("overweight", current=10.0, target=15.0)
+    p = valid(build(inputs({"dividend_value": screen("dividend_value", cands=DIV)}), st=st,
+                    holdings={"BMRI": 20e6}))
+    row = p["styles"][0]["rows"][0]
+    assert row["action"] == "add" and row["cost_basis"] is None
+    assert row["average_down"] == {"status": "stopped", "gate": 1, "reason": "no cost basis"}

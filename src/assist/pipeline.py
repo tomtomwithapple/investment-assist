@@ -1100,7 +1100,8 @@ def _undervalued_one(inp: undervalued.UndervaluedInputs, day: date, statements: 
     st = next((s for s in stances if (s["subject"], s["asset"]) == (inp.market, "stocks")), None)
     value = layers.weights.total_idr if layers.weights is not None else None
     payload = undervalued.assemble(inp, day=day, stance=st, portfolio_value_idr=value,
-                                   holdings=held, regime=layers.regime, fingerprint=fp)
+                                   holdings=held, regime=layers.regime, fingerprint=fp,
+                                   cost_basis=undervalued.cost_basis_from(statements, inp.market))
     payload = journal.jsonable(payload)
     errors = list(undervalued.validator().iter_errors(payload))
     if errors:
@@ -1120,7 +1121,8 @@ def _journal_undervalued(j: journal.Journal, payloads: Sequence[Mapping], fp: st
                  outputs={"styles": {s["style"]: {k: v for k, v in s.items() if k != "rows"}
                                      | {"names": [r["symbol"] for r in s["rows"]]}
                                      for s in p["styles"]},
-                          "sizing": p["sizing"], "stale_inputs": p["stale_inputs"],
+                          "sizing": p["sizing"], "average_down": p.get("average_down"),
+                          "stale_inputs": p["stale_inputs"],
                           "moves_stance": False})
         for s in p["styles"]:
             for r in s["rows"]:
