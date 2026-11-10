@@ -1318,7 +1318,7 @@ slices:
   # ---------------- phase M: average down on a held name ----------------
   - id: P86-cost-basis
     title: "PLAN S67: financer Holding carries avg_cost and cost_value, re-averaged through rolled trade documents; undervalued.cost_basis_from per market"
-    depends_on: []
+    depends_on: [P21b-entry-peak, F11-phase-l]
     owns: ["src/assist/sources/financer.py", "tests/sources/test_financer.py", "src/assist/layers/undervalued.py", "tests/test_run_undervalued.py", "tests/fixtures/financer/**", "docs/results/P86-cost-basis.md"]
     accept: uv run pytest -q && uv run ruff check .
     estimate: 0.5
