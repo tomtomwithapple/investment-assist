@@ -46,6 +46,53 @@ NO_HOME = ("no home (IDN) regime in this file (schema 1.0.0, or the run had no I
 HIST_COLUMNS = ("As of", "Regime", "Dollar", "From", "Drivers", "Model")
 NO_FILE = "no out/layers/regime.json yet: run `assist run`"
 
+# Hover text per input: (what it is and why it matters, when it votes). The thresholds repeat
+# `layers.regime.RULES` / `CANDIDATES` in words; tests/test_view_regime.py holds them together.
+EXPLAIN = {
+    "vix": ("Expected swings in US stocks over the next month, the market's fear gauge. High "
+            "means investors are paying up for protection.",
+            "Risk-off point at 25 or higher, two points at 35. Risk-on point at 15 or lower."),
+    "hy_oas_d13w": ("Extra yield investors demand to hold US junk bonds instead of Treasuries, "
+                    "as its change over 13 weeks. Widening means credit stress is building.",
+                    "Risk-off point at +0.75pt or more. Risk-on point at -0.50pt or less."),
+    "usd_d13w": ("The US dollar against a broad basket of trading-partner currencies, % change "
+                 "over 13 weeks. A rising dollar pressures the rupiah and emerging markets.",
+                 "Risk-off point at +3% or more. Risk-on point at -3% or less. It also sets the "
+                 "dollar call: up past +2%, down past -2%."),
+    "real_yield": ("US 10-year Treasury yield after inflation (TIPS). High real yields pull "
+                   "money out of risky and emerging-market assets.",
+                   "Risk-off point at 2.5% or higher. Risk-on point at 0.5% or lower."),
+    "nfci": ("Chicago Fed index of US financial conditions (credit, leverage, risk). 0 is "
+             "average; above 0 is tighter than average.",
+             "Risk-off point above 0. Risk-on point at -0.5 or lower."),
+    "net_liquidity_d13w": ("Fed balance sheet minus the Treasury's cash account and reverse "
+                           "repo: dollars available to markets, % change over 13 weeks. Falling "
+                           "means liquidity is draining.",
+                           "Would be risk-off at -3% or less, risk-on at +3% or more."),
+    "em_oas_d13w": ("Extra yield on emerging-market corporate bonds over Treasuries, as its "
+                    "change over 13 weeks. Widening means stress in emerging markets.",
+                    "Would be risk-off at +0.50pt or more, risk-on at -0.40pt or less."),
+    "term_premium_d13w": ("Extra yield investors demand for holding a 10-year Treasury instead "
+                          "of rolling short bills, as its change over 13 weeks. Rising means "
+                          "bond investors want more compensation.",
+                          "Would be risk-off at +0.40pt or more, risk-on at -0.40pt or less."),
+    "stlfsi": ("St. Louis Fed index of US financial stress. 0 is average; above 0 is more "
+               "stress than average.",
+               "Would be risk-off above 0, risk-on at -0.5 or lower."),
+}
+CANDIDATE_NOTE = "Candidate: shown, never counted until it beats a placebo test."
+HOME_EXPLAIN = {
+    "jci_drawdown_20d": "How far the Jakarta Composite index is below its highest close of the "
+                        "last 20 sessions. A fast fall is the clearest sign of stress at home.",
+    "idx_foreign_z": "Foreign investors' net buying of IDX stocks over 20 days, compared with "
+                     "the past 250 days (a z-score). Strongly negative means unusually heavy "
+                     "foreign selling.",
+    "usdidr_20d": "Change in the rupiah per US dollar (JISDOR) over 20 fixings. A rise means "
+                  "the rupiah is weakening.",
+    "sbn_non_resident_20d": "Change in foreign holdings of Indonesian government bonds (SBN) "
+                            "over 20 days. A fall means foreigners are leaving the bond market.",
+}
+
 # sparkline geometry (SVG user units)
 SP_W, SP_H, SP_PAD = 160, 34, 3
 
@@ -62,6 +109,13 @@ STYLE = """<style>
 .regime tr.changed td:first-child { font-weight:600; }
 .regime .sub { display:block; color:var(--muted); font-size:11px; }
 .regime .call { font-size:16px; margin:6px 0; }
+.regime .tip { position:relative; cursor:help; border-bottom:1px dotted var(--muted);
+  outline:none; }
+.regime .tip:hover::after, .regime .tip:focus::after { content:attr(data-tip);
+  position:absolute; left:0; top:calc(100% + 6px); z-index:5; width:min(340px, 80vw);
+  padding:8px 10px; border-radius:6px; background:#1f1f1d; color:#f4f3ee; font-size:12px;
+  font-weight:400; line-height:1.45; white-space:pre-line; text-align:left;
+  box-shadow:0 2px 10px rgba(0,0,0,.25); }
 </style>"""
 
 
@@ -200,6 +254,46 @@ def spark(inp: Mapping) -> str:
     return "".join(parts)
 
 
+def explain(feature: str, counted: bool = True) -> str | None:
+    """The hover text of a global layer-0 input, or None for one with no entry."""
+    e = EXPLAIN.get(feature)
+    if e is None:
+        return None
+    return "\n".join([*e, *([] if counted else [CANDIDATE_NOTE])])
+
+
+def explain_home(feature: str, rule: Mapping) -> str | None:
+    """The hover text of a home (IDN) input, with its thresholds read from the file's rule."""
+    what = HOME_EXPLAIN.get(feature)
+    if what is None:
+        return None
+
+    def steps(pairs: Any, fmt: str) -> str:
+        return ", ".join(f"{p} point{'s' if p != 1 else ''} at {fmt.format(t)}"
+                         for t, p in pairs)
+
+    try:
+        when = {
+            "jci_drawdown_20d": steps(rule["jci_points"], "{:g}% below") + ".",
+            "idx_foreign_z": f"1 point at {rule['flow_z_at']:g} or lower.",
+            "usdidr_20d": steps(rule["usdidr_points"], "+{:g}%") + ".",
+            "sbn_non_resident_20d": f"1 point at {rule['sbn_at']:g}% or lower.",
+        }[feature]
+        when += (f" Counts only if its newest value is at most {rule['max_age_days']} days "
+                 f"old. Home risk-off at {rule['state_at']} points in total.")
+    except (KeyError, TypeError, ValueError):
+        return what
+    return f"{what}\n{when}"
+
+
+def _tipped(label: str, tip: str | None) -> str:
+    """The label, with its explanation on hover, keyboard focus or tap when there is one."""
+    if not tip:
+        return esc(label)
+    return (f'<span class="tip" tabindex="0" data-tip="{esc(tip)}" '
+            f'aria-label="{esc(label + ". " + tip)}">{esc(label)}</span>')
+
+
 def _card(cls: str, title: str, inner: str) -> str:
     return (f'<section class="card {cls}"><header><h2>{esc(title)}</h2></header>'
             f"{inner}</section>")
@@ -221,7 +315,8 @@ def _input_row(inp: Mapping, d: Mapping) -> str:
     label = inp.get("label") or inp["feature"]
     cls = "" if inp.get("counted") else ' class="candidate"'
     return (f'<tr{cls} data-feature="{esc(str(inp["feature"]))}">'
-            f'<td>{esc(str(label))}<span class="sub"><code>{esc(str(inp["series_id"]))}</code> '
+            f'<td>{_tipped(str(label), explain(str(inp["feature"]), bool(inp.get("counted"))))}'
+            f'<span class="sub"><code>{esc(str(inp["series_id"]))}</code> '
             f'{esc(str(inp["feature"]))} · {esc(kind)}</span></td>'
             f'<td class="num">{esc(_fmt(inp.get("value"), kind))}</td>'
             f'<td>{esc(str(inp.get("last") or "n/a"))}{stale_chip}</td>'
@@ -266,7 +361,8 @@ def _inputs(d: Mapping) -> str:
             f"the rule sees it, each Friday over {esc(str(d['history_weeks']))} weeks (a gap is a "
             f"week without a point). Stale: no value, newest point more than {STALE_DAYS} days "
             "before the run, or named in the file's stale inputs. Candidates are shown, never "
-            "counted.</p>")
+            "counted. Hover, focus or tap an input's name for what it measures and when it "
+            "votes.</p>")
     return _card("inputs", "Layer-0 inputs", f'<table class="inputs">{head}{rows}</table>{note}')
 
 
@@ -281,10 +377,16 @@ def _home_row(inp: Mapping, home: Mapping) -> str:
     pts_cell = ("-" + ' <span class="sub">not counted</span>' if pts is None
                 else esc(str(pts)) + ' <span class="sub">counted</span>')
     return (f'<tr data-home-feature="{esc(feat)}">'
-            f'<td>{esc(str(inp.get("label") or feat))}<span class="sub">{esc(feat)}</span></td>'
+            f'<td>{_tipped(str(inp.get("label") or feat), explain_home(feat, _rule(home)))}'
+            f'<span class="sub">{esc(feat)}</span></td>'
             f'<td class="num">{esc(_fmt(inp.get("value"), kind))}</td>'
             f'<td>{esc(str(inp.get("last") or "n/a"))}{chip}</td>'
             f"<td>{pts_cell}</td><td>{spark({**inp, 'kind': kind})}</td></tr>")
+
+
+def _rule(home: Mapping) -> Mapping:
+    r = home.get("rule")
+    return r if isinstance(r, Mapping) else {}
 
 
 def _home(d: Mapping) -> str:

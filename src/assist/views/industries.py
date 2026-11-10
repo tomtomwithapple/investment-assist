@@ -47,7 +47,10 @@ TITLE = "Assist Industries"
 FILE = Path("industries") / "IDN.json"
 CANDIDATES = Path("candidates") / "IDN.json"
 DASH = "-"
-EMPTY = "no peer comparison in out/industries/ yet: run `assist industries` or `assist run`"
+EMPTY = ("no peer comparison in out/industries/ yet: run `assist industries` or `assist run`. "
+         "If that reports \"no comparison_industries in api_raw\", idx-method has not pulled "
+         "Stockbit's comparison data on this Mac: its weekday 16:30 close job fills it and needs "
+         "a live Stockbit session (`../idx-method/run.sh login`).")
 PCT_CLIP = 100.0  # %: the axis stops here, so one tiny revenue does not flatten the rest
 PCT = {"div_yield", "payout", "roe", "roa", "roic", "npm", "opm", "gpm"}
 

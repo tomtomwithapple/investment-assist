@@ -355,3 +355,56 @@ def test_json_twin_carries_the_home_block(home_root):
     root, d = home_root
     twin = json.loads(_get(root, "/regime.json").body)
     assert twin["regime"]["home"] == d["home"]
+
+
+# ---------------- hover explanations ----------------
+
+
+def test_every_layer0_input_has_a_hover_explanation(root):
+    from assist.layers import regime as rule
+
+    assert set(view.EXPLAIN) == set(rule.ALL_FEATURES)
+    html = _get(root, "/regime").body
+    for inp in _fixture()["inputs"]:
+        row = _row(html, inp["feature"])
+        tip = re.search(r'class="tip" tabindex="0" data-tip="([^"]+)"', row)
+        assert tip, inp["feature"]
+        assert ("Candidate: shown, never counted" in tip.group(1)) is (not inp["counted"])
+    assert "fear gauge" in _row(html, "vix") and "Risk-off point at 25 or higher" in _row(
+        html, "vix")
+
+
+@pytest.mark.parametrize(("feature", "off", "not_off", "on", "not_on", "words"), [
+    ("vix", 25, 24.9, 15, 15.1, ("at 25 or higher", "two points at 35", "15 or lower")),
+    ("hy_oas_d13w", 0.75, 0.74, -0.5, -0.49, ("+0.75pt", "-0.50pt")),
+    ("usd_d13w", 3.0, 2.9, -3.0, -2.9, ("+3%", "-3%", "past +2%")),
+    ("real_yield", 2.5, 2.49, 0.5, 0.51, ("2.5%", "0.5%")),
+    ("nfci", 0.01, 0.0, -0.5, -0.49, ("above 0", "-0.5")),
+    ("net_liquidity_d13w", -3.0, -2.9, 3.0, 2.9, ("-3%", "+3%")),
+    ("em_oas_d13w", 0.5, 0.49, -0.4, -0.39, ("+0.50pt", "-0.40pt")),
+    ("term_premium_d13w", 0.4, 0.39, -0.4, -0.39, ("+0.40pt", "-0.40pt")),
+    ("stlfsi", 0.01, 0.0, -0.5, -0.49, ("above 0", "-0.5")),
+])
+def test_hover_thresholds_are_the_rules(feature, off, not_off, on, not_on, words):
+    from assist.layers import regime as rule
+
+    _, _, is_off, is_on, _ = rule.ALL_FEATURES[feature]
+    assert is_off(off) and not is_off(not_off) and is_on(on) and not is_on(not_on)
+    assert all(w in view.explain(feature) for w in words)
+    assert rule.DOLLAR_BAND == 2.0 and rule.RULES["vix"][2](35) == 2
+
+
+def test_home_inputs_have_hover_explanations_with_the_files_thresholds(home_root):
+    root, d = home_root
+    html = _get(root, "/regime").body
+    home = d["home"]
+    for inp in home["inputs"]:
+        m = re.search(rf'data-home-feature="{inp["feature"]}">(.*?)</tr>', html, re.S)
+        assert 'class="tip"' in m.group(1), inp["feature"]
+    r = home["rule"]
+    tip = view.explain_home("jci_drawdown_20d", r)
+    assert all(f"at {t:g}% below" in tip for t, _ in r["jci_points"])
+    assert f"at most {r['max_age_days']} days" in tip
+    assert f"{r['flow_z_at']:g} or lower" in view.explain_home("idx_foreign_z", r)
+    assert view.explain_home("usdidr_20d", {}) == view.HOME_EXPLAIN["usdidr_20d"]  # no rule
+    assert view.explain_home("unknown", r) is None and view.explain("unknown") is None

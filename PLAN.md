@@ -71,6 +71,7 @@ tiers wait on.
 | K. Rules on their history, home regime (point-in-time rule gate, IDN home regime) | S45–S56 | 12 / 12 |
 | L. Layer-2 overrides on their history (point-in-time override gate, all 26 sides failed) | S57–S66, S61b | 11 / 11 |
 | M. Average down on a held name (cost basis in layer 5, gated rule, dip placebo) | S67–S71 | 5 / 5 |
+| N. Guided UI (this week's steps with amount, date, entry price, TP and SL; plain words) | S72–S80 | 1 / 9 |
 
 ### Open data gaps (fetcher side)
 
@@ -1525,7 +1526,103 @@ was taken after S69 came back insufficient, so gate 3 is context.
 
 Parallel groups: S67 → {S68, S69} → S70 → S71.
 
+### Phase N — guided UI (planned 2026-11-10)
+
+**Objective (user, 2026-11-10).** "Simplify for a no-think user: the most guided way to invest,
+albeit not always right." The pages lead with what to do; the evidence stays one click away.
+The user chose **orders with amounts and dates** over stances alone, and asked for an **entry
+price, a take-profit and a stop-loss** on each order. One disclaimer per page, no repeated
+caveats.
+
+**Why.** Checked 2026-11-10 on the run of that day:
+
+- The pages show evidence and leave the conclusion to the reader. In one session the user had
+  to ask what these mean: regime risk_off, regime points, dollar up, overweight / neutral /
+  underweight (countries and commodities), the Signals tab, GARP, "fails its screen", "trim in
+  full", and why Industries was empty.
+- The model does not yet say enough for a full order list:
+  - IDN stocks must fall 48.9pt (about Rp 27.1m of Rp 55.4m). The named trims cover Rp 17.1m
+    (16 names); **Rp 10.0m has no names**.
+  - IDN bonds must rise 30.2pt (about Rp 16.7m). **No instrument is named.**
+  - USA stocks must rise 20pt (about Rp 11.1m). **No name passes** (both US screens failed
+    their placebo), so the budget is unspent.
+  - A buy has an entry level (`entry_typical`) only for later tranches; nothing has a
+    take-profit or a stop-loss.
+- The same Average down table is on `/candidates` and `/portfolio`.
+
+**Principle.** Guidance may be wrong, but it must not hide how strong it is. Every step
+carries a strength (strong / medium / weak) and a "why" link. A number that changes what is
+bought or sold, or how much, is a model change: hashed, journalled, and gated by a placebo
+where history allows. A number that only says at what price or when is execution guidance and
+is labelled as such.
+
+**Flow.** One list per run, `out/guide.json`, read by the home page, the brief and Telegram:
+
+1. *Sell steps*: each trim as name, amount, shares, tranche dates, "sell at market" or a limit.
+2. *Buy steps*: each sized add as name, amount, shares, tranche dates, entry price per tranche,
+   take-profit, stop-loss.
+3. *Bucket steps* for a leg with no names (SBN, US stocks): the amount, the dates and the
+   instrument rule of choice 2 or 3.
+4. *Nothing to do* lines, when a leg is at target.
+5. Each step: strength, one plain sentence of why, a link to the detail page.
+
+**Phase N choices: open (proposed 2026-11-10, defaults in brackets).** S72 and S73 need none.
+1. The unnamed Rp 10.0m of IDN stock sales. [Pro rata across the held names with no trim
+   call, largest holdings first, whole lots, until the leg reaches its target over the ladder.
+   Strength "medium: rebalance to the benchmark, not a view on the name".] Reason: unrated
+   names have no ranking to sell by; pro rata takes no view.
+2. The SBN leg's instrument. [A bucket step: "buy SBN, Rp X", with the 10Y benchmark series and
+   its PHEI yield named as the reference; the user picks the product (retail SBN, FR series or
+   a bond fund).] Reason: no fetcher holds retail SBN offers or fund NAVs.
+3. The USA leg when no name passes. [A bucket step: "buy a US broad-market index fund, Rp X",
+   strength "medium: benchmark leg, no name passes a screen".] Reason: leaving 20% in cash
+   forever is also a decision, and a hidden one.
+4. Entry price of a buy. [Tranche 1: at market, capped at the last close plus 1%; later
+   tranches: limit at `entry_typical` when below the price, else at market on their date.]
+5. Take-profit. [The fair price: where the name's margin over the hurdle reaches 0 (dividend
+   screen: dividend ÷ (hurdle − growth)). Reaching it means "stop adding and trim to half",
+   never "sell all".] Reason: it is the model's own valuation, so it needs no new threshold.
+6. Stop-loss. [Two parts. A thesis stop, always on: the name fails its screen → sell (today's
+   trim). A price level shown as "review at": `entry_deep`, the name's own deep-drawdown
+   level; reaching it does not sell.] Reason: a price stop that sells is a new rule, and its
+   placebo has too little history (S69 found 1 window of 10).
+7. Strength labels. [Strong: over a cap, or two independent reasons. Medium: benchmark
+   rebalance, or one placebo-passing screen. Weak: context only, shown under "background".]
+8. Dates. [Tranche 1 on the next IDX session after the run; later tranches every 10 calendar
+   days, moved to the next session.]
+9. The old pages. [Kept, under one "Why" menu: Regime, Signals, Candidates, Industries. Track
+   record: Paper, Journal, Status. Countries and commodities outside the benchmark move to a
+   "Background" page.]
+
+- [x] **S72 Hover explanations** (P90-regime-hover). `/regime`: every global and home (IDN)
+  input explains what it measures and when it votes, on hover, focus or tap; thresholds checked
+  against `layers.regime.RULES`. The empty `/industries` page says what is missing
+  (idx-method's `api_raw`).
+- [ ] **S73 Plain words** (P91-plain-words). `assist/plain.py`: one table of term → plain label
+  and one-line meaning (regime states, dollar, stances, styles, trim reasons, gates), used by
+  every page as hover text and by S75's sentences. No model change.
+- [ ] **S74 Exits and entry prices** (P92-exits). `candidates/exits.py`, pure: entry price per
+  tranche, take-profit (fair price) and the stop-loss pair per sized row; candidates schema
+  minor bump. Waits for choices 4–6. A model change (hashed).
+- [ ] **S75 The guide** (P93-guide). `assist/guide.py`, pure: stances + candidates + layer 5 →
+  ordered steps with amount, shares, dates, prices, strength and why; `schema/guide.schema.json`,
+  `out/guide.json`, journalled. Waits for choices 1–3, 7, 8. A model change where choice 1
+  names new sales.
+- [ ] **S76 Home page** (P94-this-week). `/` becomes "This week": the steps, then one line per
+  leg (held, target, gap). The stance grid moves to `/background`.
+- [ ] **S77 Navigation** (P95-nav). This week, Portfolio, Why, Track record, Background;
+  choice 9.
+- [ ] **S78 Brief and Telegram** (P96-guide-notify). Both open with the same steps.
+- [ ] **S79 One place per fact** (P97-dedupe). Average down only on `/portfolio`; style names,
+  trim reasons and stances shown in plain words with the raw term on hover.
+- [ ] **S80 Phase N fan-in** (F14-phase-n). Merge, one live run, Progress rows, STATUS, README.
+
+Parallel groups: S72 → {S73, S74} → S75 → {S76, S78} → {S77, S79} → S80.
+
 ## Open questions
+
+- **Phase N choices 1–9** (guided UI): defaults proposed 2026-11-10 (Phase N section); S74 and
+  S75 wait for them.
 
 - ~~Target weight bands per stance~~: benchmark decided 2026-11-06 (80% IDN as 48 stocks / 32
   SBN, 20% US stocks; phase I). The ±5 pt tilt and S20a's 5% per-name cap are still the
@@ -1639,6 +1736,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S69 Placebo for gate 3 (P88-dip-placebo) | done | 2026-11-10 | this commit (branch `phase-m`) | 17 dip_gate (1975 total) | `eval/dip_gate.py`: adds in `buy_zone` or `deep` at month ends (levels from bars on or before the date, add at the next session) against the same names on random days, 12-month total return, phase K's gate numbers; live **insufficient**: 1 non-overlapping window of 10 (11 scored months 2024-11 → 2025-10, 1,844 zone adds, 797 names), so gate 3 stays context; diagnostics, overlapping: real +48.4% vs placebo +46.7%, ahead 5 of 11 months, `avoid` 38% winners against 56–59% for the rest; at 3 months 7 windows, also insufficient; model fingerprint `0054161d53f8…` → `8aeca8e62547…` with identical behaviour (segment opens at S71) |
 | S70 Surfacing (P89-average-down-ui) | done | 2026-11-10 | this commit (branch `phase-m`) | 3 brief, 2 view_candidates, 1 view_portfolio, 2 expectations extended (2001 total) | `brief.average_down_view` / `average_down_lines`; Telegram `IDN to average down` block after "to buy" (funded with old → new average cost, unfunded, one line on where the rest stopped); brief Action cell and bullets; `/candidates` columns `Avg cost`, `vs cost` and an *Average down* card; `/portfolio` adds table with `Action` and `Avg cost IDR`, an *Average down* table, and the JSON twin; no run made, fingerprint unchanged from S68 |
 | S71 Phase M fan-in (F13-phase-m) | done | 2026-11-10 | merge `bc595b9` | 2001 on main | `assist run` 11:37 → 11:44 WIB (6 m 56 s), exit 0: model `sha256:aa9e0c60fe9c…`, 70 records, journal 644 records, 8 models; `out/candidates` schema 1.1.0; IDN 67 held, none an average down (46 gate 1, 20 gate 2, BMRI gate 4); Telegram not sent (not configured in the shell, no marker written); not pushed; CLAUDE.md untouched |
+| S72 Hover explanations (P90-regime-hover) | done | 2026-11-10 | this commit (branch `phase-n`) | 11 view_regime (2012 total) | `views/regime.py` `EXPLAIN`, `HOME_EXPLAIN`, `.tip` span (hover, focus, tap) on the 9 global and 4 home inputs; thresholds in words tested against `layers.regime.RULES` and the file's home rule; `/industries` empty text names idx-method's empty `api_raw` and the 16:30 close job; no model change |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`
