@@ -88,7 +88,7 @@ __all__ = [
 ]
 
 SCHEMA = SCHEMA_DIR / "candidates.schema.json"
-SCHEMA_VERSION = "1.3.0"  # 1.1.0 average down (S68); 1.2.0 `exits` (S74); 1.3.0 diversification
+SCHEMA_VERSION = "1.3.1"  # 1.1 average down; 1.2 exits; 1.3 diversification; 1.3.1 div_yield
 STYLES = ("dividend_value", "garp")  # S15's industry_value has no expected return: not a style
 TRANCHE_IDR = 10e6  # P21's DEFAULT_ORDER: the tranche costs and capacity are judged at
 DROP_FLAGS = ("over_participation", "below_one_lot")
@@ -636,8 +636,9 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
 
 
 def _profiles(table: Mapping[str, Mapping], day: date) -> tuple[dict[str, dict], list[str]]:
-    """sym → {sector, industry, mktcap}: the newest idx-method `industry_membership` snapshot on
-    or before `day` (read-only) and the screener's market cap. A missing table is a stale input
+    """sym → {sector, industry, mktcap, div_yield}: the newest idx-method `industry_membership`
+    snapshot on or before `day` (read-only) and the screener's market cap and dividend yield.
+    A missing table is a stale input
     and no profiles, so nothing is called redundant."""
     import sqlite3
 
@@ -659,7 +660,8 @@ def _profiles(table: Mapping[str, Mapping], day: date) -> tuple[dict[str, dict],
         return {}, ["idx-method industry_membership (no snapshot by the run date): nothing "
                     "judged redundant"]
     return {sym: {"sector": sec, "industry": ind,
-                  "mktcap": (table.get(sym) or {}).get("mktcap")}
+                  "mktcap": (table.get(sym) or {}).get("mktcap"),
+                  "div_yield": (table.get(sym) or {}).get("div_yield")}
             for sym, sec, ind in rows}, []
 
 

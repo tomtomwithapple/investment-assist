@@ -222,8 +222,9 @@ def test_write_guide_never_raises(tmp_path):
 
 def _dv(sym, position, keeper, redundant, basis="unrated", allowed=False, size=3):
     return {"symbol": sym, "sector": "Primer", "industry": "Produk Makanan Pertanian",
-            "mktcap": 9e12, "size": "mid", "group_size": size, "position": position,
-            "keeper": keeper, "redundant": redundant, "allowed": allowed, "basis": basis}
+            "mktcap": 9e12, "size": "mid", "div_yield": None, "group_size": size,
+            "position": position, "keeper": keeper, "redundant": redundant,
+            "allowed": allowed, "basis": basis}
 
 
 def test_redundant_names_are_sold_first_and_the_kept_name_last():
