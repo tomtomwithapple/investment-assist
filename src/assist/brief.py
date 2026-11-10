@@ -147,6 +147,19 @@ def build_brief(out_dir: Path, snapshots_dir: Path, *, health: Sequence[str] | N
                   or None, tier_replay=tier_replay_lines(replay) if replay else None)
 
 
+def with_guide(text: str, guide_lines: Sequence[str]) -> str:
+    """The brief with a "This week" section (PLAN S78) right after its title and disclaimer:
+    the guide's plain lines, the numbered steps as a list."""
+    if not guide_lines:
+        return text
+    body = ["## This week", ""]
+    for line in guide_lines:
+        body.append(line if re.match(r"\d+\. ", line) else f"- {line}")
+    section = "\n".join(body) + "\n\n"
+    at = text.find("\n## ")
+    return text + "\n" + section if at < 0 else text[:at + 1] + section + text[at + 1:]
+
+
 # ---------------- doctor and paper lines ----------------
 
 _PROBLEM_PROBES = ("stale", "empty", "absent", "error")
