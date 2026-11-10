@@ -60,6 +60,10 @@ because a worktree's `../` is not the siblings root.
 
 ## What a run does
 
+The home page of the local pages (`/`, "This week") and the top of the brief and the Telegram
+message list this week's orders: what to sell and buy, how much, on which dates, at what price,
+with a take-profit and a stop on each named buy (`out/guide.json`). The detail pages explain why.
+
 `assist run` reads every layer (0 regime, 1 worldbankscape score, 2 overrides, 3 market signals,
 4 candidates, 5 portfolio), writes one stance per subject × asset, journals every decision with
 the model fingerprint, writes the brief and sends one Telegram message a day. The message opens
