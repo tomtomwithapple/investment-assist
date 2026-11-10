@@ -1482,14 +1482,18 @@ today if none were held", plus a falling-knife guard and room under the caps.
 **Decided.** No change to the screens, the hurdle, `CAPS`, the ladder, the budget formula or
 any phase K, phase L or S15 number. Slices land on branch `phase-m`; the fan-in merges to main.
 
-**Phase M choices: open (proposed 2026-11-10, defaults in brackets).** S67 needs neither; S68
-waits for both.
+**Phase M choices: open (proposed 2026-11-10, defaults in brackets).** S67 needs none; S68
+waits for all three.
 1. Money when the market is over its target. [Keep the budget rule: a name that clears gates
    1–4 with no budget is shown as "average down, unfunded" and sized 0.] Reason: funding it from
    the same run's trims would make it fire now, and slows the move to 48%.
 2. Gate 3 before its placebo (S69). [Context only: the status is shown on the row, and the label
    rests on gates 1, 2, 4 and 5 until S69 passes; if S69 fails it stays context.] Reason:
    `entry.py`'s thresholds are measured on the history they would be tested on.
+3. How far below cost counts as underwater (gate 1; found by P86). [5% or more below the average
+   cost.] Reason: 40 of the 61 names below cost are 0.1–0.5% below, which is the buy fee on
+   Stockbit lines valued at their own last trade price; the label changes no size, so the number
+   only sets which adds are called an average down.
 
 - [x] **S67 Cost basis in layer 5** (P86-cost-basis). `sources/financer.py`: `Holding` carries
   `avg_cost` and `cost_value` (None when the statement prints 0, as for an SBN line); `roll`
@@ -1505,7 +1509,7 @@ waits for both.
   1–6 over S20's rows, `sizing`'s result, the cost basis and the entry status, with the reason
   for each name that stops at a gate. Candidates schema minor bump: action `average_down`,
   `cost` block (`avg_cost`, `new_avg_cost`, `below_cost_pct`). Journalled; the module is hashed
-  by `journal.RULE_GLOBS`. Waits for choices 1 and 2. Test first: one case per gate.
+  by `journal.RULE_GLOBS`. Waits for choices 1–3. Test first: one case per gate.
 - [ ] **S69 Placebo for gate 3** (P88-dip-placebo). On idx-method's `cache/history/`, point in
   time (levels measured only on bars before each date): 12-month forward total return of adds
   made in `buy_zone` or `deep` against adds on random days for the same names; phase K's gate
@@ -1549,7 +1553,7 @@ Parallel groups: S67 → {S68, S69} → S70 → S71.
   2026-11-09. Design notes left for a later ex-ante review: bonds gated in IDR unhedged mix the
   FX leg into the sign; FRA and ITA bonds are gated on the Bund; USA `flows_treasury` (−2.42) is
   a lead, found in-sample.
-- **Phase M choices 1–2** (average down): money when the market is over its target; gate 3
+- **Phase M choices 1–3** (average down): how far below cost counts as underwater; money when the market is over its target; gate 3
   before its placebo. Defaults proposed 2026-11-10 (Phase M section); S68 waits for them.
 - ~~**Phase L choices 1–13**~~ (layer-2 overrides on their history): all 13 defaults accepted by
   the user 2026-11-09; S58 onward is unblocked.
