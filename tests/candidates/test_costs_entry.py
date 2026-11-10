@@ -171,6 +171,39 @@ def test_corrections_completed_and_open():
     assert open_depth == -25
 
 
+def test_corrections_complete_only_on_recovery_to_the_peak_they_fell_from():
+    # P21 bug: the rolling high falls as the old peak leaves the window, so the drawdown
+    # shrinks without the price recovering. Given the highs, depth and completion are measured
+    # against the peak at the correction's start.
+    highs = [1000, 1000, 1000, 1000, 200, 200, 200]  # the 1000 peak ages out at index 4
+    px = [1000, 800, 100, 60, 150, 195, 400]
+    dd = [100 * (p / h - 1) for p, h in zip(px, highs, strict=True)]
+    assert corrections(dd)[0] == [-94.0]  # the old reading: "completed" at 195 vs a 200 high
+    done, open_depth = corrections(dd, highs=highs)
+    assert done == []
+    assert open_depth == pytest.approx(-94.0)
+
+
+def test_corrections_with_highs_completes_on_real_recovery():
+    highs = [100, 100, 100, 100, 100, 100]
+    px = [100, 80, 70, 90, 96, 100]
+    dd = [100 * (p / h - 1) for p, h in zip(px, highs, strict=True)]
+    done, open_depth = corrections(dd, highs=highs)
+    assert done == [pytest.approx(-30.0)]
+    assert open_depth is None
+
+
+def test_measure_crash_whose_peak_left_the_window_is_not_a_typical_correction():
+    # rise to a peak, crash 95%, sit for 3 years so the peak leaves the window, recover
+    # 6x to a fresh 3-year high: nothing recovered to the old peak, so no typical correction
+    legs = [(100, 0.5), (60, -0.95), (800, 0.0), (150, 5.0)]
+    n = sum(b for b, _ in legs) + 1
+    lv = measure(_bars(_path(n, legs)), [])
+    assert lv.corrections == 0
+    assert lv.typical_correction is None
+    assert lv.entry_typical is None
+
+
 def test_adjusted_closes_remove_split_and_keep_last_price():
     raw = [1000, 1010, 1020, 510, 515, 520]  # 2:1 split on day 3
     adj = adjusted_closes(raw)

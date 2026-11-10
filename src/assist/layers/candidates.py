@@ -14,8 +14,9 @@ levels (`candidates.entry.entry_plan`) for one planned tranche:
 - **Capacity.** A name flagged `over_participation` (the tranche is more than 10% of its 60-day
   median value) or `below_one_lot` at the tranche size is dropped; so is one with no cost
   estimate (no price).
-- **Entry level** = `EntryLevels.entry_typical`, or `entry_deep` when the name has no completed
-  correction in its window; None when its history is shorter than `entry.MIN_BARS`.
+- **Entry level** = `EntryLevels.entry_typical`; None when the name has no completed correction
+  (P21, 2026-11-10: no fallback to `entry_deep`, whose median is about −64% across IDX names)
+  or its history is shorter than `entry.MIN_BARS`.
 
 Nothing here changes a stance: candidates are context under the IDN stocks stance until paper
 tracking (S13) has a record. The stance schema has no candidates slot, so the pipeline puts the
@@ -136,9 +137,8 @@ def assemble(screens: Mapping, plan: Mapping[str, Mapping], order_idr: float = T
                 dropped.append((name, sym, f"round trip {rt:.0f}bp eats the edge"))
                 continue
             level, which = None, "none"
-            if levels is not None:
-                level, which = ((levels.entry_typical, "typical") if levels.entry_typical
-                                is not None else (levels.entry_deep, "deep"))
+            if levels is not None and levels.entry_typical is not None:
+                level, which = levels.entry_typical, "typical"
             status = levels.status if levels is not None else "no entry levels"
             detail = (f"score {c['score']:.2f}, net edge {net:+.0f}bp/mo after {rt:.0f}bp round"
                       f" trip; price {_fmt_price(cost.price)}, entry {which}"

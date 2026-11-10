@@ -161,11 +161,12 @@ def test_assemble_nets_cost_off_the_edge_and_drops_capacity_misses():
     assert mom.passed and mom.n_named == 2 and mom.edge_bps == pytest.approx(224.0)
 
 
-def test_entry_level_falls_back_to_the_deep_zone():
+def test_no_completed_correction_means_no_entry_level():
+    # P21 (user 2026-11-10): no fallback to the deep zone, whose median is about -64%
     p = {"AAA": {"cost": cost(rt=50.0), "levels": levels(typical=None, deep=777.0, status="deep")}}
     out = assemble(screens(names=("AAA",)), p)
-    assert out.candidates[0].entry_level == 777.0
-    assert "entry deep 777, deep" in out.candidates[0].detail
+    assert out.candidates[0].entry_level is None
+    assert "entry none n/a, deep" in out.candidates[0].detail
 
 
 def test_blocked_screens_name_no_one_and_say_why():

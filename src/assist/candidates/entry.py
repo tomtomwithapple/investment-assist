@@ -92,11 +92,31 @@ def _median(xs: Sequence[float]) -> float | None:
 
 
 def corrections(
-    dd: Iterable[float], start: float = START, end: float = END
+    dd: Sequence[float],
+    start: float = START,
+    end: float = END,
+    highs: Sequence[float] | None = None,
 ) -> tuple[list[float], float | None]:
-    """Depths of completed corrections, and the depth so far of one still open."""
-    out, open_, depth = [], False, 0.0
-    for x in dd:
+    """Depths of completed corrections, and the depth so far of one still open.
+
+    With `highs` (the rolling high each `dd` was measured from), a correction's depth and its
+    completion are measured against the peak it fell from, not the rolling high: once an old
+    peak leaves the 3-year window the rolling high drops and the drawdown shrinks without any
+    recovery (P21: BSML's −96% crash from 1805 read as "completed" at 575)."""
+    out, open_, depth, peak = [], False, 0.0, 0.0
+    for i, x in enumerate(dd):
+        if highs is not None:
+            px = highs[i] * (1 + x / 100)
+            if not open_ and x < start:
+                open_, peak = True, highs[i]
+                depth = 100 * (px / peak - 1)
+            elif open_:
+                rel = 100 * (px / peak - 1)
+                depth = min(depth, rel)
+                if rel > end:
+                    out.append(depth)
+                    open_ = False
+            continue
         if not open_ and x < start:
             open_, depth = True, x
         elif open_:
@@ -202,7 +222,7 @@ def measure(
         tr[i] = tr[i - 1] * (adj[i] / adj[i - 1] + div_by_day.get(dates[i], 0.0) / raw[i - 1])
 
     w = [x for x in dd if x is not None]
-    done, _ = corrections(w)
+    done, _ = corrections(w, highs=[hi[i] for i in range(n) if dd[i] is not None])
     f12: list[tuple[float, float]] = []  # (dd, forward 12m total return %)
     for i in range(n):
         if dd[i] is None:
