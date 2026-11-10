@@ -1358,7 +1358,7 @@ slices:
   # ---------------- phase N: guided UI ----------------
   - id: P90-regime-hover
     title: "PLAN S72: hover explanations on /regime (global and home inputs); the empty /industries page says what is missing"
-    depends_on: [F13-phase-m]
+    depends_on: [F13-phase-m, P49-tier-ui]
     owns: ["src/assist/views/regime.py", "src/assist/views/industries.py", "tests/test_view_regime.py"]
     accept: uv run pytest -q && uv run ruff check .
     estimate: 0.25
