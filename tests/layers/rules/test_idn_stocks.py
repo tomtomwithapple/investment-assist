@@ -110,10 +110,26 @@ def phei_source(ten=7.0, last=date(2026, 10, 22)) -> Fake:
                                   for d in _days(last, 5)])
 
 
+class FakeDbnCrp(Fake):
+    """dbnomics with the `damodaran_crp` table: IDN default spreads per snapshot (P102)."""
+
+    def __init__(self, name, rows, spreads: dict[date, float] | None = None, error=None):
+        super().__init__(name, rows)
+        self.spreads, self.crp_error = spreads or {}, error
+
+    def damodaran_crp(self, iso3=None, snapshot=None):
+        if self.crp_error:
+            raise SourceUnavailable(self.name, self.crp_error)
+        return [{"snapshot_date": d, "iso3": "IDN", "default_spread": v}
+                for d, v in sorted(self.spreads.items())]
+
+
 def dbn_source(ten=7.0, ten_last=date(2024, 12, 1), us_erp=0.04, crp=0.02,
-               erp_last=date(2026, 9, 1), hurdle=None, crp_on=date(2026, 1, 1)) -> Fake:
+               erp_last=date(2026, 9, 1), hurdle=None, crp_on=date(2026, 1, 1),
+               spreads=None, crp_error=None) -> Fake:
     """dbnomics: the 10Y proxy, US ERP (fraction, monthly), IDN CRP (one snapshot), optional
-    derived hurdle."""
+    derived hurdle, and `damodaran_crp` with IDN's default spread (2.0% on `crp_on` by default,
+    so the r1 diff equals the pre-P102 one: −2.0 growth + 2.0 spread)."""
     rows = [Row(PROXY_10Y, d, ten, None, "dbnomics") for d in _months(ten_last, 24)]
     if us_erp is not None:
         rows += [Row(US_ERP, d, us_erp, None, "dbnomics") for d in _months(erp_last, 12)]
@@ -121,7 +137,8 @@ def dbn_source(ten=7.0, ten_last=date(2024, 12, 1), us_erp=0.04, crp=0.02,
         rows.append(Row(IDN_CRP, crp_on, crp, None, "dbnomics"))
     if hurdle is not None:
         rows += [Row(HURDLE, d, hurdle, None, "dbnomics") for d in _months(erp_last, 12)]
-    return Fake("dbnomics", rows)
+    return FakeDbnCrp("dbnomics", rows, {crp_on: 0.02} if spreads is None else spreads,
+                      crp_error)
 
 
 def cpi_source(level=3.0, last=date(2026, 9, 1)) -> Fake:
@@ -216,8 +233,8 @@ def test_enter_when_cheap_flows_in_and_macro_supportive():
     assert (s.call, s.proposed_stance) == ("enter", "overweight")
     assert s.entry == {"style": "lump", "tranches": 1, "spacing_days": 0}
     assert s.earnings_yield == pytest.approx(10.0) and s.pe == pytest.approx(10.0)
-    assert s.hurdle == pytest.approx(6.0)
-    assert s.implied_erp == pytest.approx(10.0 + 2.0 - 4.0)
+    assert s.hurdle == pytest.approx(4.0 + 2.0 - 2.0)  # US ERP + CRP − default spread (r1)
+    assert s.implied_erp == pytest.approx(10.0 - 4.0)  # EY − real 10Y, no growth (r1)
     assert s.ey_gap == pytest.approx(3.0)
     assert s.macro_score == pytest.approx(60.0)
     assert s.ten_year_source == "idxscape_phei"
@@ -226,6 +243,9 @@ def test_enter_when_cheap_flows_in_and_macro_supportive():
     assert all(sig.asset == "stocks" for sig in s.signals)
     assert any(d.startswith("hurdle 6.00% (US ERP 4.00% 2026-09 + IDN CRP 2.00% 2026-01")
                for d in s.drivers)
+    assert any(d.startswith("hurdle over the raw SBN 10Y 4.00% (less IDN default spread 2.00% "
+                            "2026-01") for d in s.drivers)
+    assert not any("real growth" in sig.detail for sig in s.signals)
     assert any("IGSYC curve" in d for d in s.drivers)
 
 
@@ -389,7 +409,7 @@ def test_no_raw_phei_point_in_output():
 
 def test_hurdle_falls_back_to_derived_series():
     s = run(dbnomics=dbn_source(us_erp=None, crp=None, hurdle=0.065))
-    assert s.hurdle == pytest.approx(6.5)
+    assert s.hurdle == pytest.approx(6.5 - 2.0)  # the fallback also nets the default spread
     assert any(HURDLE in d for d in s.drivers)
 
 
@@ -405,9 +425,12 @@ def test_hurdle_point_in_time():
     rows = dbn._rows + [Row(IDN_CRP, date(2026, 1, 1), 0.02, None, "dbnomics")]
     s = idn_stocks(date(2026, 10, 5), regime=regime(), overrides=overrides(), signals=signals(),
                    score=score(as_of=date(2026, 10, 5)), phei=phei_source(last=date(2026, 10, 2)),
-                   dbnomics=Fake("dbnomics", rows), bps=cpi_source(), idxmethod=jci_source(),
+                   dbnomics=FakeDbnCrp("dbnomics", rows, {date(2026, 1, 1): 0.015,
+                                                          date(2026, 9, 1): 0.05}),
+                   bps=cpi_source(), idxmethod=jci_source(),
                    snapshots=FakeSnapshots(factors(), on=date(2026, 10, 2)))
-    assert s.hurdle == pytest.approx(6.0)  # 4% (Sep) + 2% (Jan snapshot; Sep not yet out)
+    # 4% (Sep) + 2% (Jan snapshot; Sep not yet out) − 1.5% (Jan spread; Sep's not yet out)
+    assert s.hurdle == pytest.approx(4.5)
 
 
 # ---------------- earnings yield inputs ----------------
@@ -445,7 +468,8 @@ def test_missing_stores_never_raise():
 def test_cpi_from_dbnomics_when_bps_has_none():
     rows = dbn_source()._rows + [Row(DBN_CPI, d, 3.0, None, "dbnomics")
                                  for d in _months(date(2026, 8, 1), 12)]
-    s = run(bps=Fake("bps-looker", []), dbnomics=Fake("dbnomics", rows))
+    dbn = FakeDbnCrp("dbnomics", rows, {date(2026, 1, 1): 0.02})
+    s = run(bps=Fake("bps-looker", []), dbnomics=dbn)
     assert s.real_yield == pytest.approx(4.0)
 
 
@@ -583,3 +607,29 @@ def test_month_end_closes():
            (date(2026, 9, 1), None)]
     rows = [Row(JCI, d, v, None, "x") for d, v in pts]
     assert month_end_closes(rows) == [(date(2026, 8, 31), 2.0), (date(2026, 9, 30), 3.0)]
+
+
+# ---------------- valuation spec r1 (P102, review R-stocks-valuation) ----------------
+
+
+def test_r1_band_unchanged_and_ey_needs_the_full_band():
+    # EY 9: implied 5.0 vs hurdle 4.0 → +1.0, cheap at ERP_BAND 1.0 exactly
+    import importlib
+
+    mod = importlib.import_module("assist.layers.rules.idn_stocks")
+    assert mod.ERP_BAND == 1.0 and not hasattr(mod, "G_REAL")
+    s = run(snapshots=FakeSnapshots(factors(ey=9.0)))
+    assert s.signal("implied_erp_vs_hurdle").value == pytest.approx(1.0)
+    s = run(snapshots=FakeSnapshots(factors(ey=8.5)))
+    assert s.signal("implied_erp_vs_hurdle").direction == 0
+
+
+@pytest.mark.parametrize("dbn", [
+    lambda: dbn_source(spreads={}),
+    lambda: dbn_source(crp_error="locked"),
+    lambda: Fake("dbnomics", dbn_source()._rows),  # no damodaran_crp table served
+])
+def test_without_default_spread_there_is_no_hurdle_and_no_call(dbn):
+    s = run(dbnomics=dbn())
+    assert s.hurdle is None and s.call == "no_call"
+    assert any("damodaran_crp" in x or "default_spread" in x for x in s.stale_inputs)

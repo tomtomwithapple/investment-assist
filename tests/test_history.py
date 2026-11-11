@@ -80,6 +80,14 @@ def firsts(start: date, end: date) -> list[date]:
     return out
 
 
+class DbnCrp(Fake):
+    """dbnomics with `damodaran_crp`: IDN default spread 2.0% each January and July (P102)."""
+
+    def damodaran_crp(self, iso3=None, snapshot=None):
+        return [{"snapshot_date": date(y, m, 1), "iso3": "IDN", "default_spread": 0.02}
+                for y in range(2014, 2027) for m in (1, 7)]
+
+
 def sources(*, proxy=True, phei_rows=(), cpi_now=None) -> H.HistorySources:
     days = weekdays(D("2020-06-01"), D("2023-02-09"))
     months = firsts(D("2019-01-01"), D("2023-01-01"))
@@ -104,7 +112,7 @@ def sources(*, proxy=True, phei_rows=(), cpi_now=None) -> H.HistorySources:
              for d in weekdays(D("2021-12-01"), D("2023-02-09"))}
     idn = pipeline.IdnSources(
         bps=Fake("bps-looker", cpi), bisfetcher=Fake("bisfetcher", error="missing"),
-        dbnomics=Fake("dbnomics", dbn), satudatascape=Fake("satudatascape", error="missing"),
+        dbnomics=DbnCrp("dbnomics", dbn), satudatascape=Fake("satudatascape", error="missing"),
         idxscape=Fake("idxscape", idx_rows), kseistat=Fake("kseistat", error="missing"),
         tic=Fake("sec-edgar", error="missing"), phei=Fake("idxscape_phei", list(phei_rows)),
         idxmethod=jci, snapshots=FakeFactors(snaps), stocks=None, usdidr=fx)
