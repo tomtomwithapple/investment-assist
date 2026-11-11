@@ -78,6 +78,7 @@ def world(*, phei: bool = True, dbn_skip: tuple[str, ...] = (), fx_years: int = 
             _r("idxscape_phei", IGSYC_10Y, date(2026, 10, 20), 6.50),
             _r("idxscape_phei", IGSYC_10Y, date(2026, 10, 21), 6.40),
         ]) if phei else Fake("idxscape_phei", error="missing"),
+        "idxscape_sun": Fake("idxscape_phei", []),
         "idxscape": Fake("idxscape", _jisdor(AS_OF - timedelta(days=365 * fx_years), AS_OF)),
         "bisfetcher": Fake("bisfetcher", [
             _r("bisfetcher", "WS_CBPOL.M.ID", date(2026, 8, 1), 5.00),
@@ -114,6 +115,19 @@ def test_idn_drivers_never_carry_the_raw_igsyc_10y():
     text = " ".join(h.drivers)
     assert "6.40" not in text and "6.4%" not in text
     assert "13.10" in text  # the derived total is fine
+
+
+def test_idn_takes_the_sun_10y_before_the_proxy():
+    """P101: no IGSYC 10Y, DJPPR's SUN 10Y benchmark (store key `idxscape_sun`) is next."""
+    from assist.sources.idxscape_phei import SUN_10Y
+
+    sun = Fake("idxscape_phei", [_r("idxscape_phei", SUN_10Y, date(2026, 10, 20), 6.90)])
+    h = hurdle("IDN", AS_OF, "neutral",
+               sources=world(idxscape_phei=Fake("idxscape_phei", []), idxscape_sun=sun))
+    assert h.ten_year_source == "sun"
+    assert h.components["ten_year"] == pytest.approx(6.90)
+    assert not any("proxy" in s for s in h.stale_inputs)
+    assert any("SUN 10Y benchmark" in d for d in h.drivers)
 
 
 def test_idn_falls_back_to_the_flagged_dbnomics_proxy():

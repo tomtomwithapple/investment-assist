@@ -9,14 +9,19 @@ Three inputs, each read point in time (rows dated on or before `as_of` and known
   newest `data/snapshots/<date>.json.gz` on or before `as_of` (`factors.json` when there are no
   snapshots). It is compared two ways:
   - `ey_vs_sbn`: EY − SBN 10Y (the classic yield gap). Context only.
-  - `implied_erp_vs_hurdle`: implied ERP = EY + `G_REAL` (long-run real earnings growth, so EY
-    stands for a real return) − the real 10Y (10Y − CPI y/y), against the hurdle US ERP + IDN
-    CRP (dbnomics `us.erp.implied` + `idn.crp`, each known only past its publication lag;
-    `idn.erp.hurdle` when either is missing). ≥ +`ERP_BAND` is cheap (+1), ≤ −`ERP_BAND` rich
-    (−1). This gates the call. The local yield already carries some country risk, so adding
-    the CRP is conservative.
-  The 10Y is IGSYC 10Y (idxscape PHEI, P32), else dbnomics' OECD IDN long-term rate
-  (`idn.rate.long`, monthly average) labelled a proxy in drivers and stale_inputs. A proxy older
+  - `implied_erp_vs_hurdle` (spec r1, review R-stocks-valuation, adopted 2026-11-11, P102):
+    implied ERP = EY − the real 10Y (10Y − CPI y/y); no growth is added, since the EY already
+    carries the growth retained earnings buy. The hurdle over the raw SBN 10Y is US ERP + IDN
+    CRP − IDN default spread (dbnomics `us.erp.implied` + `idn.crp`, else `idn.erp.hurdle`;
+    the default spread is Damodaran's rating-based `default_spread` for IDN from dbnomics'
+    `damodaran_crp`, with the CRP's lag and maximum age), because the local bond yield already
+    holds the default-spread part of the CRP. Each is known only past its publication lag. No
+    default spread, no hurdle, so no valuation call (never the old hurdle). ≥ +`ERP_BAND` is
+    cheap (+1), ≤ −`ERP_BAND` rich (−1). This gates the call. Until P102 the rule added
+    `G_REAL` 2.0 to the EY and charged the full CRP; the two errors cancelled (~2pt each).
+  The 10Y is IGSYC 10Y (idxscape PHEI, P32), else DJPPR's SUN 10Y benchmark quote (idxscape
+  J9, daily, 2021-01 on, P101), else dbnomics' OECD IDN long-term rate (`idn.rate.long`,
+  monthly average) labelled a proxy in drivers and stale_inputs. A proxy older
   than `PROXY_CALL_AGE` (90 days, as in P31) still reports the numbers but makes no call.
 - **flows**: P18's `idx_foreign_flow` (required) + `ksei_foreign_share` (optional), netted.
   `tic_us_equity_net` is a driver only (it lags ~2 months).
@@ -50,7 +55,7 @@ from pathlib import Path
 from assist.doctor import DEFAULT_CONFIG
 from assist.eval.placebo import Verdict, align, evaluate, forward_returns
 from assist.layers.bonds.idn import LAG as BOND_LAG
-from assist.layers.bonds.idn import PROXY_10Y, _cpi
+from assist.layers.bonds.idn import PROXY_10Y, SUN_NAME, TEN_SOURCE, _cpi
 from assist.layers.overrides import DBN_CPI, IdnOverrides, apply
 from assist.layers.signals import IdnSignals, idn_signals
 from assist.layers.types import AssetScore, Regime, Signal
@@ -59,13 +64,14 @@ from assist.sources.bpslooker import CPI_YOY, BpsLookerSource
 from assist.sources.dbnomics import DbnomicsSource
 from assist.sources.idxmethod import JCI, JciSource
 from assist.sources.idxmethod_stocks import IdxMethodStocks
-from assist.sources.idxscape_phei import IGSYC_10Y, PheiSource
+from assist.sources.idxscape_phei import IGSYC_10Y, SUN_10Y, PheiSource
 from assist.sources.worldbankscape import WorldbankscapeSource
 from assist.stance import LADDER_SPACING_DAYS, LADDER_TRANCHES
 
 __all__ = [
     "HURDLE",
     "IDN_CRP",
+    "IDN_DS",
     "US_ERP",
     "FactorSnapshots",
     "IdnStocks",
@@ -80,8 +86,8 @@ __all__ = [
 SUBJECT, ASSET = "IDN", "stocks"
 PHEI_NAME = "idxscape_phei"
 US_ERP, IDN_CRP, HURDLE = "us.erp.implied", "idn.crp", "idn.erp.hurdle"  # fractions
+IDN_DS = "idn.default_spread"  # fraction; from damodaran_crp, not a dbnomics series id
 
-G_REAL = 2.0  # % long-run real earnings growth added to the EY
 ERP_BAND = 1.0  # pt, implied ERP − hurdle
 GAP_BAND = 0.5  # pt, EY − 10Y (context signal)
 MACRO_HIGH, MACRO_LOW = 55.0, 45.0
@@ -89,9 +95,10 @@ MACRO_HIGH, MACRO_LOW = 55.0, 45.0
 # A row dated this long before `as_of` counts as published, whatever its recorded date says.
 # Damodaran posts the month's ERP in its first days; a CRP snapshot ~6 weeks after its date.
 LAG = {**BOND_LAG, US_ERP: timedelta(days=10), IDN_CRP: timedelta(days=45),
-       HURDLE: timedelta(days=45)}
+       HURDLE: timedelta(days=45), IDN_DS: timedelta(days=45)}
 MAX_AGE = {"phei": timedelta(days=7), "factors": timedelta(days=14), "jci": timedelta(days=7),
-           US_ERP: timedelta(days=70), HURDLE: timedelta(days=70), IDN_CRP: timedelta(days=450)}
+           US_ERP: timedelta(days=70), HURDLE: timedelta(days=70), IDN_CRP: timedelta(days=450),
+           IDN_DS: timedelta(days=450)}
 PROXY_CALL_AGE = timedelta(days=90)  # an older proxy 10Y gives no call (as P31)
 READ_BACK = {"monthly": timedelta(days=800), "crp": timedelta(days=900),
              "jci": timedelta(days=60)}
@@ -316,8 +323,10 @@ class _Builder:
         return r
 
 
-def _ten_year(b: _Builder, phei: dict | None, dbn: dict | None) -> tuple[Row | None, bool]:
-    """(newest 10Y row, proxy?): IGSYC 10Y, else dbnomics' OECD IDN long-term rate."""
+def _ten_year(b: _Builder, phei: dict | None, dbn: dict | None,
+              sun: dict | None = None) -> tuple[Row | None, str]:
+    """(newest 10Y row, kind): IGSYC 10Y ("igsyc"), else DJPPR's SUN 10Y benchmark ("sun"),
+    else dbnomics' OECD IDN long-term rate ("proxy")."""
     t10 = (phei or {}).get(IGSYC_10Y, [])
     if phei is not None and not t10:
         b.stale.append(f"{PHEI_NAME} {IGSYC_10Y} (no data)")
@@ -326,20 +335,60 @@ def _ten_year(b: _Builder, phei: dict | None, dbn: dict | None) -> tuple[Row | N
         if b.as_of - ten.date > MAX_AGE["phei"]:
             b.stale.append(f"{PHEI_NAME} {IGSYC_10Y} (last {ten.date})")
         b.drivers.append(f"SBN 10Y from the IGSYC curve on {ten.date}")
-        return ten, False
+        return ten, "igsyc"
+    s10 = (sun or {}).get(SUN_10Y, [])
+    if s10:
+        ten = s10[-1]
+        if b.as_of - ten.date > MAX_AGE["phei"]:
+            b.stale.append(f"{SUN_NAME} {SUN_10Y} (last {ten.date})")
+        b.drivers.append(f"SBN 10Y from DJPPR's SUN 10Y benchmark quote on {ten.date}")
+        return ten, "sun"
     proxy = (dbn or {}).get(PROXY_10Y, [])
     if not proxy:
         if dbn is not None:
             b.stale.append(f"dbnomics {PROXY_10Y} (no data)")
-        return None, True
+        return None, "proxy"
     ten = proxy[-1]
     b.stale.append(f"dbnomics {PROXY_10Y} (proxy for IGSYC 10Y, last {ten.date})")
     b.drivers.append(f"10Y is a proxy: OECD IDN long-term rate via dbnomics ({PROXY_10Y}),"
                      f" monthly average for {ten.date:%Y-%m}; no IGSYC curve")
-    return ten, True
+    return ten, "proxy"
 
 
-def _hurdle(b: _Builder, dbn: dict | None) -> float | None:
+def _default_spread(b: _Builder, source) -> Row | None:
+    """IDN's rating-based default spread (fraction) from the newest Damodaran snapshot known on
+    `as_of` (the CRP's lag), as a Row; None (named stale) when the store or row is missing."""
+    read = getattr(source, "damodaran_crp", None)
+    if read is None:
+        b.stale.append(f"{source.name} damodaran_crp (not served)")
+        return None
+    try:
+        found = read(["IDN"])
+    except SourceUnavailable as e:
+        b.stale.append(f"{e.source} damodaran_crp IDN default_spread ({e.reason})")
+        return None
+    rows = sorted((Row(IDN_DS, r["snapshot_date"], float(r["default_spread"]), None,
+                       source.name)
+                   for r in found if r.get("default_spread") is not None
+                   and r["snapshot_date"] + LAG[IDN_DS] <= b.as_of), key=lambda r: r.date)
+    return b.last({IDN_DS: rows}, IDN_DS, source.name, MAX_AGE[IDN_DS])
+
+
+def _hurdle(b: _Builder, dbn: dict | None, ds: Row | None) -> float | None:
+    """US ERP + IDN CRP − IDN default spread in %, over the raw SBN 10Y (r1); no `ds`, no
+    hurdle."""
+    if ds is None:
+        return None
+    h = _gross_hurdle(b, dbn)
+    if h is None:
+        return None
+    h -= 100 * ds.value
+    b.drivers.append(f"hurdle over the raw SBN 10Y {h:.2f}% (less IDN default spread "
+                     f"{100 * ds.value:.2f}% {ds.date:%Y-%m}, Damodaran via dbnomics)")
+    return h
+
+
+def _gross_hurdle(b: _Builder, dbn: dict | None) -> float | None:
     """US ERP + IDN CRP in %, from their newest known points; `idn.erp.hurdle` as fallback."""
     if dbn is None:
         return None
@@ -364,25 +413,27 @@ def _hurdle(b: _Builder, dbn: dict | None) -> float | None:
     return h
 
 
-def _valuation(b: _Builder, ey: float | None, ten: Row | None, proxy: bool, cpi: Row | None,
+def _valuation(b: _Builder, ey: float | None, ten: Row | None, kind: str, cpi: Row | None,
                hurdle: float | None) -> tuple[int | None, dict]:
     out: dict = {"gap": None, "real": None, "implied": None}
+    proxy = kind == "proxy"
     if ey is None or ten is None:
         return None, out
     gap = ey - ten.value
     out["gap"] = gap
-    label = "10Y proxy" if proxy else "IGSYC 10Y"
-    b.add("ey_vs_sbn", gap, _direction(gap, GAP_BAND), "dbnomics" if proxy else PHEI_NAME,
+    label = {"igsyc": "IGSYC 10Y", "sun": "SUN 10Y", "proxy": "10Y proxy"}[kind]
+    b.add("ey_vs_sbn", gap, _direction(gap, GAP_BAND), TEN_SOURCE[kind],
           f"JCI EY − {label} ({ten.date})")
-    b.drivers.append(f"JCI EY − SBN 10Y {gap:+.2f}pt ({'proxy' if proxy else 'IGSYC'})")
+    short = {"igsyc": "IGSYC", "sun": "SUN", "proxy": "proxy"}[kind]
+    b.drivers.append(f"JCI EY − SBN 10Y {gap:+.2f}pt ({short})")
     if cpi is None or hurdle is None:
         return None, out
     real = ten.value - cpi.value
-    implied = ey + G_REAL - real
+    implied = ey - real
     diff = implied - hurdle
     out.update(real=real, implied=implied)
     direction = _direction(diff, ERP_BAND)
-    detail = (f"implied ERP {implied:.2f}% = EY {ey:.2f}% + {G_REAL:.1f}% real growth − real "
+    detail = (f"implied ERP {implied:.2f}% = EY {ey:.2f}% − real "
               f"10Y {real:.2f}% (CPI {cpi.value:.2f}% {cpi.date:%Y-%m}); vs hurdle {hurdle:.2f}%")
     call_dir: int | None = direction
     if proxy and b.as_of - ten.date > PROXY_CALL_AGE:
@@ -390,7 +441,7 @@ def _valuation(b: _Builder, ey: float | None, ten: Row | None, proxy: bool, cpi:
         detail += f"; proxy from {ten.date:%Y-%m} too old to call"
         b.risks.append(f"valuation rests on a 10Y proxy from {ten.date:%Y-%m}")
     b.add("implied_erp_vs_hurdle", diff, direction if call_dir is not None else 0,
-          "dbnomics" if proxy else PHEI_NAME, detail)
+          TEN_SOURCE[kind], detail)
     word = {1: "cheap", 0: "fair", -1: "rich"}[direction]
     b.drivers.append(f"implied ERP {implied:.2f}% vs hurdle {hurdle:.2f}%: {diff:+.2f}pt ({word})")
     if direction < 0:
@@ -504,16 +555,19 @@ def idn_stocks(
     that is missing or locked is named in `stale_inputs`, never raised; a missing input makes it
     a no_call."""
     b = _Builder(as_of)
-    phei_rows = b.read(phei or PheiSource.from_config(), [IGSYC_10Y], READ_BACK["monthly"])
-    dbn_rows = b.read(dbnomics or DbnomicsSource.from_config(),
-                      [PROXY_10Y, DBN_CPI, US_ERP, IDN_CRP, HURDLE], READ_BACK["crp"])
+    phei_src = phei or PheiSource.from_config()
+    phei_rows = b.read(phei_src, [IGSYC_10Y], READ_BACK["monthly"])
+    sun_rows = b.read(phei_src, [SUN_10Y], READ_BACK["monthly"])  # apart: migration 11
+    dbnomics = dbnomics or DbnomicsSource.from_config()
+    dbn_rows = b.read(dbnomics, [PROXY_10Y, DBN_CPI, US_ERP, IDN_CRP, HURDLE], READ_BACK["crp"])
     bps_rows = b.read(bps or BpsLookerSource.from_config(), [CPI_YOY], READ_BACK["monthly"])
 
     ey, pe, on = _earnings_yield(b, snapshots or FactorSnapshots.from_config())
-    ten, proxy = _ten_year(b, phei_rows, dbn_rows)
+    ten, kind = _ten_year(b, phei_rows, dbn_rows, sun_rows)
     cpi, _ = _cpi(b, bps_rows, dbn_rows, overrides)
-    hurdle = _hurdle(b, dbn_rows)
-    valuation, v = _valuation(b, ey, ten, proxy, cpi, hurdle)
+    ds = _default_spread(b, dbnomics) if dbn_rows is not None else None
+    hurdle = _hurdle(b, dbn_rows, ds)
+    valuation, v = _valuation(b, ey, ten, kind, cpi, hurdle)
     flows = _flows(b, signals if signals is not None else idn_signals(as_of))
     macro, adjusted = _macro(b, score, worldbankscape, overrides)
     _jci(b, idxmethod or JciSource.from_config())
@@ -541,7 +595,8 @@ def idn_stocks(
         as_of=as_of, call=call, proposed_stance=stance, entry=entry, signals=tuple(b.signals),
         earnings_yield=ey, pe=pe, factors_date=on, ey_gap=v["gap"], real_yield=v["real"],
         implied_erp=v["implied"], hurdle=hurdle, macro_score=adjusted,
-        ten_year_source=None if ten is None else ("dbnomics proxy" if proxy else PHEI_NAME),
+        ten_year_source=None if ten is None else (
+            "dbnomics proxy" if kind == "proxy" else TEN_SOURCE[kind]),
         regime=None if regime is None else regime.state,
         drivers=tuple(dict.fromkeys(b.drivers)), risks=tuple(dict.fromkeys(b.risks)),
         stale_inputs=tuple(dict.fromkeys(b.stale)), sources=tuple(dict.fromkeys(b.sources)),

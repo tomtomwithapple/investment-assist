@@ -41,7 +41,7 @@ from assist.fx import FxEdge, cross, fx_edge, horizon_changes, level_at, uip_exp
 from assist.layers.types import Candidate
 from assist.sources import ausdata, idxscape, jquantster, openkrx, singstat
 from assist.sources.base import Row, Source, SourceUnavailable
-from assist.sources.idxscape_phei import IGSYC_10Y
+from assist.sources.idxscape_phei import IGSYC_10Y, SUN_10Y, SUN_SOURCE
 
 __all__ = [
     "FRACTION",
@@ -155,7 +155,8 @@ def _cbpol(iso2: str) -> Ref:
 
 
 US_ERP = (Ref("dbnomics", "us.erp.implied", FRACTION, 0, MONTHLY),)
-IDR_10Y = (Ref("idxscape_phei", IGSYC_10Y, PCT, 0, DAILY), _dbn("idn.rate.long"))
+IDR_10Y = (Ref("idxscape_phei", IGSYC_10Y, PCT, 0, DAILY), Ref(SUN_SOURCE, SUN_10Y, PCT, 0, DAILY),
+           _dbn("idn.rate.long"))
 IDR_SHORT = (_cbpol("ID"),)
 JISDOR = Ref("idxscape", idxscape.JISDOR, LEVEL, 0, DAILY)
 IDR_PER_SGD = Ref("singstat", singstat.fx_id("IDR"), INVERSE, 0, WEEKLY_DAILY)
@@ -606,4 +607,5 @@ def default_sources(config: Path = DEFAULT_CONFIG, env: dict | None = None) -> d
                 AusdataSource, SingstatSource, OpenkrxSource):
         src = cls.from_config(config=config, env=env)
         out[src.name] = src
+    out[SUN_SOURCE] = out[PheiSource.name]  # the SUN 10Y, read apart (migration 11)
     return out

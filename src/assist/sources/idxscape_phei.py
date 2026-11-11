@@ -14,6 +14,13 @@ curve points never leave this Mac; anything sent off it (Telegram) carries deriv
   `bond_quotes()`. Asked for by id only.
 - `PHEI_CREDIT.<rating>.<tenor>` (`credit_series`): `credit_curve_point`, rating
   `IGS|AAA|AA|A|BBB`, tenors 0.1–10. Asked for by id or through `credit_curve()`.
+- `SUN.<tenor>` (`sun_series`): DJPPR's daily quote of the year's SUN benchmark series at 5, 10,
+  15 or 20 years (idxscape J9, migration 11, `sun_benchmark_quote.yield_pct`, 2021-01 on). Not
+  PHEI: public DJPPR data in the same store, served here so every IDN 10Y reader takes it from
+  the source it already holds (P101). The series code rotates each January; the tenor is the
+  benchmark's label, not a constant maturity. A quote is known on its own date (DJPPR prices the
+  day's close; its files carry no per-day publish time), so `as_of` = the quote date. Asked for
+  by id only.
 
 Values are percent as printed (7.1677 means 7.1677%). `as_of` = the WIB date of `fetched_at`,
 the snapshot it came from (a later page may revise a day). `from_yesterday_column` (the day had
@@ -43,6 +50,8 @@ __all__ = [
     "GROUPS",
     "IGSYC_2Y",
     "IGSYC_10Y",
+    "SUN_10Y",
+    "SUN_SOURCE",
     "MAX_TENOR",
     "RATINGS",
     "SOURCE",
@@ -55,15 +64,20 @@ __all__ = [
     "bond_series",
     "credit_series",
     "igsyc_series",
+    "sun_series",
 ]
 
 SOURCE = "idxscape_phei"
+# Store key for the SUN series in a sources mapping (the same PheiSource): read apart from the
+# PHEI series, so a store without migration 11 still serves IGSYC.
+SUN_SOURCE = "idxscape_sun"
 CONFIG_NAME = "idxscape"  # the store's entry in config/sources.yaml
-IGSYC, BOND, CREDIT = "IGSYC.", "PHEI_BOND.", "PHEI_CREDIT."
+IGSYC, BOND, CREDIT, SUN = "IGSYC.", "PHEI_BOND.", "PHEI_CREDIT.", "SUN."
 GROUPS = ("SBN_BENCHMARK", "SBSN_BENCHMARK", "RETAIL")
 RATINGS = ("IGS", "AAA", "AA", "A", "BBB")
 MAX_TENOR = 30.0  # PHEI extrapolates beyond ~30Y
-TABLES = {"igsyc": "igsyc_point", "bond": "phei_bond_quote", "credit": "credit_curve_point"}
+TABLES = {"igsyc": "igsyc_point", "bond": "phei_bond_quote", "credit": "credit_curve_point",
+          "sun": "sun_benchmark_quote"}
 WIB = "set TimeZone = 'Asia/Jakarta'"
 
 
@@ -83,8 +97,13 @@ def credit_series(rating: str, tenor: float | Decimal) -> str:
     return f"{CREDIT}{rating}.{_tenor(tenor)}"
 
 
+def sun_series(tenor: int) -> str:
+    return f"{SUN}{int(tenor)}"
+
+
 IGSYC_2Y = igsyc_series(2)
 IGSYC_10Y = igsyc_series(10)
+SUN_10Y = sun_series(10)  # DJPPR SUN 10Y benchmark (idxscape J9), the IGSYC 10Y fallback
 
 
 class CurvePoint(NamedTuple):
@@ -130,6 +149,8 @@ def _parse(sid: str) -> tuple[str, tuple] | None:
     try:
         if sid.startswith(IGSYC):
             return "igsyc", (Decimal(sid.removeprefix(IGSYC)),)
+        if sid.startswith(SUN):
+            return "sun", (int(sid.removeprefix(SUN)),)
         if sid.startswith(CREDIT):
             rating, tenor = sid.removeprefix(CREDIT).split(".", 1)
             return ("credit", (rating, Decimal(tenor))) if rating in RATINGS else None
@@ -182,7 +203,9 @@ class PheiSource:
         absent = [t for t in needed if t not in tables]
         if absent:
             raise SourceUnavailable(
-                self.name, "missing", f"no {', '.join(absent)} table (idxscape migration 9)")
+                self.name, "missing",
+                f"no {', '.join(absent)} table (idxscape migration"
+                f" {11 if absent == [TABLES['sun']] else 9})")
 
     def _query(self, kind: str, sql: str, params: Sequence = ()) -> list[tuple]:
         with self._connect() as (con, tables):
@@ -220,6 +243,12 @@ class PheiSource:
 
     def _sql(self, kind: str, key: tuple, start: date | None, end: date | None):
         where, params = _window("as_of", start, end)
+        if kind == "sun":  # known on its quote date: as_of doubles as the vintage
+            return (
+                f"select as_of, yield_pct, as_of from {TABLES[kind]}"
+                f" where {' and '.join(['tenor_y = ?', *where])} order by as_of",
+                [*key, *params],
+            )
         keys = {"igsyc": ["tenor_y = ?"], "credit": ["rating = ?", "tenor_y = ?"],
                 "bond": ["grp = ?", "series_code = ?"]}[kind]
         return (

@@ -58,7 +58,7 @@ from assist.layers.signals import idn_signals
 from assist.layers.types import AssetScore
 from assist.sources.base import Row, SourceUnavailable
 from assist.sources.idxmethod import JCI
-from assist.sources.idxscape_phei import IGSYC_10Y
+from assist.sources.idxscape_phei import IGSYC_10Y, SUN_10Y
 
 __all__ = [
     "ASSETS",
@@ -255,7 +255,8 @@ def _too_old(sig) -> str | None:
 def _ten_missing(rule, sig_name: str) -> list[str]:
     stale = rule.stale_inputs
     if rule.ten_year_source is None:
-        return ["10Y: " + _reason(stale, (IGSYC_10Y, PROXY_10Y, "idxscape_phei (", "dbnomics ("),
+        return ["10Y: " + _reason(stale, (IGSYC_10Y, SUN_10Y, PROXY_10Y, "idxscape_phei (",
+                                          "dbnomics ("),
                                   "no 10Y")]
     old = _too_old(rule.signal(sig_name))
     return [f"10Y: {old}"] if old else []
@@ -390,11 +391,12 @@ def _rows(source: Any, sid: str, end: date) -> list[Row]:
 
 
 def ten_year_months(idn: Any, end: date) -> list[tuple[date, float]]:
-    """Month-end 10Y as stored: IGSYC month-end closes where they exist, the OECD proxy (monthly
-    averages dated the 1st) elsewhere. `bond_forward` lags the averages one month (P74); this is
-    the series `pipeline.rule_prices` should take for bonds instead of its own copy."""
+    """Month-end 10Y as stored: IGSYC month-end closes where they exist, then DJPPR's SUN 10Y
+    benchmark month-end closes (idxscape J9, 2021-01 on, P101), the OECD proxy (monthly averages
+    dated the 1st) elsewhere. `bond_forward` lags the averages one month (P74); this is the
+    series `pipeline.rule_prices` should take for bonds instead of its own copy."""
     out: dict[Month, tuple[date, float]] = {}
-    for source, sid in ((idn.dbnomics, PROXY_10Y), (idn.phei, IGSYC_10Y)):
+    for source, sid in ((idn.dbnomics, PROXY_10Y), (idn.phei, SUN_10Y), (idn.phei, IGSYC_10Y)):
         for d, v in month_end_closes(_rows(source, sid, end)):
             out[_key(d)] = (d, v)
     return [out[k] for k in sorted(out)]

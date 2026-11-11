@@ -95,6 +95,7 @@ def us_world(**overrides) -> dict[str, Fake]:
         "idxscape": daily("JISDOR", 16000, "idxscape", drift=0.03),
         "idxscape_phei": [Row("IGSYC.10", date(2026, 10, 20), 6.5, date(2026, 10, 20),
                               "idxscape_phei")],
+        "idxscape_sun": [],
         "bisfetcher": [
             *monthly("WS_CBPOL.M.ID", 5.75, "bisfetcher", as_of=date(2026, 10, 14)),
             *monthly("WS_CBPOL.M.US", 4.0, "bisfetcher", as_of=date(2026, 10, 14)),
@@ -224,7 +225,8 @@ def test_us_live_spec_end_to_end():
     assert v.fx is not None and v.fx.hedged is not None
     assert res.candidates == (v.candidate(),)
     assert res.stale_inputs == ()
-    assert set(res.sources) == {"dbnomics", "idxscape", "idxscape_phei", "bisfetcher"}
+    assert set(res.sources) == {"dbnomics", "idxscape", "idxscape_phei", "idxscape_sun",
+                                "bisfetcher"}
     assert "dbnomics" in v.candidate().source and "idxscape" in v.candidate().source
 
 

@@ -3,10 +3,10 @@ candidate. One function serves the index and single names: every name in a marke
 market's hurdle, moved only by the S16 sector shift in `margin`.
 
 - **IDN**: SBN 10Y + US implied ERP + IDN CRP. The 10Y is IGSYC 10Y (idxscape PHEI, P32), else
-  dbnomics' OECD IDN long-term rate (`idn.rate.long`), flagged a proxy in drivers and
-  stale_inputs. ERP and CRP are the series, lags and fallback of the IDN stocks rule
-  (`layers/rules/idn_stocks`: `us.erp.implied` + `idn.crp`, else `idn.erp.hurdle`), imported, not
-  copied.
+  DJPPR's SUN 10Y benchmark quote (idxscape J9, P101), else dbnomics' OECD IDN long-term rate
+  (`idn.rate.long`), flagged a proxy in drivers and stale_inputs. ERP and CRP are the series,
+  lags and fallback of the IDN stocks rule (`layers/rules/idn_stocks`: `us.erp.implied` +
+  `idn.crp`, else `idn.erp.hurdle`), imported, not copied.
 - **Foreign** (USA, JPN, EMU, AUS, SGP where the stores have them): the local 10Y + US ERP + that
   country's CRP, from P29's market specs (`layers/candidates_foreign.MARKETS`). The euro area has
   no CRP series, so Germany's (`deu.crp`) stands in, named in drivers. The investor is IDR-based
@@ -63,7 +63,7 @@ from assist.layers.rules.idn_stocks import (
 )
 from assist.layers.types import Regime
 from assist.sources.base import Source
-from assist.sources.idxscape_phei import IGSYC_10Y
+from assist.sources.idxscape_phei import IGSYC_10Y, SUN_10Y, SUN_SOURCE
 
 __all__ = [
     "CONFIG",
@@ -93,6 +93,7 @@ ERP_REFS = (Ref("dbnomics", US_ERP, FRACTION, _days(US_ERP, LAG), _days(US_ERP, 
 IDN_CRP_REFS = (Ref("dbnomics", IDN_CRP, FRACTION, _days(IDN_CRP, LAG), _days(IDN_CRP, MAX_AGE)),)
 IDN_HURDLE_REFS = (Ref("dbnomics", HURDLE, FRACTION, _days(HURDLE, LAG), _days(HURDLE, MAX_AGE)),)
 IGSYC_REF = Ref(PHEI_NAME, IGSYC_10Y, PCT, 0, MAX_AGE["phei"].days)
+SUN_REF = Ref(SUN_SOURCE, SUN_10Y, PCT, 0, MAX_AGE["phei"].days)
 PROXY_REF = Ref("dbnomics", PROXY_10Y, PCT, _days(PROXY_10Y, LAG), PROXY_CALL_AGE.days)
 
 EMU = Market(
@@ -129,7 +130,7 @@ class Hurdle:
     components: dict[str, float] = field(default_factory=dict)
     fx_move: float | None = None  # expected 1-year change in IDR per local unit, fraction
     fx_basis: str = ""
-    ten_year_source: str | None = None  # "igsyc" | "proxy" | the series label
+    ten_year_source: str | None = None  # "igsyc" | "sun" | "proxy" | the series label
     drivers: tuple[str, ...] = ()
     stale_inputs: tuple[str, ...] = ()
     sources: tuple[str, ...] = ()
@@ -167,7 +168,7 @@ def _refs(subjects: Sequence[str]) -> list[Ref]:
     for s in subjects:
         m = _market(s)
         if m is None:
-            refs += [IGSYC_REF, PROXY_REF, *IDN_CRP_REFS, *IDN_HURDLE_REFS]
+            refs += [IGSYC_REF, SUN_REF, PROXY_REF, *IDN_CRP_REFS, *IDN_HURDLE_REFS]
             continue
         refs += [*m.yield_10y, *m.crp, *m.short_rate]
         if m.fx is not None:
@@ -226,6 +227,11 @@ def _idn(b: _Build, state: str | None) -> Hurdle:
     source = "igsyc"
     if ten is None:
         b.stale.append(f"{PHEI_NAME} {IGSYC_10Y} (no data)")
+        ten, ref = b.pick((SUN_REF,))
+        source = "sun"
+        if ten is not None:
+            b.drivers.append(f"SBN 10Y from DJPPR's SUN 10Y benchmark quote on {ten.date}")
+    if ten is None:
         ten, ref = b.pick((PROXY_REF,))
         source = "proxy"
         if ten is not None:
@@ -233,7 +239,7 @@ def _idn(b: _Build, state: str | None) -> Hurdle:
             b.drivers.append("10Y is a proxy: OECD IDN long-term rate via dbnomics "
                              f"({PROXY_10Y}, {ten.date:%Y-%m})")
     if ten is None:
-        b.missing("10Y", (IGSYC_REF, PROXY_REF))
+        b.missing("10Y", (IGSYC_REF, SUN_REF, PROXY_REF))
     else:
         b.components["ten_year"] = 100 * ten.value
 

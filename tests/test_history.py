@@ -80,6 +80,14 @@ def firsts(start: date, end: date) -> list[date]:
     return out
 
 
+class DbnCrp(Fake):
+    """dbnomics with `damodaran_crp`: IDN default spread 2.0% each January and July (P102)."""
+
+    def damodaran_crp(self, iso3=None, snapshot=None):
+        return [{"snapshot_date": date(y, m, 1), "iso3": "IDN", "default_spread": 0.02}
+                for y in range(2014, 2027) for m in (1, 7)]
+
+
 def sources(*, proxy=True, phei_rows=(), cpi_now=None) -> H.HistorySources:
     days = weekdays(D("2020-06-01"), D("2023-02-09"))
     months = firsts(D("2019-01-01"), D("2023-01-01"))
@@ -104,7 +112,7 @@ def sources(*, proxy=True, phei_rows=(), cpi_now=None) -> H.HistorySources:
              for d in weekdays(D("2021-12-01"), D("2023-02-09"))}
     idn = pipeline.IdnSources(
         bps=Fake("bps-looker", cpi), bisfetcher=Fake("bisfetcher", error="missing"),
-        dbnomics=Fake("dbnomics", dbn), satudatascape=Fake("satudatascape", error="missing"),
+        dbnomics=DbnCrp("dbnomics", dbn), satudatascape=Fake("satudatascape", error="missing"),
         idxscape=Fake("idxscape", idx_rows), kseistat=Fake("kseistat", error="missing"),
         tic=Fake("sec-edgar", error="missing"), phei=Fake("idxscape_phei", list(phei_rows)),
         idxmethod=jci, snapshots=FakeFactors(snaps), stocks=None, usdidr=fx)
@@ -296,6 +304,28 @@ def test_ten_year_months_exports_the_series_the_gate_prices_bonds_on():
     pts = H.ten_year_months(idn, D("2023-02-09"))
     assert pts[0][0].day == 1  # the averages keep their own date; bond_forward lags them
     assert H.lag_monthly_averages(pts)[-1][0] == D("2022-05-31")
+
+
+def test_ten_year_months_takes_igsyc_then_sun_then_the_proxy():
+    """P101: per month, an IGSYC close over a SUN 10Y benchmark close over the OECD average."""
+    from types import SimpleNamespace
+
+    from assist.sources.idxscape_phei import SUN_10Y
+
+    class Src:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def rows(self, ids, end=None, **_):
+            return [r for r in self._rows if r.series_id in ids and r.date <= end]
+
+    dbn = Src([Row(PROXY_10Y, D(d), 1.0, None, "dbnomics")
+               for d in ("2024-12-01", "2025-06-01", "2026-10-01")])
+    phei = Src([Row(SUN_10Y, D("2025-06-30"), 2.0, None, "x"),
+                Row(SUN_10Y, D("2026-10-30"), 2.0, None, "x"),
+                Row(IGSYC_10Y, D("2026-10-30"), 3.0, None, "x")])
+    pts = H.ten_year_months(SimpleNamespace(dbnomics=dbn, phei=phei), D("2026-11-10"))
+    assert pts == [(D("2024-12-01"), 1.0), (D("2025-06-30"), 2.0), (D("2026-10-30"), 3.0)]
 
 
 def test_bond_forward_never_spans_a_gap():
