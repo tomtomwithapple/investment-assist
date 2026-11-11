@@ -303,6 +303,48 @@ def test_phei_missing_falls_back_to_dbnomics_proxy():
     assert out.call == "enter"
 
 
+def sun_source(ten=8.0, hist_ten=6.0, months=72, last=date(2026, 10, 22)) -> Fake:
+    """DJPPR's SUN 10Y benchmark only (no IGSYC): `hist_ten` at past month ends, `ten` lately."""
+    from assist.sources.idxscape_phei import SUN_10Y
+
+    rows = []
+    for m in _months(last, months)[:-1]:
+        end = (m.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+        rows.append(Row(SUN_10Y, end, hist_ten, end, "idxscape_phei"))
+    rows += [Row(SUN_10Y, d, ten, d, "idxscape_phei") for d in _days(last, 5)]
+    return Fake("idxscape_phei", rows)
+
+
+def test_sun_10y_comes_before_the_proxy_without_igsyc():
+    """P101: DJPPR's SUN 10Y benchmark (idxscape J9) is the 10Y when IGSYC has none; its month
+    ends rank the real yield, the proxy is not used."""
+    out = run(phei=sun_source(), dbnomics=dbn_source(ten=1.0))
+    assert out.ten_year_source == "idxscape_sun"
+    assert out.real_yield == pytest.approx(8.0 - 2.0)
+    assert out.real_yield_pct is not None and out.real_yield_pct >= 90  # 6.0 vs 4.0 history
+    assert out.slope is None
+    assert out.signal("real_yield").source == "idxscape_sun"
+    assert any("SUN 10Y benchmark" in d for d in out.drivers)
+    assert not any("proxy" in s for s in out.stale_inputs)
+    assert out.call == "enter"
+
+
+def test_monthly_history_prefers_igsyc_then_sun_then_proxy():
+    from assist.layers.bonds.idn import _Builder, _ten_year
+    from assist.sources.idxscape_phei import SUN_10Y
+
+    m = lambda y, mo: date(y, mo, 1)  # noqa: E731
+    dbn = {PROXY_10Y: [Row(PROXY_10Y, m(2024, 1), 1.0, None, "dbnomics"),
+                       Row(PROXY_10Y, m(2025, 1), 1.0, None, "dbnomics"),
+                       Row(PROXY_10Y, m(2026, 10), 1.0, None, "dbnomics")]}
+    sun = {SUN_10Y: [Row(SUN_10Y, date(2025, 1, 31), 2.0, None, "x"),
+                     Row(SUN_10Y, date(2026, 10, 21), 2.0, None, "x")]}
+    phei = {IGSYC_10Y: [Row(IGSYC_10Y, date(2026, 10, 22), 3.0, None, "x")]}
+    ten, kind, tens, _ = _ten_year(_Builder(AS_OF), phei, dbn, Fake("idxscape_phei"), sun)
+    assert kind == "igsyc" and ten.value == 3.0
+    assert tens == {m(2024, 1): 1.0, m(2025, 1): 2.0, m(2026, 10): 3.0}
+
+
 def test_stale_proxy_reports_but_makes_no_call():
     out = run(phei=Fake("idxscape_phei", error="missing"), dbnomics=dbn_source(ten=8.0))
     assert out.real_yield == pytest.approx(6.0)  # 2024-12 10Y − newest CPI

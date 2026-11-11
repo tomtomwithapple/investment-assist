@@ -8,8 +8,9 @@ plus the global regime:
   ranked against its own monthly history (10Y at month end − that month's CPI y/y) over up to
   `WINDOW_MONTHS`; the window used is named in `real_window` and the detail. Shorter than
   `MIN_HISTORY` months, it is judged on absolute levels instead. The monthly history takes PHEI
-  month ends where it has them and dbnomics' OECD IDN long-term rate (`idn.rate.long`, a monthly
-  average) elsewhere, since PHEI history is short.
+  month ends where it has them, then DJPPR's SUN 10Y benchmark month ends (idxscape J9, 2021-01
+  on, P101), then dbnomics' OECD IDN long-term rate (`idn.rate.long`, a monthly average), since
+  PHEI history is short.
 - `curve_slope`: IGSYC 10Y − 2Y on the newest day with both, as idxscape J8 builds it. Context
   only; it does not gate the call.
 - `sbn_non_resident_change`: P18's signal (DJPPR non-resident SBN holdings, 4 weeks).
@@ -24,8 +25,10 @@ given), bought in one go otherwise. The thresholds are hand-set: `gated_stance` 
 change a stance only with a passing placebo verdict (`rule_verdict`, P9 harness), a reduce only
 with a passing reduce-side verdict (P74), a hold never.
 
-When the store has no PHEI tables, the 10Y falls back to dbnomics' `idn.rate.long`, labelled a
-proxy in `drivers` and `stale_inputs`; the slope is then unavailable. A proxy older than
+When there is no IGSYC 10Y, the 10Y falls back to DJPPR's SUN 10Y benchmark quote (idxscape
+J9, a daily close of the year's 10Y benchmark series, not constant maturity; named in `drivers`),
+then to dbnomics' `idn.rate.long`, labelled a proxy in `drivers` and `stale_inputs`; the slope
+is unavailable without the IGSYC curve. A proxy older than
 `PROXY_CALL_AGE` still gives a real yield but no call.
 
 PHEI is for the owner's local use only: drivers, risks and signal details carry derived numbers
@@ -47,7 +50,7 @@ from assist.sources.base import Row, Source, SourceUnavailable
 from assist.sources.bpslooker import CPI_YOY, BpsLookerSource
 from assist.sources.dbnomics import DbnomicsSource
 from assist.sources.idxscape import JISDOR, IdxscapeSource
-from assist.sources.idxscape_phei import IGSYC_2Y, IGSYC_10Y, PheiSource
+from assist.sources.idxscape_phei import IGSYC_2Y, IGSYC_10Y, SUN_10Y, SUN_SOURCE, PheiSource
 from assist.stance import LADDER_SPACING_DAYS, LADDER_TRANCHES
 
 __all__ = [
@@ -63,6 +66,7 @@ __all__ = [
 SUBJECT, ASSET = "IDN", "bonds"
 PROXY_10Y = "idn.rate.long"  # OECD IRLT for IDN via dbnomics, monthly average
 PHEI_NAME = "idxscape_phei"
+SUN_NAME = SUN_SOURCE  # ten_year_source and signal source for the DJPPR SUN 10Y
 
 WINDOW_MONTHS = 120  # real-yield percentile window
 MIN_HISTORY = 24  # months; fewer → absolute thresholds
@@ -253,7 +257,12 @@ def _cpi(b: _Builder, bps: dict | None, dbn: dict | None,
     return latest, hist
 
 
-def _real_yield(b: _Builder, ten: Row | None, proxy: bool, cpi: Row | None,
+TEN_LABEL = {"igsyc": "IGSYC 10Y", "sun": "SUN 10Y benchmark (DJPPR)",
+             "proxy": "10Y proxy (dbnomics, monthly avg)"}
+TEN_SOURCE = {"igsyc": PHEI_NAME, "sun": SUN_NAME, "proxy": "dbnomics"}
+
+
+def _real_yield(b: _Builder, ten: Row | None, kind: str, cpi: Row | None,
                 tens: dict[date, float], cpis: dict[date, float]) -> tuple[float | None,
                                                                             float | None, str,
                                                                             int | None]:
@@ -272,8 +281,8 @@ def _real_yield(b: _Builder, ten: Row | None, proxy: bool, cpi: Row | None,
         pct = None
         direction = 1 if real >= HIGH_ABS else -1 if real < LOW_ABS else 0
         rank = f"absolute: high ≥ {HIGH_ABS}%, low < {LOW_ABS}%; only {window}"
-    ten_label = "10Y proxy (dbnomics, monthly avg)" if proxy else "IGSYC 10Y"
-    detail = (f"{ten_label} on {ten.date} − CPI {cpi.value:.2f}% y/y ({cpi.date:%Y-%m}); "
+    proxy = kind == "proxy"
+    detail = (f"{TEN_LABEL[kind]} on {ten.date} − CPI {cpi.value:.2f}% y/y ({cpi.date:%Y-%m}); "
               f"{rank}")
     call_dir: int | None = direction
     if proxy and b.as_of - ten.date > PROXY_CALL_AGE:
@@ -281,18 +290,24 @@ def _real_yield(b: _Builder, ten: Row | None, proxy: bool, cpi: Row | None,
         detail += f"; proxy from {ten.date:%Y-%m} too old to call"
         b.risks.append(f"real yield rests on a 10Y proxy from {ten.date:%Y-%m}")
     b.add("real_yield", real, direction if call_dir is not None else 0,
-          PHEI_NAME if not proxy else "dbnomics", detail)
+          TEN_SOURCE[kind], detail)
     pct_text = rank if pct is None else f"{_ordinal(round(pct))} pct, {window}"
     b.drivers.append(f"real yield {real:.2f}% ({pct_text})")
     return real, pct, window, call_dir
 
 
-def _ten_year(b: _Builder, phei: dict | None, dbn: dict | None, phei_src: Source):
-    """(newest 10Y row, proxy?, monthly 10Y history, slope) from PHEI, else the dbnomics proxy."""
+def _ten_year(b: _Builder, phei: dict | None, dbn: dict | None, phei_src: Source,
+              sun: dict | None = None):
+    """(newest 10Y row, kind, monthly 10Y history, slope): IGSYC 10Y (kind "igsyc"), else the
+    DJPPR SUN 10Y benchmark ("sun"), else the dbnomics proxy ("proxy"). The monthly history
+    takes, per month, IGSYC over SUN over the proxy."""
     tens: dict[date, float] = {_month(r.date): r.value for r in (dbn or {}).get(PROXY_10Y, [])}
+    s10 = (sun or {}).get(SUN_10Y, [])
+    for r in s10:
+        tens[_month(r.date)] = r.value  # month end wins: rows are oldest first
     t10 = (phei or {}).get(IGSYC_10Y, [])
     for r in t10:
-        tens[_month(r.date)] = r.value  # month end wins: rows are oldest first
+        tens[_month(r.date)] = r.value
     if phei is not None and not t10:
         b.stale.append(f"{PHEI_NAME} {IGSYC_10Y} (no data)")
     if t10:
@@ -318,18 +333,25 @@ def _ten_year(b: _Builder, phei: dict | None, dbn: dict | None, phei_src: Source
             b.drivers.append(f"IGSYC 10Y−2Y slope {slope:+.2f}pt")
         else:
             b.stale.append(f"curve slope (no {IGSYC_2Y} on a 10Y day)")
-        return ten, False, tens, slope
-    proxy = (dbn or {}).get(PROXY_10Y, [])
+        return ten, "igsyc", tens, slope
     b.stale.append("curve slope (slope unavailable without the IGSYC curve)")
+    if s10:
+        ten = s10[-1]
+        if b.as_of - ten.date > MAX_AGE["phei"]:
+            b.stale.append(f"{SUN_NAME} {SUN_10Y} (last {ten.date})")
+        b.drivers.append(f"SBN 10Y from DJPPR's SUN 10Y benchmark quote on {ten.date};"
+                         " no IGSYC curve")
+        return ten, "sun", tens, None
+    proxy = (dbn or {}).get(PROXY_10Y, [])
     if not proxy:
         if dbn is not None:
             b.stale.append(f"dbnomics {PROXY_10Y} (no data)")
-        return None, True, tens, None
+        return None, "proxy", tens, None
     ten = proxy[-1]
     b.stale.append(f"dbnomics {PROXY_10Y} (proxy for IGSYC 10Y, last {ten.date})")
     b.drivers.append(f"10Y is a proxy: OECD IDN long-term rate via dbnomics ({PROXY_10Y}),"
                      f" monthly average for {ten.date:%Y-%m}; no IGSYC curve")
-    return ten, True, tens, None
+    return ten, "proxy", tens, None
 
 
 def _jisdor(b: _Builder, idx: dict | None, name: str) -> bool | None:
@@ -393,14 +415,15 @@ def idn_bonds(
     phei_src = phei or PheiSource.from_config()
     idx_src = idxscape or IdxscapeSource.from_config()
     phei_rows = b.read(phei_src, [IGSYC_10Y, IGSYC_2Y], READ_BACK["monthly"])
+    sun_rows = b.read(phei_src, [SUN_10Y], READ_BACK["monthly"])  # apart: migration 11
     dbn_rows = b.read(dbnomics or DbnomicsSource.from_config(), [PROXY_10Y, DBN_CPI],
                       READ_BACK["monthly"])
     bps_rows = b.read(bps or BpsLookerSource.from_config(), [CPI_YOY], READ_BACK["monthly"])
     fx_rows = b.read(idx_src, [JISDOR], READ_BACK["fx"])
 
-    ten, proxy, tens, slope = _ten_year(b, phei_rows, dbn_rows, phei_src)
+    ten, kind, tens, slope = _ten_year(b, phei_rows, dbn_rows, phei_src, sun_rows)
     cpi, cpis = _cpi(b, bps_rows, dbn_rows, overrides)
-    real, pct, window, real_dir = _real_yield(b, ten, proxy, cpi, tens, cpis)
+    real, pct, window, real_dir = _real_yield(b, ten, kind, cpi, tens, cpis)
     foreign = _foreign(b, signals if signals is not None else idn_signals(as_of, idxscape=idx_src))
     breakout = _jisdor(b, fx_rows, idx_src.name)
 
@@ -427,7 +450,7 @@ def idn_bonds(
         as_of=as_of, call=call, proposed_stance=stance, entry=entry, signals=tuple(b.signals),
         real_yield=real, real_yield_pct=pct, real_window=window, slope=slope,
         breakout=breakout, ten_year_source=None if ten is None else (
-            "dbnomics proxy" if proxy else PHEI_NAME),
+            "dbnomics proxy" if kind == "proxy" else TEN_SOURCE[kind]),
         regime=None if regime is None else regime.state,
         drivers=tuple(dict.fromkeys(b.drivers)), risks=tuple(dict.fromkeys(b.risks)),
         stale_inputs=tuple(dict.fromkeys(b.stale)), sources=tuple(dict.fromkeys(b.sources)),

@@ -199,3 +199,46 @@ def test_read_only(store):
 def test_from_config_uses_idxscape_store(tmp_path):
     src = PheiSource.from_config(env={"ASSIST_IDXSCAPE_DB": str(tmp_path / "x.duckdb")})
     assert src.path == tmp_path / "x.duckdb"
+
+
+# ---------------- DJPPR SUN benchmark (idxscape J9, migration 11; P101) ----------------
+
+SUN_DDL = """
+create table sun_benchmark_quote (
+    as_of DATE NOT NULL, tenor_y INTEGER NOT NULL, series_code VARCHAR NOT NULL,
+    coupon_pct DECIMAL(8,4) NOT NULL, maturity DATE NOT NULL, price_pct DECIMAL(10,4),
+    yield_pct DECIMAL(10,4) NOT NULL, artifact_sha256 VARCHAR NOT NULL,
+    PRIMARY KEY (as_of, tenor_y));
+insert into sun_benchmark_quote values
+    ('2025-03-28', 10, 'FR0103', 6.75, '2035-07-15', 98.1, 7.0125, 'a'),
+    ('2025-03-28', 5, 'FR0104', 6.5, '2030-07-15', 99.0, 6.6, 'a'),
+    ('2025-03-31', 10, 'FR0103', 6.75, '2035-07-15', 98.0, 7.0250, 'a');
+"""
+
+
+def test_sun_series_ids():
+    from assist.sources.idxscape_phei import SUN_10Y, sun_series
+
+    assert sun_series(10) == SUN_10Y == "SUN.10"
+    assert sun_series(5) == "SUN.5"
+
+
+def test_sun_10y_rows_known_on_their_quote_date(store):
+    from assist.sources.idxscape_phei import SUN_10Y
+
+    con = duckdb.connect(str(store))
+    con.execute(SUN_DDL)
+    con.close()
+    rows = PheiSource(store).rows([SUN_10Y], start=date(2025, 3, 29))
+    assert rows == [Row(SUN_10Y, date(2025, 3, 31), 7.025, date(2025, 3, 31), SOURCE)]
+    assert {r.series_id for r in PheiSource(store).rows()} == {
+        "IGSYC.0.1", "IGSYC.1", "IGSYC.2", "IGSYC.10", "IGSYC.30"}  # never in the default
+
+
+def test_sun_without_migration_11_is_missing_and_names_it(store):
+    from assist.sources.idxscape_phei import SUN_10Y
+
+    with pytest.raises(SourceUnavailable) as e:
+        PheiSource(store).rows([SUN_10Y])
+    assert e.value.reason == "missing" and "migration 11" in str(e.value)
+    assert PheiSource(store).rows([IGSYC_10Y])  # the curve still reads on its own

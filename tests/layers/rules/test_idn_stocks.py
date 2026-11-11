@@ -344,6 +344,29 @@ def test_phei_without_10y_falls_back():
     assert any("idxscape_phei IGSYC.10 (no data)" in x for x in s.stale_inputs)
 
 
+def test_sun_10y_stands_in_for_igsyc_before_the_proxy():
+    """P101: no IGSYC 10Y (before 2026-10), DJPPR's SUN 10Y benchmark is next, not the proxy."""
+    from assist.sources.idxscape_phei import SUN_10Y
+
+    sun = Fake("idxscape_phei", [Row(SUN_10Y, d, 7.0, d, "idxscape_phei")
+                                 for d in _days(date(2026, 10, 22), 5)])
+    s = run(phei=sun)
+    assert s.ten_year_source == "idxscape_sun" and s.call == "enter"
+    assert s.ey_gap == pytest.approx(run().ey_gap)  # same 7.0 as the IGSYC default
+    assert any("SUN 10Y benchmark" in d for d in s.drivers)
+    assert not any("proxy" in d for d in s.drivers)
+    assert {sig.source for sig in s.signals if sig.name == "ey_vs_sbn"} == {"idxscape_sun"}
+
+
+def test_igsyc_wins_over_sun_on_the_same_day():
+    from assist.sources.idxscape_phei import SUN_10Y
+
+    both = phei_source(ten=7.0)
+    both._rows += [Row(SUN_10Y, d, 9.0, d, "idxscape_phei") for d in _days(date(2026, 10, 22), 5)]
+    assert run(phei=both).ten_year_source == "idxscape_phei"
+    assert run(phei=both).ey_gap == pytest.approx(run().ey_gap)
+
+
 def test_stale_phei_flagged():
     s = run(phei=phei_source(last=date(2026, 10, 9)))
     assert any(x.startswith("idxscape_phei IGSYC.10 (last") for x in s.stale_inputs)

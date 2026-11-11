@@ -298,6 +298,28 @@ def test_ten_year_months_exports_the_series_the_gate_prices_bonds_on():
     assert H.lag_monthly_averages(pts)[-1][0] == D("2022-05-31")
 
 
+def test_ten_year_months_takes_igsyc_then_sun_then_the_proxy():
+    """P101: per month, an IGSYC close over a SUN 10Y benchmark close over the OECD average."""
+    from types import SimpleNamespace
+
+    from assist.sources.idxscape_phei import SUN_10Y
+
+    class Src:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def rows(self, ids, end=None, **_):
+            return [r for r in self._rows if r.series_id in ids and r.date <= end]
+
+    dbn = Src([Row(PROXY_10Y, D(d), 1.0, None, "dbnomics")
+               for d in ("2024-12-01", "2025-06-01", "2026-10-01")])
+    phei = Src([Row(SUN_10Y, D("2025-06-30"), 2.0, None, "x"),
+                Row(SUN_10Y, D("2026-10-30"), 2.0, None, "x"),
+                Row(IGSYC_10Y, D("2026-10-30"), 3.0, None, "x")])
+    pts = H.ten_year_months(SimpleNamespace(dbnomics=dbn, phei=phei), D("2026-11-10"))
+    assert pts == [(D("2024-12-01"), 1.0), (D("2025-06-30"), 2.0), (D("2026-10-30"), 3.0)]
+
+
 def test_bond_forward_never_spans_a_gap():
     ten = [(D("2024-10-01"), 7.0), (D("2024-11-01"), 7.0), (D("2024-12-01"), 7.0),
            (D("2026-10-31"), 6.0), (D("2026-11-30"), 6.0), (D("2026-12-31"), 6.0),
