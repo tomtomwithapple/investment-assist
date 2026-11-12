@@ -14,7 +14,10 @@ Gordon form serve it), so every row carries the same framework list.
   and the store's dividends share), so B0 = B / shares = price / P/B, and price ÷ fair is
   mktcap ÷ total value, whatever splits came between t and d.
 - ROE0 = NI TTM / average equity (t and the quarter a year before). With no equity a year
-  before, the ending equity stands in, flagged.
+  before, the ending equity stands in, flagged. `CONFIG["roe_source"]` "dupont_sustainable"
+  (S99, off by default) makes `BankRI.evaluate` use `quality.sustainable_roe` instead: ROA ×
+  the bank median equity multiplier when the ROE is leverage-driven (the TTM ROE kept as
+  `roe0_ttm`, flagged); the replay stays on TTM ROE.
 - Payout = trailing 12-month dividends by ex-date × shares / NI, held for every forecast year,
   capped at 1 (flagged). A bank with NI <= 0 has no payout ratio: it is taken as 0 (it retains
   everything while it recovers), flagged.
@@ -73,6 +76,9 @@ CONFIG = {
     "max_bar_age_days": 10,  # replay: a bank with no bar this close to the quarter end is out
     "replay_min_mktcap": 1e12,  # IDR, the dividend replay's liquidity stand-in
     "min_pool": 10,  # banks a quarter needs before the board scores it (top quintile >= 2)
+    # S99: "ttm" (S96 as built) or "dupont_sustainable" (ROE0 = `quality.sustainable_roe`,
+    # ROA x the bank median multiplier when the ROE is leverage-driven); evaluate only
+    "roe_source": "ttm",
 }
 
 
@@ -121,7 +127,8 @@ def _trailing(divs: Sequence[Mapping], d: date) -> float:
 
 
 def bank_ri(sym: str, quarters: Sequence, bars: Sequence, divs: Sequence[Mapping], d: date,
-            required_pt: float | None, *, years: int = CONFIG["years"]) -> FrameworkResult:
+            required_pt: float | None, *, years: int = CONFIG["years"],
+            roe0: float | None = None) -> FrameworkResult:
     """The residual-income value of bank `sym` as knowable on `d` (module docstring)."""
     fw = BankRI()
     known = [q for q in quarters if q.available <= d]
@@ -147,7 +154,13 @@ def bank_ri(sym: str, quarters: Sequence, bars: Sequence, divs: Sequence[Mapping
     else:
         avg = cur.equity
         flags.append(f"no equity a year before {cur.period}: ROE on ending equity")
-    roe0 = cur.ni_ttm / avg
+    roe_ttm = cur.ni_ttm / avg
+    overridden = roe0 is not None
+    if roe0 is None:
+        roe0 = roe_ttm
+    else:
+        flags.append(f"ROE0 {roe0:.2%} is the DuPont sustainable ROE (S99 switch; TTM ROE "
+                     f"{roe_ttm:.2%})")
     shares = bar.mktcap / bar.price
     dps = _trailing(divs, d)
     if cur.ni_ttm <= 0:
@@ -166,6 +179,8 @@ def bank_ri(sym: str, quarters: Sequence, bars: Sequence, divs: Sequence[Mapping
         "avg_equity": avg, "ni_ttm": cur.ni_ttm, "shares": shares, "price": bar.price,
         "mktcap": bar.mktcap, "b0": b0, "pb": bar.price / b0, "roe0": roe0, "dps_ttm": dps,
         "payout": payout, "r": r, "years": float(years)}
+    if overridden:
+        c["roe0_ttm"] = roe_ttm
     c |= path(b0, roe0, payout, r, years)
     fair = c["fair_value"]
     if fair <= 0:
@@ -235,9 +250,20 @@ class BankRI(Framework):
             return self.missing(sym, None, "no point-in-time bank inputs given")
         if sym not in inputs.banks:
             return self.missing(sym, None, "not a bank (no CAR): residual income is for banks")
-        return bank_ri(sym, inputs.quarters.get(sym) or (), inputs.bars.get(sym) or (),
-                       inputs.dividends.get(sym) or (), inputs.as_of, inputs.required_pt,
-                       years=inputs.years)
+        roe0, flag = None, None
+        if CONFIG["roe_source"] == "dupont_sustainable":
+            from assist.candidates.frameworks.quality import sustainable_roe
+
+            roe0 = sustainable_roe(sym, inputs)
+            if roe0 is None:
+                flag = "no DuPont sustainable ROE (S99 switch): TTM ROE kept"
+        res = bank_ri(sym, inputs.quarters.get(sym) or (), inputs.bars.get(sym) or (),
+                      inputs.dividends.get(sym) or (), inputs.as_of, inputs.required_pt,
+                      years=inputs.years, roe0=roe0)
+        if flag:
+            res = self.result(sym, res.as_of, res.score, res.signal, res.components,
+                              *res.flags, flag)
+        return res
 
     def replay(self, ctx: Any) -> Any:
         """S94: the board's replay over the loaded stores (`framework_board.LiveContext`)."""

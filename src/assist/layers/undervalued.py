@@ -732,26 +732,30 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
     wl, st = read_watchlist(day)
     stale += st
     problems = data_check(table) + pool_problems(screens)
-    framework_inputs = None  # P112 F-score, P113 bank RI, P114 Graham, P115 Magic: one bundle
+    framework_inputs = None  # P112 F, P113 bank RI, P114 Graham, P115 Magic, P116 GP/A DuPont
     try:
         from assist.candidates.frameworks import graham as gr
+        from assist.candidates.frameworks import quality as ql
         from assist.candidates.frameworks.magic_formula import MagicInputs
         from assist.candidates.frameworks.piotroski import (
             STATEMENT_ITEMS,
             PiotroskiInputs,
             banks_from,
         )
-        from assist.candidates.frameworks.residual_income import BankRIInputs, attach_context
+        from assist.candidates.frameworks.residual_income import attach_context
         from assist.sources.idxmethod_series import IdxMethodSeries
 
         series = IdxMethodSeries.from_config()
-        st = series.statements({*STATEMENT_ITEMS, *gr.STATEMENT_ITEMS})
+        st = series.statements({*STATEMENT_ITEMS, *gr.STATEMENT_ITEMS, *ql.ITEMS})
         banks = banks_from(table)
-        bank_ri = BankRIInputs(as_of, data.quarters, st, banks, bars=data.bars,
-                               dividends=data.dividends, required_pt=h.required)
+        # QualityInputs is a BankRIInputs: bank RI, GP/A and DuPont read one object, so the
+        # sustainable-ROE switch (S99) finds the sectors it needs
+        q = ql.QualityInputs(as_of, data.quarters, st, banks, bars=data.bars,
+                             dividends=data.dividends, required_pt=h.required,
+                             sectors=data.sectors)
         framework_inputs = {
             "piotroski_f": PiotroskiInputs(as_of, data.quarters, st, banks),
-            "bank_ri": bank_ri,
+            "bank_ri": q, ql.GPA: q, ql.DUPONT: q,
             gr.NAME: gr.GrahamInputs(as_of, st, data.bars,
                                      data.dividends if data.bars else None,  # store unread
                                      gr.financials_from(table, data.sectors),
@@ -761,7 +765,7 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
                                          rows=table, flagged=frozenset(flagged),
                                          universe=series.universe()),
         }
-        attach_context(judged, bank_ri)  # S96: on S86's record of a held bank
+        attach_context(judged, q)  # S96: on S86's record of a held bank
     except SourceUnavailable as e:
         stale.append(e.stale_input)
     return UndervaluedInputs(
