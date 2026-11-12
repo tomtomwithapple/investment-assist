@@ -1,0 +1,12 @@
+# PLAN S89 (phase P rule 1): Stockbit screeners are a WATCHLIST ONLY. A name on one joins the
+# IDN pool to be judged by investment-assist's own code (thesis, valuation, fit); membership never
+# gives a verdict, a size or a rank. Read from idx-method's stockbiter.db (screener_preset,
+# screener_member), read-only.
+#
+# screeners     screener ids or names to read; empty = every screener in `category`
+# category      Stockbit category used when `screeners` is empty (Custom = the user's own)
+# max_age_days  an older member date is still read, named a stale input
+
+category: Custom
+screeners: []
+max_age_days: 3

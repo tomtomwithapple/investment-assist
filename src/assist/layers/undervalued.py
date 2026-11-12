@@ -27,7 +27,17 @@ Assembles, for one market (IDN; USA from F6, see *US* below):
 `assemble` is pure; `gather_live` reads the stores (read-only) through the screens' own loaders.
 The payload (`schema/candidates.schema.json`) carries the run's model fingerprint plus `config`:
 the tilt yaml's sha256, the hurdle constants, the sizing caps and each screen's CONFIG, so the
-journal records exactly what produced each row. Context only: nothing here moves a stance, and
+journal records exactly what produced each row.
+
+**Watchlist (S89, phase P rule 1).** The user's Stockbit screeners (idx-method `screener_member`,
+`config/watchlist.yaml`) are a watchlist only. A name on one that no passing screen ranked is
+judged by `holdings.answers` (thesis, valuation, fit), the holding record's own code, and listed
+in the `watchlist` block as a `source: watchlist` row with the screeners it came from, action
+`watch`, no size and no rank. The block is built after everything else, so membership changes no
+size, rank, trim or verdict; with bad data (`data_problems`) its thesis and valuation read
+unknown. A stale watchlist is a stale input; a missing one leaves no block.
+
+Context only: nothing here moves a stance, and
 sizes stay paper until the user confirms the weight bands (PLAN Open questions).
 
 **US (F6, PLAN S21).** `us_inputs` turns P39's `us_stocks.run` results into the same inputs, all
@@ -59,7 +69,7 @@ from typing import Any, NamedTuple
 
 import jsonschema
 
-from assist.candidates import average_down, costs, diversify, exits, frameworks, sizing
+from assist.candidates import average_down, costs, diversify, exits, frameworks, holdings, sizing
 from assist.candidates import hurdle as hurdle_mod
 from assist.layers.portfolio import classify
 from assist.layers.types import DISCLAIMER, SCHEMA_DIR, Regime
@@ -78,6 +88,7 @@ __all__ = [
     "gather_live_usa",
     "holdings_from",
     "load_out",
+    "read_watchlist",
     "telegram_lines",
     "top",
     "us_cost",
@@ -88,8 +99,8 @@ __all__ = [
 ]
 
 SCHEMA = SCHEMA_DIR / "candidates.schema.json"
-SCHEMA_VERSION = "1.5.0"  # 1.1 average down; 1.2 exits; 1.3 diversification; 1.3.1 div_yield;
-# 1.4 data_problems (P103); 1.5 per-row frameworks (P110)
+SCHEMA_VERSION = "1.6.0"  # 1.1 average down; 1.2 exits; 1.3 diversification; 1.3.1 div_yield;
+# 1.4 data_problems (P103); 1.5 per-row frameworks (P110); 1.6 watchlist (P107)
 STYLES = ("dividend_value", "garp")  # S15's industry_value has no expected return: not a style
 TRANCHE_IDR = 10e6  # P21's DEFAULT_ORDER: the tranche costs and capacity are judged at
 DROP_FLAGS = ("over_participation", "below_one_lot")
@@ -130,6 +141,8 @@ class UndervaluedInputs:
     judged: dict[str, dict] = field(default_factory=dict)
     # P110: what the registered frameworks read (each framework knows its own part)
     framework_inputs: Any = None
+    # S89: `IdxMethodWatchlist.latest` (the user's Stockbit screeners), or None when not read
+    watchlist: dict | None = None
 
 
 @cache
@@ -405,6 +418,38 @@ def _attach_frameworks(styles: Sequence[dict], framework_inputs: Any) -> None:
                 r["frameworks"] = [dict(x) for x in cache[sym]]
 
 
+def _watchlist(payload: Mapping, inp: UndervaluedInputs, held: Mapping[str, float], *,
+               pool: set[str], members: set[str], kept: Mapping[str, float],
+               ranked: Mapping[str, float | None], sector_tilts: Mapping[str, float] | None,
+               capped: set[str]) -> dict:
+    """S89: the watchlist block, read off the finished payload so it can change nothing in it.
+    Each name no passing screen ranked is judged by `holdings.answers`; its fit is
+    `diversify.judge` over the names the payload grouped (`members`) plus itself alone."""
+    wl = inp.watchlist or {}
+    by_sym = wl.get("members") or {}
+    bad = bool(inp.data_problems)
+    rows = []
+    for sym in sorted(set(by_sym) - pool):
+        group = {v["symbol"]: v for v in diversify.judge(
+            members | {sym}, inp.profiles, kept=kept, ranked=ranked, held=held,
+            sector_tilts=sector_tilts)}
+        j = inp.judged.get(sym)
+        a = holdings.answers(payload, j, sym, group.get(sym), sym in capped)
+        if bad:  # phase P rule 3: broken inputs give no verdict
+            a["thesis"] = holdings.thesis(None) | {"note": "inputs broken this run"}
+            a["valuation"] = holdings.valuation(None, None, None)
+        sector = (j or {}).get("sector") or (inp.profiles.get(sym) or {}).get("sector")
+        rows.append({"symbol": sym, "source": "watchlist", "screeners": list(by_sym[sym]),
+                     "sector": sector, "held": sym in held,
+                     "held_idr": float(held.get(sym, 0.0)), "action": "watch", "size": None,
+                     **a})
+    return {"as_of": wl.get("as_of"), "stale": wl.get("stale"),
+            "category": wl.get("category"), "missing": list(wl.get("missing") or []),
+            "screeners": [dict(x) for x in wl.get("screeners") or []],
+            "members": {k: list(v) for k, v in sorted(by_sym.items())},
+            "in_pool": sorted(set(by_sym) & pool), "rows": rows}
+
+
 def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
              portfolio_value_idr: float | None, holdings: Mapping[str, float],
              regime: Regime | str | None, fingerprint: str,
@@ -489,7 +534,7 @@ def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
     hurdles = [inp.screens[s] for s in order if inp.screens[s].get("hurdle_pt") is not None]
     h = hurdles[0] if hurdles else {}
     state = regime.state if isinstance(regime, Regime) else regime
-    return {
+    out = {
         "schema_version": SCHEMA_VERSION,
         "market": inp.market,
         "as_of": day.isoformat(),
@@ -516,6 +561,35 @@ def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
         "sources": list(dict.fromkeys([*inp.sources, "financer"])) or ["idx-method"],
         "disclaimer": DISCLAIMER,
     }
+    if inp.watchlist is not None:
+        capped = {x["symbol"] for x in trims_out if not x["reason"].startswith("trim in full")}
+        out["watchlist"] = _watchlist(
+            out, inp, held, pool=set(ranking), members=(set(held) | set(kept_margin)) - leaving,
+            kept=kept_margin, ranked={s: r.get("margin_pt") for s, r in ranking.items()},
+            sector_tilts={k: v["tilt"] for k, v in sectors.items()} if t_passed else None,
+            capped=capped)
+        if inp.watchlist.get("stale"):
+            out["stale_inputs"] = list(dict.fromkeys([*out["stale_inputs"],
+                                                      inp.watchlist["stale"]]))
+    return out
+
+
+def read_watchlist(day: date, source: Any = None) -> tuple[dict | None, list[str]]:
+    """S89: the watchlist on `day` (default `IdxMethodWatchlist.from_config()`) and its stale
+    inputs. Missing → None; a stale one is still returned (`assemble` names it)."""
+    from assist.sources.base import SourceUnavailable
+
+    try:
+        if source is None:
+            from assist.sources.idxmethod_watchlist import IdxMethodWatchlist
+            source = IdxMethodWatchlist.from_config()
+        wl = source.latest(day)
+    except SourceUnavailable as e:
+        return None, [f"{e.stale_input}: no watchlist"]
+    except Exception as e:  # noqa: BLE001 - the watchlist never fails the run
+        return None, [f"idx-method watchlist failed: {type(e).__name__}: {e}"[:200]]
+    return wl, [f"idx-method watchlist: configured screener {m} not found"
+                for m in wl.get("missing") or []]
 
 
 def top(payload: Mapping, n: int = 5) -> list[dict]:
@@ -654,6 +728,8 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
         stale.append(f"holding record inputs failed: {type(e).__name__}: {e}"[:200])
     profiles, st = _profiles(table, day)
     stale += st
+    wl, st = read_watchlist(day)
+    stale += st
     problems = data_check(table) + pool_problems(screens)
     framework_inputs = None  # P112: the point-in-time F-score, context on the rows
     try:
@@ -668,6 +744,7 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
     return UndervaluedInputs(
         market="IDN", bar_date=as_of, screens=screens, tilt=t, profiles=profiles,
         data_problems=tuple(problems), judged=judged, framework_inputs=framework_inputs,
+        watchlist=wl,
         factors={s: table[s] for s in syms if s in table} | {
             s: table[s] for s in (r["symbol"] for x in screens.values()
                                   for r in x.get("ranking") or []) if s in table},
