@@ -18,9 +18,11 @@ before the window's end is held at that bar and flagged `stopped` (delisted or s
 name with no bar on or before the start is n/a and never filled in: a basket with any such pick
 is n/a; the pool drops such names and counts them.
 
-A window ending after `as_of` (default: the last JCI bar) is `open`. The summary averages every
-complete start per window and gives `n_independent`, the number of non-overlapping windows
-behind the mean: only those carry a verdict (user decision 4: placebo on non-overlapping 3m).
+A window ending after `as_of` (default: the earlier of the last JCI bar and the newest bar of
+any pick, so a stale stock close is never set against a fresh JCI) is `open`. The summary
+averages every complete start per window and gives `n_independent`, the number of
+non-overlapping windows behind the mean: only those carry a verdict (user decision 4:
+placebo on non-overlapping 3m).
 
 **Price basis.** idx-method's `cache/history` closes equal `factor_series` daily `price` on
 every overlapping day (981 symbols checked 2026-11-12) and both are split-adjusted by the
@@ -257,7 +259,6 @@ def report(
 ) -> PicksReport:
     """The picks report; see the module docstring. Pure: every input is passed in."""
     jci_s = _Series(jci, ())
-    as_of = as_of or (jci_s.dates[-1] if jci_s.dates else None)
     cache: dict[str, _Series] = {}
 
     def series(sym: str) -> _Series:
@@ -265,6 +266,12 @@ def report(
             cache[sym] = _Series(prices.get(sym, ()), dividends.get(sym, ()))
         return cache[sym]
 
+    if as_of is None:
+        ends = [series(s).dates[-1] for held in picks.values() for s, _ in held
+                if series(s).dates]
+        last = [d for d in (jci_s.dates[-1] if jci_s.dates else None,
+                            max(ends) if ends else None) if d is not None]
+        as_of = min(last) if last else None
     out: list[WindowResult] = []
     for start in sorted(picks):
         held = list(picks[start])

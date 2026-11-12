@@ -183,7 +183,7 @@ def test_summary_means_over_complete_starts_with_the_independent_count():
 def test_report_round_trips_to_a_plain_dict():
     rep = pr.report({D("2024-01-31"): [("AAA", 1.0)]}, _three(), {}, JCI, windows=[("1m", 1)])
     d = rep.to_dict()
-    assert d["as_of"] == "2024-08-30"
+    assert d["as_of"] == "2024-02-29"  # the pick's last bar, before the JCI's
     assert d["windows"][0]["start"] == "2024-01-31"
     assert d["windows"][0]["equal"]["total"] == pytest.approx(0.10)
     assert d["summary"][0]["window"] == "1m"
@@ -193,6 +193,15 @@ def test_as_of_defaults_to_the_last_jci_bar_and_can_be_set():
     prices = {"AAA": bars(("2024-01-31", 100), ("2024-02-29", 110))}
     rep = pr.report({D("2024-01-31"): [("AAA", 1.0)]}, prices, {}, JCI, windows=[("1m", 1)],
                     as_of=D("2024-02-15"))
+    assert window(rep, "2024-01-31", "1m").status == "open"
+
+
+def test_as_of_defaults_to_the_earlier_of_the_jci_and_the_newest_pick_bar():
+    # Stock bars ended 2026-11-05 while the JCI ran to 11-11: a window ending in between must
+    # stay open, not set a stale close against a fresh index.
+    prices = {"AAA": bars(("2024-01-31", 100), ("2024-02-15", 110))}
+    rep = pr.report({D("2024-01-31"): [("AAA", 1.0)]}, prices, {}, JCI, windows=[("1m", 1)])
+    assert rep.as_of == D("2024-02-15")
     assert window(rep, "2024-01-31", "1m").status == "open"
 
 
