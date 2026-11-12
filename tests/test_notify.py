@@ -107,6 +107,40 @@ def test_keychain_exception_is_swallowed():
     assert notify.credentials(env={}, security=boom, platform="darwin") is None
 
 
+def test_dotenv_is_read_after_the_env_and_before_the_keychain(tmp_path, caplog):
+    """S90: a manual `assist run` from a shell finds the credentials job.sh sources from the
+    repo's .env: KEY=VALUE lines, never shell-evaluated, values never logged."""
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("# telegram\n"
+                      "export ASSIST_TELEGRAM_TOKEN='dotenv-token'\n"
+                      'ASSIST_TELEGRAM_CHAT="555"\n'
+                      "OTHER=$(touch pwned)\n"
+                      "not a pair\n")
+    calls: list = []
+    sec = fake_security({notify.KEYCHAIN_SERVICE: ("111", "kc-token")}, calls)
+    caplog.set_level("DEBUG", logger="assist.notify")
+    c = notify.credentials(env={}, security=sec, platform="darwin", dotenv=dotenv)
+    assert c == notify.Credentials(chat="555", token="dotenv-token", source="dotenv")
+    assert calls == []  # the Keychain is not asked
+    assert "dotenv-token" not in caplog.text and "dotenv-token" not in str(c)
+    assert not (tmp_path / "pwned").exists()
+    # the environment still wins
+    env = {"ASSIST_TELEGRAM_TOKEN": TOKEN, "ASSIST_TELEGRAM_CHAT": CHAT}
+    assert notify.credentials(env=env, security=sec, dotenv=dotenv).source == "env"
+    # one half in the env, the other in .env: .env must hold both
+    dotenv.write_text("ASSIST_TELEGRAM_TOKEN=dotenv-token\n")
+    c = notify.credentials(env={}, security=sec, platform="darwin", dotenv=dotenv)
+    assert c is not None and c.source == f"keychain:{notify.KEYCHAIN_SERVICE}"
+
+
+def test_missing_or_unreadable_dotenv_is_not_configured(tmp_path):
+    assert notify.credentials(env={}, security=fake_security({}), platform="darwin",
+                              dotenv=tmp_path / "none") is None
+    (tmp_path / "dir").mkdir()
+    assert notify.credentials(env={}, security=fake_security({}), platform="linux",
+                              dotenv=tmp_path / "dir") is None
+
+
 def test_credentials_repr_hides_token():
     assert TOKEN not in repr(CREDS)
     assert TOKEN not in str(CREDS)

@@ -115,7 +115,7 @@ and is retried on the next run.
 | Label | When (this Mac's time zone, WIB) | Runs |
 |---|---|---|
 | `com.tommy.investment-assist.weekly` | Monday 07:00, before the IDX open | `assist run`: stances, journal, brief, Telegram summary |
-| `com.tommy.investment-assist.regime` | every day 07:00 | `assist regime --check`: Telegram only when the regime or dollar direction changed |
+| `com.tommy.investment-assist.regime` | every day 07:00 | `assist regime --check`: Telegram only when the regime or dollar direction changed, then the change-only holding and data health alerts (S90) |
 
 How the daily check works:
 
@@ -125,6 +125,12 @@ How the daily check works:
 - A changed regime is journalled once its message has gone out. If the send fails, nothing is
   journalled, so the next day's check retries.
 - If FRED cannot be read at all, the check compares nothing and sends nothing.
+- Then (S90) it reads `out/holdings/IDN.json`, `out/guide.json`, the doctor and idx-method's job
+  logs, and sends one message (kind `holdings`, once a day) only when something changed: held
+  names whose acted verdict changed since the last record sent, with the question and the cause;
+  a take-profit, thesis sell or review price reached; and a data health block when the set of
+  problems is new or changed, or a week old (a reminder). The first record only sets a baseline
+  (one line). It never reruns the model.
 
 Both jobs run `launchd/job.sh` from the main checkout
 (`/Users/tommy/Projects/investment-assist`) with `uv run`. They share a `lockf` lock, so
@@ -142,7 +148,9 @@ The plists in git are templates. `install.sh` fills in the repo path (`ASSIST_RE
 the main checkout) and the absolute `uv` path, because launchd's PATH has no Homebrew. Install
 from the main checkout after pulling. The jobs need Telegram credentials to send: the login
 Keychain item, or `ASSIST_TELEGRAM_TOKEN` and `ASSIST_TELEGRAM_CHAT` in the environment or in the
-gitignored `.env` at the repo root (`chmod 600`), which `job.sh` loads before each run.
+gitignored `.env` at the repo root (`chmod 600`), which `job.sh` loads before each run and
+`notify` also reads (as KEY=VALUE text) when the environment has none, so a manual `assist run`
+can send.
 
 Run the jobs on **one machine only**: each machine keeps its own journal and paper track, and two
 senders would deliver every message twice. Since 2026-11-06 that is this Mac (`/Users/tommy`,
