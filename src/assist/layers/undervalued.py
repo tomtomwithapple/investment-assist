@@ -732,9 +732,10 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
     wl, st = read_watchlist(day)
     stale += st
     problems = data_check(table) + pool_problems(screens)
-    framework_inputs = None  # P112 F-score, P113 bank RI, P114 Graham: one bundle, context
+    framework_inputs = None  # P112 F-score, P113 bank RI, P114 Graham, P115 Magic: one bundle
     try:
         from assist.candidates.frameworks import graham as gr
+        from assist.candidates.frameworks.magic_formula import MagicInputs
         from assist.candidates.frameworks.piotroski import (
             STATEMENT_ITEMS,
             PiotroskiInputs,
@@ -743,7 +744,8 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
         from assist.candidates.frameworks.residual_income import BankRIInputs, attach_context
         from assist.sources.idxmethod_series import IdxMethodSeries
 
-        st = IdxMethodSeries.from_config().statements({*STATEMENT_ITEMS, *gr.STATEMENT_ITEMS})
+        series = IdxMethodSeries.from_config()
+        st = series.statements({*STATEMENT_ITEMS, *gr.STATEMENT_ITEMS})
         banks = banks_from(table)
         bank_ri = BankRIInputs(as_of, data.quarters, st, banks, bars=data.bars,
                                dividends=data.dividends, required_pt=h.required)
@@ -754,6 +756,10 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
                                      data.dividends if data.bars else None,  # store unread
                                      gr.financials_from(table, data.sectors),
                                      gr.first_dividend_year(data.dividends)),
+            "magic_formula": MagicInputs(as_of, data.quarters, st, banks, bars=data.bars,
+                                         dividends=data.dividends, required_pt=h.required,
+                                         rows=table, flagged=frozenset(flagged),
+                                         universe=series.universe()),
         }
         attach_context(judged, bank_ri)  # S96: on S86's record of a held bank
     except SourceUnavailable as e:

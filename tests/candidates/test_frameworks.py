@@ -161,6 +161,7 @@ def test_registered_today():
     assert [(f.name, f.role, f.gate) for f in fw.registered()] == [
         ("bank_ri", "context", "untested"),  # S96
         ("graham", "context", "untested"),  # S97
+        ("magic_formula", "context", "untested"),  # S98
         ("piotroski_f", "context", "untested")]  # S95
 
 
