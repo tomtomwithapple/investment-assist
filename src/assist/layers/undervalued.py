@@ -731,14 +731,24 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
     wl, st = read_watchlist(day)
     stale += st
     problems = data_check(table) + pool_problems(screens)
-    framework_inputs = None  # P112: the point-in-time F-score, context on the rows
+    framework_inputs = None  # P112 F-score, P114 Graham: context on the rows, one bundle
     try:
-        from assist.candidates.frameworks.piotroski import PiotroskiInputs, banks_from
+        from assist.candidates.frameworks import graham as gr
+        from assist.candidates.frameworks.piotroski import (
+            STATEMENT_ITEMS,
+            PiotroskiInputs,
+            banks_from,
+        )
         from assist.sources.idxmethod_series import IdxMethodSeries
 
-        framework_inputs = PiotroskiInputs(as_of, data.quarters,
-                                           IdxMethodSeries.from_config().statements(),
-                                           banks_from(table))
+        st = IdxMethodSeries.from_config().statements({*STATEMENT_ITEMS, *gr.STATEMENT_ITEMS})
+        framework_inputs = {
+            "piotroski_f": PiotroskiInputs(as_of, data.quarters, st, banks_from(table)),
+            gr.NAME: gr.GrahamInputs(as_of, st, data.bars,
+                                     data.dividends if data.bars else None,  # store unread
+                                     gr.financials_from(table, data.sectors),
+                                     gr.first_dividend_year(data.dividends)),
+        }
     except SourceUnavailable as e:
         stale.append(e.stale_input)
     return UndervaluedInputs(

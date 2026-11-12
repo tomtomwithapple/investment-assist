@@ -14,13 +14,14 @@ from assist.candidates.frameworks.base import (
     Framework,
     FrameworkResult,
     evaluate,
+    inputs_for,
     missing,
     register,
     registered,
 )
 
-__all__ = ["GATES", "NA", "ROLES", "Framework", "FrameworkResult", "evaluate", "missing",
-           "register", "registered"]
+__all__ = ["GATES", "NA", "ROLES", "Framework", "FrameworkResult", "evaluate", "inputs_for",
+           "missing", "register", "registered"]
 
 for _m in sorted(m.name for m in pkgutil.iter_modules(__path__)):
     if _m != "base":
