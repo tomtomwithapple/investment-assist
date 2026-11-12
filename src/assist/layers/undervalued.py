@@ -732,16 +732,19 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
     wl, st = read_watchlist(day)
     stale += st
     problems = data_check(table) + pool_problems(screens)
-    framework_inputs = None  # P112 F-score and P113 bank RI, context on the rows
+    framework_inputs = None  # P112 F-score, P113 bank RI, P115 Magic Formula: context on rows
     try:
+        from assist.candidates.frameworks.magic_formula import MagicInputs
         from assist.candidates.frameworks.piotroski import banks_from
-        from assist.candidates.frameworks.residual_income import BankRIInputs, attach_context
+        from assist.candidates.frameworks.residual_income import attach_context
         from assist.sources.idxmethod_series import IdxMethodSeries
 
-        framework_inputs = BankRIInputs(as_of, data.quarters,
-                                        IdxMethodSeries.from_config().statements(),
-                                        banks_from(table), bars=data.bars,
-                                        dividends=data.dividends, required_pt=h.required)
+        series = IdxMethodSeries.from_config()
+        framework_inputs = MagicInputs(as_of, data.quarters, series.statements(),
+                                       banks_from(table), bars=data.bars,
+                                       dividends=data.dividends, required_pt=h.required,
+                                       rows=table, flagged=frozenset(flagged),
+                                       universe=series.universe())
         attach_context(judged, framework_inputs)  # S96: on S86's record of a held bank
     except SourceUnavailable as e:
         stale.append(e.stale_input)

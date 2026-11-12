@@ -160,6 +160,7 @@ def test_a_result_for_another_name_or_framework_is_refused(registry):
 def test_registered_today():
     assert [(f.name, f.role, f.gate) for f in fw.registered()] == [
         ("bank_ri", "context", "untested"),  # S96
+        ("magic_formula", "context", "untested"),  # S98
         ("piotroski_f", "context", "untested")]  # S95
 
 
