@@ -131,7 +131,8 @@
         "strength": {"enum": ["strong", "medium", "weak"]},
         "why": {"type": "string"},
         "detail": {"type": "string", "description": "The page that shows the evidence."},
-        "tags": {"type": "array", "items": {"type": "string"}}
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "question": {"enum": ["thesis", "valuation", "fit", null], "description": "S86 (1.2.0): which of the three questions drove a sell, from the holding record; null for buys and when no record says. Absent before 1.2.0."}
       }
     }
   }

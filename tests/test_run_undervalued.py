@@ -550,3 +550,54 @@ def test_pool_problems_flags_a_passing_screen_with_no_name_judged():
                "garp": {"passed": False, "pool": 0},
                "value": {"passed": True, "pool": 31}}
     assert pool_problems(screens) == ["dividend_value: passed its replay but its pool is empty"]
+
+
+# ---------------- S86 holding record (P104) ----------------
+
+
+def _held_source(screens, judged, problems=()):
+    def fn(day, regime):
+        inp = inputs(screens)
+        inp.judged = judged
+        inp.data_problems = tuple(problems)
+        return inp
+    return fn
+
+
+def test_run_writes_one_holding_record_per_held_name_journals_it_and_reruns_identical(
+        paths, wbs, financer):  # noqa: F811
+    from assist.candidates import holdings as hd
+
+    src = _held_source({"dividend_value": screen("dividend_value", cands=DIV)}, judged={})
+    sources = pipeline.Sources(worldbankscape=wbs, fred=FakeFred(), financer=financer,
+                               undervalued=src)
+    res = pipeline.run(DAY, paths=paths, sources=sources, send=False)
+    path = paths.out / "holdings" / "IDN.json"
+    p = json.loads(path.read_text())
+    assert not list(hd.validator().iter_errors(p))
+    assert p["model_fingerprint"] == res.fingerprint and p["stale"] is False
+    # layer 5 from the financer fixture: BBCA held; no thesis inputs here, so unknown
+    syms = [r["symbol"] for r in p["holdings"]]
+    assert "BBCA" in syms
+    bbca = next(r for r in p["holdings"] if r["symbol"] == "BBCA")
+    assert bbca["thesis"]["status"] == "unknown" and bbca["cause"] == "first"
+    recs = [r for r in journal.Journal(paths.journal).read() if r["kind"] == "holding"]
+    assert sorted(r["outputs"]["symbol"] for r in recs) == sorted(syms)
+    assert all(r["fingerprint"] == res.fingerprint and r["subject"] == "IDN" for r in recs)
+    before = path.read_bytes()
+    pipeline.run(DAY, paths=paths, sources=sources, send=False)
+    assert path.read_bytes() == before
+
+
+def test_run_with_data_problems_keeps_last_weeks_verdicts_stale(
+        paths, wbs, financer):  # noqa: F811
+    screens = {"dividend_value": screen("dividend_value", cands=DIV)}
+    sources = pipeline.Sources(worldbankscape=wbs, fred=FakeFred(), financer=financer,
+                               undervalued=_held_source(screens, judged={}))
+    pipeline.run(DAY, paths=paths, sources=sources, send=False)
+    sources.undervalued = _held_source(screens, {}, problems=["price is null for every name"])
+    nxt = date(2026, 10, 30)
+    pipeline.run(nxt, paths=paths, sources=sources, send=False)
+    p = json.loads((paths.out / "holdings" / "IDN.json").read_text())
+    assert p["stale"] is True and p["as_of"] == nxt.isoformat()
+    assert all(r["stale"] and r["judged_on"] == DAY.isoformat() for r in p["holdings"])

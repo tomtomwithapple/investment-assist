@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tomtomtomdev/investment-assist/schema/holdings.schema.json",
+  "title": "investment-assist holding record (one per held stock)",
+  "description": "PLAN S86 (phase P): per held name of one market, the three questions answered apart (thesis, valuation, fit), the inputs judged, the cause of change against the previous record and the model fingerprint, written to out/holdings/{MARKET}.json and journalled. Heuristic context, not investment advice.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "market", "as_of", "bar_date", "model_fingerprint", "hurdle_pt", "stale",
+    "data_problems", "previous_run", "holdings", "config", "sources", "disclaimer"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "market": {"type": "string"},
+    "as_of": {"$ref": "#/$defs/date", "description": "Run date."},
+    "bar_date": {"anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}]},
+    "model_fingerprint": {"type": "string", "description": "The model of this run."},
+    "hurdle_pt": {"type": ["number", "null"], "description": "IDN required return, % a year, before the sector shift."},
+    "stale": {"type": "boolean", "description": "Rule 3: true when the run had data_problems; every record then keeps its previous verdict."},
+    "data_problems": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "previous_run": {
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["as_of", "held"],
+          "properties": {
+            "as_of": {"$ref": "#/$defs/date"},
+            "held": {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      ],
+      "description": "The run the previous records come from: its date and held names."
+    },
+    "holdings": {"type": "array", "items": {"$ref": "#/$defs/record"}},
+    "config": {"type": "object"},
+    "sources": {"type": "array", "items": {"type": "string"}},
+    "disclaimer": {"type": "string"}
+  },
+  "$defs": {
+    "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "nullable_date": {"anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}]},
+    "thesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "gate", "severity", "failed", "basis", "buy_gate", "bank", "note"],
+      "properties": {
+        "status": {"enum": ["pass", "fail", "unknown"], "description": "Fundamentals only: the one sell trigger."},
+        "gate": {"type": ["string", "null"], "description": "The first gate failed."},
+        "severity": {"enum": ["hard", "soft", null], "description": "hard: dividend cut, negative equity, negative CFO (acts at once); soft: any other floor."},
+        "failed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["gate", "severity"],
+            "properties": {"gate": {"type": "string"}, "severity": {"enum": ["hard", "soft"]}}
+          }
+        },
+        "basis": {"enum": ["dividend_value", "garp", null], "description": "The style whose gates the thesis passed."},
+        "buy_gate": {"type": ["string", "null"], "description": "A structural gate failed: blocks new money, never sells."},
+        "bank": {"type": ["boolean", "null"]},
+        "note": {"type": ["string", "null"]}
+      }
+    },
+    "valuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["price", "fair_price", "take_profit", "take_profit_action", "review_price", "above_fair", "required_pt"],
+      "properties": {
+        "price": {"type": ["number", "null"]},
+        "fair_price": {"type": ["number", "null"], "description": "Where the dividend return equals the required return."},
+        "take_profit": {"type": ["number", "null"], "description": "The fair price on the tick grid."},
+        "take_profit_action": {"type": "string"},
+        "review_price": {"type": ["number", "null"], "description": "entry_deep below today's price: flags, never sells."},
+        "above_fair": {"type": ["boolean", "null"]},
+        "required_pt": {"type": ["number", "null"]}
+      }
+    },
+    "fit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["group", "group_size", "position", "keeper", "redundant", "allowed", "over_cap", "ok"],
+      "properties": {
+        "group": {
+          "anyOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["industry", "size"],
+              "properties": {"industry": {"type": "string"}, "size": {"enum": ["large", "mid", "small"]}}
+            }
+          ]
+        },
+        "group_size": {"type": ["integer", "null"]},
+        "position": {"type": ["integer", "null"]},
+        "keeper": {"type": ["string", "null"]},
+        "redundant": {"type": "boolean"},
+        "allowed": {"type": "boolean"},
+        "over_cap": {"type": "boolean"},
+        "ok": {"type": "boolean"}
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["report_period", "bar_date", "last_dividend_ex"],
+      "properties": {
+        "report_period": {"$ref": "#/$defs/nullable_date"},
+        "bar_date": {"$ref": "#/$defs/nullable_date"},
+        "last_dividend_ex": {"$ref": "#/$defs/nullable_date"}
+      }
+    },
+    "verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["judged_on", "model_fingerprint", "stale", "thesis", "valuation", "fit", "inputs"],
+      "properties": {
+        "judged_on": {"$ref": "#/$defs/nullable_date"},
+        "model_fingerprint": {"type": "string"},
+        "stale": {"type": "boolean"},
+        "thesis": {"$ref": "#/$defs/thesis"},
+        "valuation": {"$ref": "#/$defs/valuation"},
+        "fit": {"$ref": "#/$defs/fit"},
+        "inputs": {"$ref": "#/$defs/inputs"}
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol", "held_idr", "judged_on", "model_fingerprint", "stale", "cause", "changed",
+        "thesis", "valuation", "fit", "inputs", "context", "previous"
+      ],
+      "properties": {
+        "symbol": {"type": "string"},
+        "held_idr": {"type": "number", "minimum": 0},
+        "judged_on": {"$ref": "#/$defs/nullable_date", "description": "When this verdict was judged; earlier than as_of when it is stale."},
+        "model_fingerprint": {"type": "string", "description": "The model that judged this verdict."},
+        "stale": {"type": "boolean"},
+        "cause": {"enum": ["first", "rule_version", "data_fix", "new_filing", "price_cross", "holdings_change", null]},
+        "changed": {"type": "array", "items": {"enum": ["thesis", "valuation", "fit"]}},
+        "thesis": {"$ref": "#/$defs/thesis"},
+        "valuation": {"$ref": "#/$defs/valuation"},
+        "fit": {"$ref": "#/$defs/fit"},
+        "inputs": {"$ref": "#/$defs/inputs"},
+        "context": {"type": "object", "description": "Phase Q: FrameworkResult blocks, context only, never a verdict."},
+        "previous": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/verdict"}]}
+      }
+    }
+  }
+}

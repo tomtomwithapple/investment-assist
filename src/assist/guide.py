@@ -9,6 +9,10 @@ For each leg of the benchmark (`stance.BENCHMARK_PCT`: IDN stocks, IDN bonds, US
   held names (phase N choice 1), the names a passing screen keeps last.
 - **Buy steps.** Each sized row, with its entry price per tranche, take-profit and stop
   (`candidates.exits`, choices 4–6).
+- **Why a sell** (S86): each sell step names the question that drove it (`question`: thesis,
+  valuation or fit; phase P rule 2), read from the holding record (`candidates.holdings`), and
+  a fit-driven sale says what the record holds of the business (passes, near its fair price; or
+  also fails a test). Amounts are sizing's and `rebalance`'s, unchanged.
 - **Bucket steps** (choices 2 and 3) for money a leg must gain or lose that no name carries:
   "buy SBN", "buy a US broad-market index fund". The reader picks the product.
 
@@ -43,7 +47,7 @@ __all__ = ["FILE", "MIN_STEP_IDR", "SCHEMA", "SCHEMA_VERSION", "build", "lines",
            "split_shares", "tranche_dates", "validator", "write"]
 
 SCHEMA = SCHEMA_DIR / "guide.schema.json"
-SCHEMA_VERSION = "1.1.0"  # 1.1 held_for_data (P103)
+SCHEMA_VERSION = "1.2.0"  # 1.1 held_for_data (P103); 1.2 question (S86)
 FILE = "guide.json"
 MIN_STEP_IDR = 100_000.0  # a leg's leftover below this is not worth a step
 BUCKET = {
@@ -53,6 +57,7 @@ BUCKET = {
                         "No US stock passes a screen, so use a broad index fund."),
 }
 STRENGTH_ORDER = {"strong": 0, "medium": 1, "weak": 2}
+NEAR_FAIR = 0.05  # a price within 5% of fair reads "near its fair price"
 
 
 @cache
@@ -123,14 +128,15 @@ def _bucket_tranches(idr: float, dates: Sequence[date]) -> list[dict]:
 def _step(side: str, kind: str, market: str, asset: str, *, symbol: str | None, what: str,
           tranches: Sequence[Mapping], strength: str, why: str, detail: str,
           take_profit: Mapping | None = None, stop: Mapping | None = None,
-          tags: Sequence[str] = ()) -> dict:
+          tags: Sequence[str] = (), question: str | None = None) -> dict:
     shares = [t["shares"] for t in tranches]
     return {"side": side, "kind": kind, "market": market, "asset": asset, "symbol": symbol,
             "label": f"{'Sell' if side == 'sell' else 'Buy'} {what}",
             "idr": sum(t["idr"] for t in tranches),
             "shares": None if any(s is None for s in shares) else sum(shares),
             "tranches": [dict(t) for t in tranches], "take_profit": take_profit, "stop": stop,
-            "strength": strength, "why": why, "detail": detail, "tags": list(tags)}
+            "strength": strength, "why": why, "detail": detail, "tags": list(tags),
+            "question": question}
 
 
 def _passing(p: Mapping) -> list[str]:
@@ -147,7 +153,59 @@ def _held(p: Mapping) -> dict[str, dict]:
     return out
 
 
-def _stock_steps(p: Mapping, st: Mapping | None, gap_idr: float, day: date) -> list[dict]:
+def _fails(r: Mapping | None) -> str | None:
+    """'fails the F-score test (soft fail)' when the record's thesis failed, else None."""
+    t = (r or {}).get("thesis") or {}
+    if t.get("status") != "fail":
+        return None
+    return f"fails the {t.get('gate')} test ({t.get('severity')} fail)"
+
+
+def _passes(r: Mapping | None) -> bool:
+    return ((r or {}).get("thesis") or {}).get("status") == "pass"
+
+
+def _fair_note(r: Mapping | None) -> str:
+    """'near its fair price 3,380' (or above / below), '' without both prices."""
+    v = (r or {}).get("valuation") or {}
+    price, fair = v.get("price"), v.get("fair_price")
+    if not price or not fair:
+        return ""
+    gap = price / fair - 1
+    where = "near" if abs(gap) <= NEAR_FAIR else ("above" if gap > 0 else "below")
+    return f"{where} its fair price {fair:,.0f}"
+
+
+def _business(r: Mapping | None) -> str:
+    """What the record says of the business, after a sell that fit (not the thesis) drove."""
+    fail = _fails(r)
+    if fail:
+        return f" It also {fail}."
+    if _passes(r):
+        note = _fair_note(r)
+        return " The business still passes" + (f"; its price is {note}." if note else ".")
+    return ""
+
+
+def _full_trim(r: Mapping | None, screens: str) -> tuple[str | None, str]:
+    """(question, why) of a trim in full: the thesis when the record says it failed, the
+    valuation when it passes (its margin no longer clears)."""
+    fail = _fails(r)
+    if fail:
+        return "thesis", f"The business {fail}, so the model would not hold it."
+    if _passes(r):
+        v = (r or {}).get("valuation") or {}
+        if v.get("above_fair") and v.get("price") and v.get("fair_price"):
+            return "valuation", (f"Price, not the business: {v['price']:,.0f} is above its fair "
+                                 f"price {v['fair_price']:,.0f}, so it no longer beats the "
+                                 "required return. The business still passes.")
+        return "valuation", (f"Price, not the business: the {screens} no longer finds it cheap "
+                             "enough to beat the required return. The business still passes.")
+    return None, f"The {screens} no longer rates it a buy, so the model would not hold it."
+
+
+def _stock_steps(p: Mapping, st: Mapping | None, gap_idr: float, day: date,
+                 records: Mapping[str, Mapping] | None = None) -> list[dict]:
     market = p["market"]
     detail = f"/candidates/{market}"
     n, spacing = _schedule(st)
@@ -157,6 +215,7 @@ def _stock_steps(p: Mapping, st: Mapping | None, gap_idr: float, day: date) -> l
     leg = plain.leg(market, "stocks")
     screens = " and ".join(_passing(p)) or "screen"
     held = _held(p)
+    records = records or {}
     steps: list[dict] = []
 
     trims = (p.get("sizing") or {}).get("trims") or []
@@ -164,21 +223,23 @@ def _stock_steps(p: Mapping, st: Mapping | None, gap_idr: float, day: date) -> l
         h = held.get(t["symbol"]) or {}
         price, qty = h.get("price"), h.get("quantity")
         full = str(t["reason"]).startswith("trim in full")
+        rec = records.get(t["symbol"])
         shares = None
         if price:
             shares = int(qty) if full and qty else int(t["idr"] / price // LOT) * LOT
         if full:
-            strength, why = "medium", (f"The {screens} no longer rates it a buy, so the model "
-                                       "would not hold it.")
+            strength = "medium"
+            question, why = _full_trim(rec, screens)
         else:
-            strength, why = "strong", ("It is more than 5% of your portfolio; no single stock "
-                                       "should be. Sell down to 5%.")
+            strength, question = "strong", "fit"
+            why = ("Portfolio fit: it is more than 5% of your portfolio; no single stock should "
+                   "be. Sell down to 5%." + _business(rec))
         if shares == 0:
             continue  # under one lot: nothing to place
         steps.append(_step("sell", "name", market, "stocks", symbol=t["symbol"],
                            what=t["symbol"], tranches=_sell_tranches(shares, t["idr"], price,
                                                                      dates),
-                           strength=strength, why=why, detail=detail,
+                           strength=strength, why=why, detail=detail, question=question,
                            tags=["all of it"] if full else ["down to the 5% cap"]))
 
     buys: list[dict] = []
@@ -247,27 +308,29 @@ def _stock_steps(p: Mapping, st: Mapping | None, gap_idr: float, day: date) -> l
             for x in sales:
                 v = div.get(x["symbol"]) or {}
                 if x["tier"] == "redundant":
-                    why = (f"You hold {v['group_size']} {v['size']} companies in the same "
-                           f"industry ({v['industry']}); {v['keeper']} is the one to keep. "
-                           "Selling this one cuts the leg without losing a kind of business.")
+                    why = (f"Portfolio fit: you hold {v['group_size']} {v['size']} companies in "
+                           f"the same industry ({v['industry']}); {v['keeper']} is the one to "
+                           "keep. Selling this one cuts the leg without losing a kind of "
+                           "business.")
                     tags = ["redundant", "all of it"] if x["full"] else ["redundant"]
                 elif x["tier"] == "protected":
-                    why = ("Its share of the cut after everything else was sold; the screen "
-                           "still rates it." + share)
+                    why = ("Portfolio fit: its share of the cut after everything else was sold; "
+                           "the screen still rates it." + share)
                     tags = ["rebalance"]
                 else:
-                    why, tags = "Its share of the cut, not a view on the stock." + share, [
-                        "rebalance"]
+                    why, tags = ("Portfolio fit: its share of the cut, not a view on the stock."
+                                 + share), ["rebalance"]
                 steps.append(_step(
                     "sell", "name", market, "stocks", symbol=x["symbol"], what=x["symbol"],
                     tranches=_sell_tranches(x["shares"], x["idr"], prices[x["symbol"]], dates),
-                    strength="medium", detail="/portfolio", tags=tags, why=why))
+                    strength="medium", detail="/portfolio", tags=tags, question="fit",
+                    why=why + _business(records.get(x["symbol"]))))
             left = need - sum(x["idr"] for x in sales)
             if left >= MIN_STEP_IDR and not sales:
                 steps.append(_step(
                     "sell", "bucket", market, "stocks", symbol=None, what=f"more {leg}",
                     tranches=_bucket_tranches(left, dates), strength="medium",
-                    detail="/portfolio", tags=["rebalance"],
+                    detail="/portfolio", tags=["rebalance"], question="fit",
                     why=f"No price is known to pick the names.{share}"))
     elif gap_idr - named_buys >= MIN_STEP_IDR:
         left = gap_idr - named_buys
@@ -298,15 +361,20 @@ def _bucket_leg(market: str, asset: str, st: Mapping | None, gap_idr: float,
     return [_step(side, "bucket", market, asset, symbol=None, what=what,
                   tranches=_bucket_tranches(abs(gap_idr), dates), strength="medium",
                   why=(share + (how if side == "buy" else "")).strip(),
-                  detail=f"/stance/{market}/{asset}")]
+                  detail=f"/stance/{market}/{asset}",
+                  question="fit" if side == "sell" else None)]
 
 
 def build(day: date, stances: Sequence[Mapping], candidates: Sequence[Mapping],
-          fingerprint: str | None = None) -> dict:
+          fingerprint: str | None = None, holdings: Sequence[Mapping] = ()) -> dict:
     """The guide payload for one run. `stances` are the run's stance payloads, `candidates` its
-    `out/candidates` payloads (IDN, USA)."""
+    `out/candidates` payloads (IDN, USA), `holdings` its `out/holdings` payloads (S86): a sell
+    step's why says which question drove it (thesis, valuation or fit) and what the record
+    says of the business."""
     by_key = {(s["subject"], s["asset"]): s for s in stances}
     cands = {p["market"]: p for p in candidates}
+    records = {h["market"]: {r["symbol"]: r for r in h.get("holdings") or []}
+               for h in holdings}
     value = next((p["sizing"]["portfolio_value_idr"] for p in candidates
                   if (p.get("sizing") or {}).get("portfolio_value_idr")), None)
     notes: list[str] = []
@@ -323,7 +391,7 @@ def build(day: date, stances: Sequence[Mapping], candidates: Sequence[Mapping],
             notes.append(f"{plain.leg(market, asset)}: no stance or portfolio value, no steps")
             continue
         if asset == "stocks" and market in cands:
-            steps += _stock_steps(cands[market], st, gap, day)
+            steps += _stock_steps(cands[market], st, gap, day, records.get(market))
         else:
             if asset == "stocks":
                 notes.append(f"{plain.leg(market, asset)}: no candidate list this run")

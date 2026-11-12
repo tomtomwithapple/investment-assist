@@ -126,6 +126,8 @@ class UndervaluedInputs:
     profiles: dict[str, dict] = field(default_factory=dict)
     # P103: broken inputs; any one holds the guide's steps (the verdicts read from them are unknown)
     data_problems: tuple[str, ...] = ()
+    # S86: sym → `holdings.judge_inputs` for every name of the factor table (thesis, valuation)
+    judged: dict[str, dict] = field(default_factory=dict)
 
 
 @cache
@@ -575,7 +577,7 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
     consensus and history through P36/P37's loaders (loaded once for both), the P34 hurdle on the
     screener's last bar date under this run's regime, P35's tilt as of `day`, and P21's entry
     plan for the screens' candidates. Each piece that fails becomes a stale input."""
-    from assist.candidates import dividend_value, garp, tilt
+    from assist.candidates import dividend_value, garp, holdings, tilt
     from assist.candidates.entry import entry_plan
     from assist.candidates.factors import data_check, load_factors
     from assist.candidates.screens import GATES
@@ -622,17 +624,24 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
     except Exception as e:  # noqa: BLE001
         stale.append(f"sector tilt failed: {type(e).__name__}: {e}"[:200])
     syms = sorted({c["symbol"] for s in screens.values() for c in s.get("candidates") or []})
-    plan: dict[str, dict] = {}
-    if syms:
-        plan, st = entry_plan(stocks, symbols=syms, factors=table, as_of=as_of,
-                              order_idr=TRANCHE_IDR)
-        stale += st
+    # every name's entry levels (~3 s): the candidates' plan, and S86's review price per holding
+    every, st = entry_plan(stocks, symbols=None, factors=table, as_of=as_of,
+                           order_idr=TRANCHE_IDR)
+    stale += st
+    plan = {s: every[s] for s in syms if s in every}
+    judged: dict[str, dict] = {}
+    try:
+        judged = holdings.judge_all(table, data, as_of, hurdle_pt=h.required, flagged=flagged,
+                                    consensus=consensus,
+                                    levels={s: v.get("levels") for s, v in every.items()})
+    except Exception as e:  # noqa: BLE001 - the holding record reads unknown, the run goes on
+        stale.append(f"holding record inputs failed: {type(e).__name__}: {e}"[:200])
     profiles, st = _profiles(table, day)
     stale += st
     problems = data_check(table) + pool_problems(screens)
     return UndervaluedInputs(
         market="IDN", bar_date=as_of, screens=screens, tilt=t, profiles=profiles,
-        data_problems=tuple(problems),
+        data_problems=tuple(problems), judged=judged,
         factors={s: table[s] for s in syms if s in table} | {
             s: table[s] for s in (r["symbol"] for x in screens.values()
                                   for r in x.get("ranking") or []) if s in table},
