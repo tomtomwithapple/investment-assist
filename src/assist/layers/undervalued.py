@@ -59,7 +59,7 @@ from typing import Any, NamedTuple
 
 import jsonschema
 
-from assist.candidates import average_down, costs, diversify, exits, sizing
+from assist.candidates import average_down, costs, diversify, exits, frameworks, sizing
 from assist.candidates import hurdle as hurdle_mod
 from assist.layers.portfolio import classify
 from assist.layers.types import DISCLAIMER, SCHEMA_DIR, Regime
@@ -88,8 +88,8 @@ __all__ = [
 ]
 
 SCHEMA = SCHEMA_DIR / "candidates.schema.json"
-SCHEMA_VERSION = "1.4.0"  # 1.1 average down; 1.2 exits; 1.3 diversification; 1.3.1 div_yield;
-# 1.4 data_problems (P103)
+SCHEMA_VERSION = "1.5.0"  # 1.1 average down; 1.2 exits; 1.3 diversification; 1.3.1 div_yield;
+# 1.4 data_problems (P103); 1.5 per-row frameworks (P110)
 STYLES = ("dividend_value", "garp")  # S15's industry_value has no expected return: not a style
 TRANCHE_IDR = 10e6  # P21's DEFAULT_ORDER: the tranche costs and capacity are judged at
 DROP_FLAGS = ("over_participation", "below_one_lot")
@@ -126,6 +126,8 @@ class UndervaluedInputs:
     profiles: dict[str, dict] = field(default_factory=dict)
     # P103: broken inputs; any one holds the guide's steps (the verdicts read from them are unknown)
     data_problems: tuple[str, ...] = ()
+    # P110: what the registered frameworks read (each framework knows its own part)
+    framework_inputs: Any = None
 
 
 @cache
@@ -388,6 +390,19 @@ def _average_down(styles: Sequence[dict], inp: UndervaluedInputs, held: Mapping[
     return names
 
 
+def _attach_frameworks(styles: Sequence[dict], framework_inputs: Any) -> None:
+    """P110 (S93): each row's context-role framework results as `frameworks`, after ranking and
+    sizing, so they change no size, rank or verdict. No key when no framework is registered."""
+    cache: dict[str, list[dict]] = {}
+    for s in styles:
+        for r in s["rows"]:
+            sym = r["symbol"]
+            if sym not in cache:
+                cache[sym] = [x.to_dict() for x in frameworks.evaluate(sym, framework_inputs)]
+            if cache[sym]:
+                r["frameworks"] = [dict(x) for x in cache[sym]]
+
+
 def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
              portfolio_value_idr: float | None, holdings: Mapping[str, float],
              regime: Regime | str | None, fingerprint: str,
@@ -453,6 +468,7 @@ def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
                 r["action"] = "hold" if r["held"] else "watch"
                 if z is not None:
                     r["drivers"].append(f"sized under {sized_style[sym]}")
+    _attach_frameworks(styles, inp.framework_inputs)
     port = st.get("portfolio") or {}
     stance_block = {"stance": st.get("stance"), "current_pct": port.get("current_pct"),
                     "target_pct": port.get("target_pct")}

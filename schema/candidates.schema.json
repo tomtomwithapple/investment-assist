@@ -203,6 +203,26 @@
         "reason": {"type": "string"}
       }
     },
+    "framework_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "PLAN S93: one framework's result for one name (frameworks document §0.2 plus role and gate). score null means not computable, and flags say why (never imputed).",
+      "required": ["framework", "ticker", "as_of", "score", "signal", "components", "flags", "version", "role", "gate"],
+      "properties": {
+        "framework": {"type": "string", "minLength": 1},
+        "ticker": {"type": "string", "minLength": 1},
+        "as_of": {"anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}], "description": "The date the signal could first be known (the fundamentals' available date)."},
+        "score": {"type": ["number", "null"]},
+        "signal": {"type": "string", "minLength": 1},
+        "components": {"type": "object", "additionalProperties": {"type": ["number", "null"]}},
+        "flags": {"type": "array", "items": {"type": "string"}},
+        "version": {"type": "string", "minLength": 1},
+        "role": {"enum": ["context", "exclusion", "quality", "valuation"]},
+        "gate": {"enum": ["untested", "failed", "passed"]}
+      },
+      "if": {"properties": {"score": {"type": "null"}}},
+      "then": {"properties": {"flags": {"minItems": 1}}}
+    },
     "row": {
       "type": "object",
       "additionalProperties": false,
@@ -277,6 +297,11 @@
             "review_at": {"type": ["number", "null"], "description": "The name's own deep-drawdown level, when below the price: a flag, never a sale."},
             "review_note": {"type": "string"}
           }
+        },
+        "frameworks": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/framework_result"},
+          "description": "P110 (schema 1.5.0): the registered frameworks' results for this name, context only: they change no size, rank or verdict. Absent when no framework is registered."
         },
         "average_down": {
           "description": "The average-down verdict of a held name (schema 1.1.0); null when not held.",
