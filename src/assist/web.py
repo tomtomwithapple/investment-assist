@@ -31,7 +31,8 @@ NAV_GROUPS = (
     (None, (("/", "This week"), ("/portfolio", "Portfolio"))),
     ("Why", (("/candidates", "Candidates"), ("/regime", "Regime"), ("/signals", "Signals"),
              ("/industries", "Industries"))),
-    ("Track record", (("/paper", "Paper"), ("/journal", "Journal"), ("/status", "Status"))),
+    ("Track record", (("/paper", "Paper"), ("/frameworks", "Frameworks"), ("/journal", "Journal"),
+                      ("/status", "Status"))),
     ("More", (("/flows", "Flows"), ("/background", "Background"))),
 )
 NAV = tuple(item for _, items in NAV_GROUPS for item in items)
@@ -223,6 +224,11 @@ def _paper(app: App, m: re.Match[str]) -> View:
     return paper.page(app, m)
 
 
+def _frameworks(app: App, m: re.Match[str]) -> View:
+    from assist.views import frameworks
+    return frameworks.page(app, m)
+
+
 def _journal(app: App, m: re.Match[str]) -> View:
     from assist.views import paper
     return paper.journal(app, m)
@@ -241,6 +247,7 @@ ROUTES: list[Route] = [(re.compile(r"^/$"), _guide),
                        (re.compile(r"^/signals/([^/]+)$"), _signals_subject),
                        (re.compile(r"^/portfolio$"), _portfolio),
                        (re.compile(r"^/paper$"), _paper),
+                       (re.compile(r"^/frameworks$"), _frameworks),
                        (re.compile(r"^/journal$"), _journal)]
 
 

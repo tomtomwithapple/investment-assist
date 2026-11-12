@@ -1,5 +1,5 @@
 """`assist` command line: doctor | status | run | rules | brief | regime | paper | journal |
-industries | flows."""
+industries | frameworks | flows."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from assist.layers import undervalued
 from assist.layers.types import DISCLAIMER
 
 STATUS_HELP = ("local pages: stances, regime, signals, candidates, industries, portfolio, flows, "
-               "paper, journal, source health")
+               "paper, frameworks, journal, source health")
 
 
 def _today(args: argparse.Namespace) -> date:
@@ -481,6 +481,37 @@ def _flows(args: argparse.Namespace) -> int:
     return 0
 
 
+def _pt(x: float | None) -> str:
+    return "n/a" if x is None else f"{100 * x:+.1f}pt"
+
+
+def _frameworks(args: argparse.Namespace) -> int:
+    """S94: the baseline board → out/frameworks/IDN.json (read-only on the stores)."""
+    from assist import framework_board
+
+    payload = framework_board.live(_today(args))
+    path = framework_board.write(payload, pipeline.Paths.default().out)
+    print(f"{path}: {len(payload['frameworks'])} entries, as of {payload['as_of']}")
+    for e in payload["frameworks"]:
+        print(f"  {e['name']} ({e['kind']}, gate {e['gate']['state']}): {e['status']}, "
+              f"{e['starts']} start(s), {e['mean_picks'] or 0:.0f} held of "
+              f"{e['mean_pool'] or 0:.0f} on average")
+        for w in e["windows"]:
+            if w["n_starts"]:
+                print(f"    {w['window']:>2}: vs pool {_pt(w['excess_pool'])}, vs JCI "
+                      f"{_pt(w['excess_jci'])}, total {_pt(w['total'])} (n_ind "
+                      f"{w['n_independent']}, starts {w['n_starts']})")
+        if e["survivorship"]:
+            print(f"    survivorship: {e['survivorship']['note']}")
+    for s in payload["skipped"]:
+        print(f"  skipped {s['name']}: {s['reason']}")
+    for line in payload["stale_inputs"]:
+        print(f"  stale: {line}")
+    print(payload["verdict_note"])
+    print(DISCLAIMER)
+    return 0
+
+
 def _utf8_stdio() -> None:
     """Write UTF-8 even where the stream defaults to a legacy code page (Windows pipes, files and
     scheduled-job logs are cp1252, and the first → would be a UnicodeEncodeError)."""
@@ -510,7 +541,8 @@ def main(argv: list[str] | None = None) -> int:
     st = sub.add_parser("status", help=STATUS_HELP,
                         description=f"{STATUS_HELP}, on 127.0.0.1 unless --host, "
                         "read-only: / overview, /stance/<SUBJECT>/<asset>, /candidates[/<MKT>], "
-                        "/industries[/<id>], /paper, /journal, /status (each with a .json twin)")
+                        "/industries[/<id>], /paper, /frameworks, /journal, /status (each with "
+                        "a .json twin)")
     st.add_argument("--port", type=int, default=status.DEFAULT_PORT,
                     help=f"port to listen on (default {status.DEFAULT_PORT})")
     st.add_argument("--host", default=status.HOST,
@@ -573,6 +605,11 @@ def main(argv: list[str] | None = None) -> int:
                          help="peer comparison per industry → out/industries/IDN.json")
     ind.add_argument("--today", help="YYYY-MM-DD build date (default today)")
     ind.set_defaults(func=_industries)
+
+    fw = sub.add_parser("frameworks", help="baseline board: each screen's replay picks vs JCI "
+                                           "and pool → out/frameworks/IDN.json (not in run)")
+    fw.add_argument("--today", help="YYYY-MM-DD build date (default today)")
+    fw.set_defaults(func=_frameworks)
 
     fl = sub.add_parser("flows", help="household money flows → out/flows/<YYYY-MM>.json")
     fl.add_argument("--out", help="out/ directory to write flows/ into (default the repo's out/)")

@@ -1,7 +1,8 @@
 """End to end: `assist status` serves every UI page over HTTP. The CLI runs in a thread on an
 ephemeral port over a tmp repo built from tests/fixtures/ui (out/, out/candidates/,
 data/snapshots/, a tmp journal) plus the phase H files (out/layers/ regime, IDN and portfolio,
-out/flows/ from the S38 financer fixture), with an empty siblings root, canned doctor results
+out/flows/ from the S38 financer fixture, out/frameworks/ from the S94 board fixture), with an
+empty siblings root, canned doctor results
 (no store is opened), no launchd scan and a canned paper report. Every route and its .json twin
 is a 200 with the nav and the disclaimer, a bad path or unknown subject is a 404, the
 cross-links point at pages that exist, and nothing under the tmp repo changes."""
@@ -18,20 +19,22 @@ from pathlib import Path
 import httpx
 import pytest
 from test_flows import NAMES, _db
+from test_framework_board import sample_payload
 from test_view_signals import IDN
 
-from assist import cli, doctor, flows, journal, paper, pipeline, status, web
+from assist import cli, doctor, flows, framework_board, journal, paper, pipeline, status, web
 from assist.sources.financer import FinancerSource
 
 UI = Path(__file__).parent / "fixtures" / "ui"
 FP = "sha256:" + "c" * 64
 HELP = ("local pages: stances, regime, signals, candidates, industries, portfolio, flows, "
-        "paper, journal, source health")
+        "paper, frameworks, journal, source health")
 
 PAGES = ["/", "/background", "/stance/IDN/bonds", "/stance/IDN/stocks", "/stance/USA/bonds",
          "/stance/GOLD/commodities", "/candidates", "/candidates/IDN", "/candidates/USA",
          "/candidates/AUS", "/industries", "/regime", "/signals", "/signals/IDN",
-         "/portfolio", "/flows", "/flows/2026-10", "/paper", "/journal", "/status"]
+         "/portfolio", "/flows", "/flows/2026-10", "/paper", "/frameworks", "/journal",
+         "/status"]
 
 
 def _report(until: date) -> paper.PaperReport:
@@ -59,6 +62,7 @@ def repo(tmp_path, monkeypatch):
     shutil.copy(UI / "portfolio" / "portfolio.json", layers / "portfolio.json")
     (layers / "IDN.json").write_text(json.dumps(IDN))
     flows.write(*flows.build_from(FinancerSource(_db(tmp_path)), NAMES), root / "out")
+    framework_board.write(sample_payload(), root / "out")
     j = journal.Journal(root / "journal")
     for d in ("2026-10-06", "2026-10-13"):
         j.record(kind="stance", fingerprint=FP, subject="IDN", asset="bonds", as_of=d,

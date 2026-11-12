@@ -237,7 +237,8 @@ def test_flows_is_served_over_http_with_its_nav_link(base):
 
 def test_nav_reads_what_to_do_then_why_then_the_track_record():
     assert [h for h, _ in web.NAV] == ["/", "/portfolio", "/candidates", "/regime", "/signals",
-                                       "/industries", "/paper", "/journal", "/status", "/flows",
+                                       "/industries", "/paper", "/frameworks", "/journal",
+                                       "/status", "/flows",
                                        "/background"]
     assert [g for g, _ in web.NAV_GROUPS] == [None, "Why", "Track record", "More"]
     page = web.layout("t", "", "/")
