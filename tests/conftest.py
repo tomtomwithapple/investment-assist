@@ -46,3 +46,11 @@ def socket_guard(monkeypatch):
     monkeypatch.setattr(socket.socket, "connect_ex", connect_ex)
     monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
     yield
+
+
+@pytest.fixture(autouse=True)
+def no_repo_dotenv(monkeypatch, tmp_path_factory):
+    """Telegram credentials never come from a real `.env` in a test (notify, S90)."""
+    from assist import notify
+
+    monkeypatch.setattr(notify, "DOTENV", tmp_path_factory.getbasetemp() / "no-such.env")

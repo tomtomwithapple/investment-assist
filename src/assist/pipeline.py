@@ -101,7 +101,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from assist import brief, guide, journal, layers_out, notify, override_history, stance
+from assist import alerts, brief, guide, journal, layers_out, notify, override_history, stance
 from assist.candidates import holdings as holdings_mod
 from assist.candidates import peers as peer_cmp
 from assist.candidates import tiers_replay
@@ -297,7 +297,9 @@ class Sources:
     P50); None skips it. `layers_out` writes each layer's result to `out/layers/` (S33, from
     `fred` and `idn` for the chart windows); False skips it. `rule_history(dates, day)` reruns
     the IDN rules on month ends (`history.build`, P66) when `out/rules/` needs it (P67); None
-    never rebuilds (a missing or foreign-fingerprint file is then no verdict)."""
+    never rebuilds (a missing or foreign-fingerprint file is then no verdict).
+    `idx_jobs(day)` reads idx-method's last job runs for the daily alerts' health block
+    (`alerts.live_idx_jobs`, S90); None leaves them out."""
 
     worldbankscape: Any
     fred: Any
@@ -313,6 +315,7 @@ class Sources:
     layers_out: bool = False
     rule_history: rule_gate.Build | None = None
     override_history: override_gate.Build | None = None
+    idx_jobs: Callable[[date], Sequence[Any]] | None = None
 
     @classmethod
     def default(cls) -> Sources:
@@ -327,7 +330,8 @@ class Sources:
                    undervalued_us=undervalued.gather_live_usa, peers=peer_cmp.gather_live,
                    tier_replay=tiers_replay.run_live, layers_out=True,
                    rule_history=rule_gate.live_build,
-                   override_history=override_history.live_build)
+                   override_history=override_history.live_build,
+                   idx_jobs=alerts.live_idx_jobs)
 
 
 def live_doctor(day: date) -> list[Any]:

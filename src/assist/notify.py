@@ -13,7 +13,9 @@ idx-method's former paper daemon (`notify.py` / `paper/runner.py` before its 9a0
   failed send is retried on the next run instead of costing the day's message. `force` resends.
 
 Credentials: `ASSIST_TELEGRAM_TOKEN` + `ASSIST_TELEGRAM_CHAT` from the environment (both, or
-neither counts), else the macOS Keychain item `investment-assist-telegram` (account = chat id,
+neither counts), else both from the repo's `.env` (S90: KEY=VALUE lines read as text, never
+shell-evaluated, so a manual `assist run` finds what `launchd/job.sh` sources), else the macOS
+Keychain item `investment-assist-telegram` (account = chat id,
 password = bot token), else idx-method's former item `idx-method-telegram`, the same bot. The
 token never enters a log line, a verdict or a repr.
 
@@ -76,6 +78,7 @@ ENV_STATE = "ASSIST_NOTIFY_STATE"
 LIMIT = 3900
 TIMEOUT = 20.0
 REPO = Path(__file__).resolve().parents[2]
+DOTENV = REPO / ".env"  # gitignored, chmod 600; the values never enter a log line
 PAPER_LINE = (f"Paper only, not an order. Sizes rebalance to the {BENCHMARK_TEXT} benchmark plus "
               "the model tilt; read the brief.")
 KIND_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
@@ -132,16 +135,41 @@ def _keychain(service: str, security: Security) -> tuple[str, str] | None:
         return None
 
 
+def _dotenv(path: Path) -> dict[str, str]:
+    """KEY=VALUE pairs of a `.env` file (`export ` and matching quotes stripped, comments and
+    other lines skipped), as plain text: nothing is expanded or run. {} when unreadable."""
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    for line in text.splitlines():
+        m = re.match(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$", line)
+        if not m or line.lstrip().startswith("#"):
+            continue
+        v = m.group(2)
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"":
+            v = v[1:-1]
+        out[m.group(1)] = v
+    return out
+
+
 def credentials(
     env: Mapping[str, str] | None = None,
     security: Security = _security,
     platform: str = sys.platform,
+    dotenv: Path | None = None,
 ) -> Credentials | None:
-    """Env first (both variables), then the Keychain on macOS. None when not configured."""
+    """Env first (both variables), then the repo's `.env` (both), then the Keychain on macOS.
+    None when not configured."""
     env = os.environ if env is None else env
     token, chat = env.get(ENV_TOKEN, "").strip(), env.get(ENV_CHAT, "").strip()
     if token and chat:
         return Credentials(chat=chat, token=token, source="env")
+    fileenv = _dotenv(DOTENV if dotenv is None else dotenv)
+    token, chat = fileenv.get(ENV_TOKEN, "").strip(), fileenv.get(ENV_CHAT, "").strip()
+    if token and chat:
+        return Credentials(chat=chat, token=token, source="dotenv")
     if platform != "darwin":
         return None
     for service in (KEYCHAIN_SERVICE, LEGACY_KEYCHAIN_SERVICE):
@@ -306,8 +334,8 @@ def describe(result: Mapping) -> str:
     if result.get("skipped"):
         return "telegram: already sent today, skipped"
     if result.get("reason") == "not configured":
-        return f"telegram: not configured (set {ENV_TOKEN}/{ENV_CHAT} or Keychain " \
-               f"{KEYCHAIN_SERVICE})"
+        return f"telegram: not configured (set {ENV_TOKEN}/{ENV_CHAT} in the environment or " \
+               f".env, or Keychain {KEYCHAIN_SERVICE})"
     return f"telegram: NOT sent ({result.get('reason')})"
 
 
