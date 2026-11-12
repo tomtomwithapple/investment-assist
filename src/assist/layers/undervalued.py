@@ -732,10 +732,11 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
     wl, st = read_watchlist(day)
     stale += st
     problems = data_check(table) + pool_problems(screens)
-    framework_inputs = None  # P112 F, P113 bank RI, P114 Graham, P115 Magic, P116 GP/A DuPont
+    framework_inputs = None  # P112–P117: one bundle, framework name → inputs, context only
     try:
         from assist.candidates.frameworks import graham as gr
         from assist.candidates.frameworks import quality as ql
+        from assist.candidates.frameworks.lynch import LynchBetaInputs, load_industries
         from assist.candidates.frameworks.magic_formula import MagicInputs
         from assist.candidates.frameworks.piotroski import (
             STATEMENT_ITEMS,
@@ -743,6 +744,7 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
             banks_from,
         )
         from assist.candidates.frameworks.residual_income import attach_context
+        from assist.sources.idxmethod import jci
         from assist.sources.idxmethod_series import IdxMethodSeries
 
         series = IdxMethodSeries.from_config()
@@ -765,6 +767,15 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
                                          rows=table, flagged=frozenset(flagged),
                                          universe=series.universe()),
         }
+        jci_rows = []
+        try:
+            jci_rows = [(r.date, r.value) for r in jci(end=as_of) if r.value is not None]
+        except SourceUnavailable as e:
+            stale.append(e.stale_input)
+        lb = LynchBetaInputs(as_of, data.quarters, st, banks, bars=data.bars,
+                             dividends=data.dividends, required_pt=h.required, jci=jci_rows,
+                             industries=load_industries(series), sectors=data.sectors)
+        framework_inputs |= {"lynch": lb, "dimson_beta": lb}
         attach_context(judged, q)  # S96: on S86's record of a held bank
     except SourceUnavailable as e:
         stale.append(e.stale_input)
