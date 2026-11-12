@@ -732,16 +732,25 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
     wl, st = read_watchlist(day)
     stale += st
     problems = data_check(table) + pool_problems(screens)
-    framework_inputs = None  # P112 F-score and P113 bank RI, context on the rows
+    framework_inputs = None  # P112 F-score, P113 bank RI, P117 Lynch and beta: row context
     try:
+        from assist.candidates.frameworks.lynch import LynchBetaInputs, load_industries
         from assist.candidates.frameworks.piotroski import banks_from
-        from assist.candidates.frameworks.residual_income import BankRIInputs, attach_context
+        from assist.candidates.frameworks.residual_income import attach_context
+        from assist.sources.idxmethod import jci
         from assist.sources.idxmethod_series import IdxMethodSeries
 
-        framework_inputs = BankRIInputs(as_of, data.quarters,
-                                        IdxMethodSeries.from_config().statements(),
-                                        banks_from(table), bars=data.bars,
-                                        dividends=data.dividends, required_pt=h.required)
+        series = IdxMethodSeries.from_config()
+        jci_rows = []
+        try:
+            jci_rows = [(r.date, r.value) for r in jci(end=as_of) if r.value is not None]
+        except SourceUnavailable as e:
+            stale.append(e.stale_input)
+        framework_inputs = LynchBetaInputs(as_of, data.quarters, series.statements(),
+                                           banks_from(table), bars=data.bars,
+                                           dividends=data.dividends, required_pt=h.required,
+                                           jci=jci_rows, industries=load_industries(series),
+                                           sectors=data.sectors)
         attach_context(judged, framework_inputs)  # S96: on S86's record of a held bank
     except SourceUnavailable as e:
         stale.append(e.stale_input)
