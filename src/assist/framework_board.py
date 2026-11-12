@@ -371,13 +371,15 @@ def _undervalued(ctx: LiveContext) -> list[Replay]:
 
     data = ctx.dividend_data
     banks = {s for s, r in ctx.table.items() if r.get("car")}
-    panel = dv.replay_panel(data.bars, data.quarters, data.dividends, banks)
+    panel = dv.replay_panel(data.bars, data.quarters, data.dividends, banks,
+                            bank_f=dv.replay_bank_f(data, banks))
     out = [from_ranked("dividend_value", "Dividend return (yield + sustainable growth) above the "
                        "hurdle, with safe payout, CFO cover and dividend record.",
                        "top quintile by expected return (Gordon), gated names over IDR 1T",
                        ranked_by(panel, "expected_pt"), dv.CONFIG["min_pool"],
                        dv.evaluate_replay(panel),
-                       notes=["banks are today's (screener CAR), as the screen replays"])]
+                       notes=["banks are today's (screener CAR), as the screen replays; "
+                              "banks below the point-in-time F floor are out (S88)"])]
     h, basis = _hurdle_pt(ctx)
     gpanel = garp.replay_panel(data.bars, data.quarters, data.dividends, banks, hurdle_pt=h)
     out.append(from_ranked("garp", "Growth at a reasonable price: realised growth clearly above "

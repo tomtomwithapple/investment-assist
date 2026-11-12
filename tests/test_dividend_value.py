@@ -224,6 +224,36 @@ def test_replay_panel_applies_the_safety_gates_and_size_floor():
     assert dv.replay_panel(bars, quarters, ok, min_mktcap=2e12) == [(D("2023-03-31"), [])]
 
 
+def test_replay_panel_applies_the_bank_f_floor_point_in_time():
+    """S88: a bank whose newest F knowable by the quarter end is below 4 is out; F 4 and n/a
+    stay in; a name not in `bank_f` (a non-bank) is unaffected."""
+    qe = [D(x) for x in ("2023-03-31", "2023-06-30", "2023-09-29", "2023-12-29", "2024-03-28",
+                         "2024-06-28")]
+    bars = {s: [Bar(d, 1000.0, 1e12) for d in qe] for s in ("BANK", "OTHR")}
+    quarters = {s: [fund("2022-06-30", ni=1e11, equity=5e11, cfo=1e11)] for s in bars}
+    divs = {s: annual_divs(2018, 2023, 30.0) for s in bars}
+    # F 3 known from 2023-05-01, F 4 from 2023-08-01, n/a from 2023-11-01
+    bank_f = {"BANK": [(D("2023-05-01"), 3.0), (D("2023-08-01"), 4.0), (D("2023-11-01"), None)],
+              "OTHR": []}
+    panel = dv.replay_panel(bars, quarters, divs, {"BANK"}, min_mktcap=0, bank_f=bank_f)
+    names = {q: sorted(r["symbol"] for r in recs) for q, recs in panel}
+    assert names[D("2023-03-31")] == ["BANK", "OTHR"]  # no F knowable yet: n/a, kept
+    assert names[D("2023-06-30")] == ["OTHR"]  # F 3
+    assert names[D("2023-09-30")] == ["BANK", "OTHR"]  # F 4
+    assert names[D("2023-12-31")] == ["BANK", "OTHR"]  # n/a: flagged, not failed
+    unfloored = dv.replay_panel(bars, quarters, divs, {"BANK"}, min_mktcap=0)
+    assert all("BANK" in [r["symbol"] for r in recs] for _, recs in unfloored)
+
+
+def test_replay_bank_f_follows_the_flag(monkeypatch):
+    from assist.candidates import screens
+
+    data = dv.DividendData(quarters={"BANK": [fund("2022-06-30")]})
+    assert dv.replay_bank_f(data, {"BANK"}) == {"BANK": [(D("2022-10-28"), None)]}
+    monkeypatch.setattr(screens, "BANK_F_FLOOR_ON", False)
+    assert dv.replay_bank_f(data, {"BANK"}) is None
+
+
 def test_observations_top_and_bottom_quintile_excess():
     recs = [{"symbol": f"S{i}", "expected_pt": float(i), "fwd": i / 100} for i in range(10)]
     feats, rets, spreads = dv.observations([(D("2023-03-31"), recs)], min_pool=10)

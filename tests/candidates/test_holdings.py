@@ -119,6 +119,24 @@ def test_a_bank_floor_miss_is_soft():
     assert (t["status"], t["gate"], t["severity"]) == ("fail", "CAR", "soft")
 
 
+def test_a_bank_below_the_f_floor_is_a_soft_fail():
+    """S88 (phase P rule 5): BBNI at a point-in-time F of 3 fails as soft (S87's two reports
+    in a row apply); at 4 it passes; with no F (n/a) it passes, flagged in the note."""
+    t = hd.thesis(judged(f_pit=3.0))
+    assert (t["status"], t["gate"], t["severity"]) == ("fail", "bank F-score", "soft")
+    assert t["failed"] == [{"gate": "bank F-score", "severity": "soft"}]
+    t = hd.thesis(judged(f_pit=4.0))
+    assert (t["status"], t["note"]) == ("pass", None)
+    t = hd.thesis(judged(f_pit=None))
+    assert t["status"] == "pass" and t["severity"] is None
+    assert t["note"] == "bank F-score n/a (too few signals computable): not counted"
+
+
+def test_a_non_bank_ignores_the_bank_f():
+    t = hd.thesis(judged("ABCD", row=NONBANK, sector="Industri", f_pit=1.0))
+    assert (t["status"], t["note"]) == ("pass", None)
+
+
 def test_a_hard_fail_anywhere_makes_the_whole_fail_hard():
     t = hd.thesis(judged(dividends=divs(2021, 2025, 200.0) + divs(2026, 2026, 100.0), car=10.0))
     assert t["gate"] == "CAR" and t["severity"] == "hard"

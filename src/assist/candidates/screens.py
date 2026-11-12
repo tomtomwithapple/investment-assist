@@ -42,6 +42,8 @@ from assist.sources.idxmethod_stocks import SOURCE, IdxMethodStocks
 
 __all__ = [
     "BANK_FLOOR",
+    "BANK_F_FLOOR_ON",
+    "BANK_F_KEY",
     "GATES",
     "LAG_DAYS",
     "MAX_PER_SECTOR",
@@ -51,6 +53,9 @@ __all__ = [
     "SCREENS",
     "TOP_N",
     "Screen",
+    "bank_f_at",
+    "bank_f_series",
+    "bank_f_status",
     "blend",
     "book_per_share",
     "build_panel",
@@ -63,6 +68,7 @@ __all__ = [
     "screen_observations",
     "select",
     "trailing_dividend",
+    "with_bank_f",
 ]
 
 GATES = {
@@ -75,7 +81,12 @@ GATES = {
 }
 QUALITY_FLOOR = {"min_piotroski": 5, "min_altman_z": 1.8, "min_interest_cov": 1.5}
 BANK_FLOOR = {"min_car": 14.0, "max_npl_gross": 5.0, "min_npl_coverage": 100.0,
-              "max_ldr": 110.0, "min_roe": 5.0}
+              "max_ldr": 110.0, "min_roe": 5.0, "min_piotroski": 4}
+# S88 (phase P rule 5): banks also need S95's point-in-time F >= `min_piotroski` (out of 7).
+# The F rides on the row as `BANK_F_KEY`; None or absent is n/a (fewer than S95's
+# `MIN_COMPUTABLE` signals): flagged, never a fail. False keeps the bank floor prudential only.
+BANK_F_FLOOR_ON = True
+BANK_F_KEY = "f_pit"
 MAX_PER_SECTOR = 5
 TOP_N = 20
 MIN_POOL = 40  # names a month needs before it is scored (idx-method's backtests)
@@ -138,7 +149,57 @@ def _passes_bank(r: Mapping) -> tuple[bool, str | None]:
         return False, "LDR"
     if (r.get("roe") or 0) < BANK_FLOOR["min_roe"]:
         return False, "bank ROE"
+    if bank_f_status(r) == "fail":
+        return False, "bank F-score"
     return True, None
+
+
+def bank_f_status(r: Mapping) -> str | None:
+    """S88: a bank's point-in-time F against `BANK_FLOOR["min_piotroski"]` → "pass", "fail" or
+    "n/a" (no F on the row: flagged, not a fail); None for a non-bank or with the floor off."""
+    if not r.get("car") or not BANK_F_FLOOR_ON:
+        return None
+    f = r.get(BANK_F_KEY)
+    if f is None:
+        return "n/a"
+    return "fail" if f < BANK_FLOOR["min_piotroski"] else "pass"
+
+
+def with_bank_f(table: Mapping[str, Mapping], quarters: Mapping[str, Sequence],
+                statements: Mapping[str, Mapping], as_of: date) -> dict[str, dict]:
+    """The screener table with S95's F on `as_of` (`BANK_F_KEY`, None when n/a) on every bank
+    row (a CAR), so `passes_quality` reads the same F the replay and the holding record do."""
+    from assist.candidates.frameworks.piotroski import fscore
+
+    out = {}
+    for sym, r in table.items():
+        if r.get("car"):
+            res = fscore(sym, quarters.get(sym) or (), statements.get(sym), as_of, bank=True)
+            r = {**r, BANK_F_KEY: res.score}
+        out[sym] = r
+    return out
+
+
+def bank_f_series(quarters: Mapping[str, Sequence], statements: Mapping[str, Mapping],
+                  banks: Iterable[str]) -> dict[str, list[tuple[date, float | None]]]:
+    """Per bank, [(available date, F or None)] oldest first: S95's F on each report's
+    `available` date (it holds until the next), for replays of the bank floor."""
+    from assist.candidates.frameworks.piotroski import PiotroskiInputs, history
+
+    banks = frozenset(b for b in banks if b in quarters)
+    inp = PiotroskiInputs(date.min, quarters, statements, banks)
+    return {s: [(r.as_of, r.score) for r in history(s, inp) if r.as_of is not None]
+            for s in sorted(banks)}
+
+
+def bank_f_at(series: Sequence[tuple[date, float | None]], d: date) -> float | None:
+    """The F knowable on `d` from `bank_f_series` (the newest report available by then)."""
+    f = None
+    for avail, v in series:
+        if avail > d:
+            break
+        f = v
+    return f
 
 
 def passes_quality(r: Mapping) -> tuple[bool, str | None]:
@@ -444,6 +505,15 @@ def run_screens(
     table = enrich(factors, derive(history, as_of))
     bar_dates = [r["bar_date"] for r in table.values() if r.get("bar_date")]
     live_as_of = max(bar_dates) if bar_dates else as_of
+    if factors and BANK_F_FLOOR_ON:  # S88: the banks' point-in-time F on their rows
+        from assist.sources.idxmethod_series import IdxMethodSeries
+
+        try:
+            series = IdxMethodSeries(stocks.root)
+            table = with_bank_f(table, series.quarterly(), series.statements(),
+                                live_as_of or as_of or date.today())
+        except SourceUnavailable as e:
+            stale.append(f"{e.stale_input}: bank F-score n/a")
     panel = build_panel(history, dividends, fundamentals, flagged, as_of) if history else []
     results = {
         s.name: run_screen(s, table, panel, dividends=dividends, flagged=flagged,
