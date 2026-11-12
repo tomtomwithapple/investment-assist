@@ -1816,7 +1816,7 @@ about 3, 1y about 9: only 1m / 3m / 6m can carry a verdict.
   quality floor; replay on survivorship-inclusive `factor_series`; S92 report.
 - [ ] **S99 GP/A and DuPont** (P116-quality-context). Leverage-driven ROE flag; feeds S96.
 - [ ] **S100 Lynch and Dimson beta** (P117-lynch-beta). Category, Lynch ratio, beta; context.
-- [ ] **S101 Fetcher ask** (P118-idx-items). Note in idx-method's plan: fundamentals items
+- [x] **S101 Fetcher ask** (P118-idx-items). Note in idx-method's plan: fundamentals items
   receivables, cogs, ppe_net, depreciation, sga, long_term_debt, retained_earnings; filed dates
   into `pead_filings`; delisted names in `fundamentals`; daily `broker_top`. Docs only.
 - [ ] **S102 Beneish** (P119-beneish). Blocked on S101; winsorised; exclusion candidate.
