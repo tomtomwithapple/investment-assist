@@ -732,17 +732,30 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
     wl, st = read_watchlist(day)
     stale += st
     problems = data_check(table) + pool_problems(screens)
-    framework_inputs = None  # P112 F-score and P113 bank RI, context on the rows
+    framework_inputs = None  # P112 F-score, P113 bank RI, P114 Graham: one bundle, context
     try:
-        from assist.candidates.frameworks.piotroski import banks_from
+        from assist.candidates.frameworks import graham as gr
+        from assist.candidates.frameworks.piotroski import (
+            STATEMENT_ITEMS,
+            PiotroskiInputs,
+            banks_from,
+        )
         from assist.candidates.frameworks.residual_income import BankRIInputs, attach_context
         from assist.sources.idxmethod_series import IdxMethodSeries
 
-        framework_inputs = BankRIInputs(as_of, data.quarters,
-                                        IdxMethodSeries.from_config().statements(),
-                                        banks_from(table), bars=data.bars,
-                                        dividends=data.dividends, required_pt=h.required)
-        attach_context(judged, framework_inputs)  # S96: on S86's record of a held bank
+        st = IdxMethodSeries.from_config().statements({*STATEMENT_ITEMS, *gr.STATEMENT_ITEMS})
+        banks = banks_from(table)
+        bank_ri = BankRIInputs(as_of, data.quarters, st, banks, bars=data.bars,
+                               dividends=data.dividends, required_pt=h.required)
+        framework_inputs = {
+            "piotroski_f": PiotroskiInputs(as_of, data.quarters, st, banks),
+            "bank_ri": bank_ri,
+            gr.NAME: gr.GrahamInputs(as_of, st, data.bars,
+                                     data.dividends if data.bars else None,  # store unread
+                                     gr.financials_from(table, data.sectors),
+                                     gr.first_dividend_year(data.dividends)),
+        }
+        attach_context(judged, bank_ri)  # S96: on S86's record of a held bank
     except SourceUnavailable as e:
         stale.append(e.stale_input)
     return UndervaluedInputs(

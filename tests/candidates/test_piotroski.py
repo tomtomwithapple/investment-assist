@@ -227,3 +227,12 @@ def test_statements_are_read_from_the_fundamentals_table(tmp_path):
 def test_result_is_a_valid_framework_result():
     r = score()
     assert fw.FrameworkResult.from_dict(r.to_dict()) == replace(r)
+
+
+def test_reads_its_part_of_a_bundle():
+    """`undervalued.gather_live` hands one {framework name: inputs} bundle since S97."""
+    inp = pf.PiotroskiInputs(SEEN, {"XXXX": base_quarters()}, {"XXXX": base_statements()},
+                             frozenset())
+    (r,) = [x for x in fw.evaluate("XXXX", {"piotroski_f": inp, "graham": None})
+            if x.framework == "piotroski_f"]
+    assert r.score == 9.0

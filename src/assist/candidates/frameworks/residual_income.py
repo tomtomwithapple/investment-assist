@@ -60,7 +60,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
-from assist.candidates.frameworks.base import Framework, FrameworkResult, register
+from assist.candidates.frameworks.base import Framework, FrameworkResult, inputs_for, register
 from assist.candidates.frameworks.piotroski import PiotroskiInputs, shift
 
 __all__ = ["CONFIG", "NAME", "BankRI", "BankRIInputs", "attach_context", "bank_ri", "path",
@@ -230,6 +230,7 @@ class BankRI(Framework):
     VERSION = VERSION
 
     def evaluate(self, sym: str, inputs) -> FrameworkResult:
+        inputs = inputs_for(inputs, NAME)
         if not isinstance(inputs, BankRIInputs):
             return self.missing(sym, None, "no point-in-time bank inputs given")
         if sym not in inputs.banks:

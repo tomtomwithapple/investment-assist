@@ -52,7 +52,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
-from assist.candidates.frameworks.base import Framework, FrameworkResult, register
+from assist.candidates.frameworks.base import Framework, FrameworkResult, inputs_for, register
 
 __all__ = ["MIN_COMPUTABLE", "SHARE_TOLERANCE", "SIGNALS", "STATEMENT_ITEMS", "Piotroski",
            "PiotroskiInputs", "banks_from", "compare", "fscore", "history", "shift"]
@@ -245,6 +245,7 @@ class Piotroski(Framework):
     VERSION = VERSION
 
     def evaluate(self, sym: str, inputs) -> FrameworkResult:
+        inputs = inputs_for(inputs, NAME)
         if not isinstance(inputs, PiotroskiInputs):
             return self.missing(sym, None, "no point-in-time IDN statements given")
         if sym not in inputs.quarters:

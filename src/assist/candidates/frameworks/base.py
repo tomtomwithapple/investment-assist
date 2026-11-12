@@ -32,7 +32,7 @@ from datetime import date
 from typing import Any, ClassVar
 
 __all__ = ["GATES", "NA", "REGISTRY", "ROLES", "Framework", "FrameworkResult", "evaluate",
-           "missing", "register", "registered"]
+           "inputs_for", "missing", "register", "registered"]
 
 VERSION = "0.1.0"
 ROLES = ("context", "exclusion", "quality", "valuation")
@@ -126,6 +126,15 @@ class Framework:
                 components: Mapping[str, float | None] | None = None) -> FrameworkResult:
         return missing(self.name, sym, as_of, *flags, version=self.VERSION, role=self.role,
                        gate=self.gate, components=components)
+
+
+def inputs_for(inputs: Any, name: str) -> Any:
+    """A framework's own part of the inputs: `inputs[name]` when the run hands a bundle (a
+    mapping of framework name → inputs, as `undervalued.gather_live` does since S97), else the
+    inputs themselves."""
+    if isinstance(inputs, Mapping) and name in inputs:
+        return inputs[name]
+    return inputs
 
 
 REGISTRY: dict[str, Framework] = {}
