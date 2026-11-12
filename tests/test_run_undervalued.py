@@ -415,7 +415,7 @@ def test_average_down_unfunded_when_the_market_has_no_budget():
     p, rows, names = _ad({"BMRI": 20e6, "JPFA": 5e6, "GGRM": 5e6},
                          {"BMRI": (1200.0, 20_000.0), "JPFA": (1002.0, 5_000.0),
                           "GGRM": (80_000.0, 100.0)})
-    assert p["schema_version"] == "1.4.0"
+    assert p["schema_version"] == "1.5.0"
     assert (p["average_down"]["underwater_pct"], p["average_down"]["gate3"]) == (5.0, "context")
     assert p["config"]["average_down"]["underwater_pct"] == 5.0
     # BMRI: 16.7% below cost, kept, room, no budget: shown, sized 0, still "hold"
