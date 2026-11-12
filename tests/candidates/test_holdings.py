@@ -178,6 +178,22 @@ def test_bbni_reads_thesis_ok_valuation_near_fair_and_fit_redundant():
     assert [x["symbol"] for x in p["holdings"]] == ["BBNI", "BBRI", "BMRI"]
 
 
+def test_a_held_banks_framework_context_is_carried_and_never_a_cause():
+    """S96: `judged[sym]["context"]` (bank residual income) lands on the record as context;
+    a moved RI fair value alone changes no answer and gives no cause."""
+    ri_ctx = {"bank_ri": {"framework": "bank_ri", "ticker": "BBNI", "as_of": "2026-10-28",
+                          "score": 0.9, "signal": "cheap", "components": {"fair_value": 3700.0},
+                          "flags": [], "version": "0.1.0", "role": "context",
+                          "gate": "untested"}}
+    first = build(cands(held=["BBNI"]), {"BBNI": judged() | {"context": ri_ctx}},
+                  day=D("2026-11-09"))
+    assert rec(first, "BBNI")["context"] == ri_ctx
+    assert hd.validator().is_valid(first)
+    moved = {"bank_ri": ri_ctx["bank_ri"] | {"score": 1.2, "signal": "rich"}}
+    r = rec(_again(first, {"BBNI": judged() | {"context": moved}}), "BBNI")
+    assert r["context"] == moved and r["cause"] is None and r["changed"] == []
+
+
 def test_a_cap_trim_is_a_fit_matter():
     c = cands(trims=[{"symbol": "BMRI", "idr": 4e6, "reason": "trim to the per-name cap of 5%"}],
               held=["BMRI"])

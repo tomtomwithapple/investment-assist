@@ -27,7 +27,8 @@ when no answer changed.
 `stale: true`; a name with no previous record reads `unknown`. A same-day rerun keeps the
 record it replaced as its previous, so reruns are byte-identical. Hysteresis (S87) and the bank
 Piotroski floor (S88) are not here: this is today's raw verdict beside the previous one.
-`context` is left empty for phase Q's frameworks (context only, never a second verdict).
+`context` carries phase Q's framework results from `judged[sym]["context"]` (S96: bank
+residual income on held banks): context only, never compared for a change or a verdict.
 `watchlists` (S89, 1.1.0) names the user's Stockbit screeners a held name is on, from the
 candidates payload's `watchlist` block: context only, never compared for a change or a verdict.
 `answers` is the one place a name is judged: `build` calls it for held names and
@@ -303,7 +304,7 @@ def build(candidates: Mapping, judged: Mapping[str, Mapping], *, day: date, fing
         r = {"symbol": sym, "held_idr": held[sym], "judged_on": day.isoformat(),
              "model_fingerprint": fingerprint, "stale": False,
              **answers(candidates, judged.get(sym), sym, names.get(sym), sym in capped),
-             "context": {}, "previous": prev}
+             "context": dict((judged.get(sym) or {}).get("context") or {}), "previous": prev}
         r["cause"], r["changed"] = _cause(prev, r, held_moved)
         out.append(r | {"watchlists": list(lists.get(sym) or [])})
     return {
