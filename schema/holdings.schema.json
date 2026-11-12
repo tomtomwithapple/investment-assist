@@ -34,6 +34,20 @@
       "description": "The run the previous records come from: its date and held names."
     },
     "holdings": {"type": "array", "items": {"$ref": "#/$defs/record"}},
+    "sold": {
+      "type": "array",
+      "description": "S87 (1.2.0): names the model sold on their thesis (acted sell_all) that are no longer held; one re-enters only with a margin of at least hysteresis.REENTRY_MARGIN_PT. Absent before 1.2.0.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["symbol", "since", "gate"],
+        "properties": {
+          "symbol": {"type": "string"},
+          "since": {"$ref": "#/$defs/date"},
+          "gate": {"type": ["string", "null"]}
+        }
+      }
+    },
     "config": {"type": "object"},
     "sources": {"type": "array", "items": {"type": "string"}},
     "disclaimer": {"type": "string"}
@@ -113,6 +127,58 @@
         "last_dividend_ex": {"$ref": "#/$defs/nullable_date"}
       }
     },
+    "acted": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "S87 (1.2.0): the verdict after phase P rule 4's hysteresis (candidates.hysteresis), with its own cause and changed.",
+      "required": ["thesis", "valuation", "action", "cause", "changed"],
+      "properties": {
+        "thesis": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "gate", "severity", "acts", "soft_fail_periods", "report_period", "last_dividend_ex"],
+          "properties": {
+            "status": {"enum": ["pass", "fail", "unknown"]},
+            "gate": {"type": ["string", "null"]},
+            "severity": {"enum": ["hard", "soft", null]},
+            "acts": {"type": "boolean", "description": "true: the thesis sells (a hard fail, or a soft fail on two reports in a row)."},
+            "soft_fail_periods": {"type": "array", "items": {"$ref": "#/$defs/date"}, "description": "The report periods of the current run of soft fails."},
+            "report_period": {"$ref": "#/$defs/nullable_date", "description": "The report period last judged."},
+            "last_dividend_ex": {"$ref": "#/$defs/nullable_date", "description": "The dividend record last judged."}
+          }
+        },
+        "valuation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["required_pt", "required_live_pt", "required_for", "fair_price", "take_profit", "state", "rearm_below"],
+          "properties": {
+            "required_pt": {"type": ["number", "null"], "description": "Required return held since the last report or dividend record."},
+            "required_live_pt": {"type": ["number", "null"], "description": "Today's required return (moves with the regime)."},
+            "required_for": {
+              "anyOf": [
+                {"type": "null"},
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["report_period", "last_dividend_ex"],
+                  "properties": {
+                    "report_period": {"$ref": "#/$defs/nullable_date"},
+                    "last_dividend_ex": {"$ref": "#/$defs/nullable_date"}
+                  }
+                }
+              ]
+            },
+            "fair_price": {"type": ["number", "null"]},
+            "take_profit": {"type": ["number", "null"]},
+            "state": {"enum": ["armed", "fired"], "description": "fired: take-profit trimmed, no new trim or add until the price is rearm_below."},
+            "rearm_below": {"type": ["number", "null"]}
+          }
+        },
+        "action": {"enum": ["hold", "sell_all", "trim_to_half", "stop_adding"]},
+        "cause": {"enum": ["first", "rule_version", "new_filing", "price_cross", null]},
+        "changed": {"type": "array", "items": {"enum": ["thesis", "valuation"]}}
+      }
+    },
     "verdict": {
       "type": "object",
       "additionalProperties": false,
@@ -124,7 +190,8 @@
         "thesis": {"$ref": "#/$defs/thesis"},
         "valuation": {"$ref": "#/$defs/valuation"},
         "fit": {"$ref": "#/$defs/fit"},
-        "inputs": {"$ref": "#/$defs/inputs"}
+        "inputs": {"$ref": "#/$defs/inputs"},
+        "acted": {"$ref": "#/$defs/acted"}
       }
     },
     "record": {
@@ -148,6 +215,7 @@
         "inputs": {"$ref": "#/$defs/inputs"},
         "context": {"type": "object", "description": "Phase Q: FrameworkResult blocks, context only, never a verdict."},
         "watchlists": {"type": "array", "items": {"type": "string"}, "description": "S89 (1.1.0): the user's Stockbit screeners (idx-method screener_member, newest date) this held name is on. Context only: never compared for a change, never a verdict. Absent before 1.1.0."},
+        "acted": {"$ref": "#/$defs/acted", "description": "S87 (1.2.0). Absent before 1.2.0."},
         "previous": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/verdict"}]}
       }
     }

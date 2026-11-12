@@ -13,6 +13,13 @@ For each leg of the benchmark (`stance.BENCHMARK_PCT`: IDN stocks, IDN bonds, US
   valuation or fit; phase P rule 2), read from the holding record (`candidates.holdings`), and
   a fit-driven sale says what the record holds of the business (passes, near its fair price; or
   also fails a test). Amounts are sizing's and `rebalance`'s, unchanged.
+- **Acted verdict** (S87): each record's `acted` block (phase P rule 4's hysteresis). With
+  `act` off (`hysteresis.ACT_ON_VERDICTS`, the default) amounts stay as above and a full trim
+  the acted verdict would hold says so (tag `hysteresis: would hold`). With it on: a thesis sell
+  (`sell_all`) sells in full, a take-profit (`trim_to_half`) sells half, a full trim whose acted
+  thesis holds is dropped (named in `notes`), a fired take-profit or a thesis sell blocks a buy,
+  and a name in the record's `sold` list is bought again only with
+  `hysteresis.REENTRY_MARGIN_PT`.
 - **Bucket steps** (choices 2 and 3) for money a leg must gain or lose that no name carries:
   "buy SBN", "buy a US broad-market index fund". The reader picks the product.
 
@@ -38,7 +45,7 @@ from typing import Any
 import jsonschema
 
 from assist import plain
-from assist.candidates import rebalance
+from assist.candidates import hysteresis, rebalance
 from assist.candidates.costs import LOT
 from assist.layers.types import DISCLAIMER, SCHEMA_DIR
 from assist.stance import BENCHMARK_PCT
@@ -204,8 +211,65 @@ def _full_trim(r: Mapping | None, screens: str) -> tuple[str | None, str]:
     return None, f"The {screens} no longer rates it a buy, so the model would not hold it."
 
 
+def _acted(r: Mapping | None) -> str | None:
+    return ((r or {}).get("acted") or {}).get("action")
+
+
+def _would_hold(r: Mapping | None) -> str:
+    """Why the acted verdict holds a name sizing would sell in full."""
+    t = ((r or {}).get("acted") or {}).get("thesis") or {}
+    if t.get("status") == "fail" and t.get("severity") == "soft":
+        return (f"it fails the {t.get('gate')} test on its first soft-fail report only; it "
+                "sells if the next report fails too")
+    if t.get("status") == "pass":
+        return "its business still passes, and only the thesis sells"
+    return "no report since its last verdict"
+
+
+def _thesis_why(r: Mapping) -> str:
+    t = r["acted"]["thesis"]
+    if t.get("severity") == "soft":
+        return (f"The business fails the {t.get('gate')} test on two reports in a row (soft "
+                "fail), so the model sells it.")
+    return f"The business fails the {t.get('gate')} test (hard fail), so the model sells it."
+
+
+def _tp_why(r: Mapping) -> str:
+    v = r.get("valuation") or {}
+    fair = r["acted"]["valuation"].get("fair_price") or v.get("fair_price")
+    price = v.get("price")
+    at = (f" {price:,.0f} reached its fair price {fair:,.0f}" if price and fair
+          else " it reached its fair price")
+    return (f"Price, not the business:{at}. Stop adding and sell half; no further trim until "
+            f"the price is {hysteresis.REARM_BELOW_FAIR_PCT:.0f}% below fair.")
+
+
+def _acted_sells(held: Mapping[str, Mapping], records: Mapping[str, Mapping],
+                 dates: Sequence[date], market: str, detail: str) -> list[dict]:
+    """S87, `act` on: a step per held name whose acted verdict sells in full or in half."""
+    out = []
+    for sym in sorted(records):
+        r, h = records[sym], held.get(sym) or {}
+        action, price, qty = _acted(r), h.get("price"), h.get("quantity")
+        if action not in ("sell_all", "trim_to_half") or not price or not qty:
+            continue
+        full = action == "sell_all"
+        shares = int(qty) if full else int(qty / 2 // LOT) * LOT
+        if shares <= 0:
+            continue
+        out.append(_step("sell", "name", market, "stocks", symbol=sym, what=sym,
+                         tranches=_sell_tranches(shares, shares * price, price, dates),
+                         strength="medium", detail=detail,
+                         question="thesis" if full else "valuation",
+                         why=_thesis_why(r) if full else _tp_why(r),
+                         tags=["all of it"] if full else ["half", "take-profit"]))
+    return out
+
+
 def _stock_steps(p: Mapping, st: Mapping | None, gap_idr: float, day: date,
-                 records: Mapping[str, Mapping] | None = None) -> list[dict]:
+                 records: Mapping[str, Mapping] | None = None, act: bool = False,
+                 sold: frozenset[str] = frozenset(),
+                 notes: list[str] | None = None) -> list[dict]:
     market = p["market"]
     detail = f"/candidates/{market}"
     n, spacing = _schedule(st)
@@ -216,7 +280,9 @@ def _stock_steps(p: Mapping, st: Mapping | None, gap_idr: float, day: date,
     screens = " and ".join(_passing(p)) or "screen"
     held = _held(p)
     records = records or {}
-    steps: list[dict] = []
+    notes = notes if notes is not None else []
+    steps: list[dict] = _acted_sells(held, records, dates, market, detail) if act else []
+    acting = {s["symbol"] for s in steps}
 
     trims = (p.get("sizing") or {}).get("trims") or []
     for t in trims:
@@ -224,12 +290,21 @@ def _stock_steps(p: Mapping, st: Mapping | None, gap_idr: float, day: date,
         price, qty = h.get("price"), h.get("quantity")
         full = str(t["reason"]).startswith("trim in full")
         rec = records.get(t["symbol"])
+        holds = full and _acted(rec) is not None and _acted(rec) != "sell_all"
+        if t["symbol"] in acting:
+            continue  # the acted verdict's step replaces sizing's
+        if act and holds:
+            notes.append(f"{t['symbol']}: kept, hysteresis (S87): {_would_hold(rec)}")
+            continue
         shares = None
         if price:
             shares = int(qty) if full and qty else int(t["idr"] / price // LOT) * LOT
         if full:
             strength = "medium"
             question, why = _full_trim(rec, screens)
+            if holds:
+                why += (" Hysteresis (S87, not acting yet) would hold it: "
+                        f"{_would_hold(rec)}.")
         else:
             strength, question = "strong", "fit"
             why = ("Portfolio fit: it is more than 5% of your portfolio; no single stock should "
@@ -240,7 +315,8 @@ def _stock_steps(p: Mapping, st: Mapping | None, gap_idr: float, day: date,
                            what=t["symbol"], tranches=_sell_tranches(shares, t["idr"], price,
                                                                      dates),
                            strength=strength, why=why, detail=detail, question=question,
-                           tags=["all of it"] if full else ["down to the 5% cap"]))
+                           tags=(["all of it"] + (["hysteresis: would hold"] if holds else [])
+                                 if full else ["down to the 5% cap"])))
 
     buys: list[dict] = []
     seen: set[str] = set()
@@ -250,6 +326,15 @@ def _stock_steps(p: Mapping, st: Mapping | None, gap_idr: float, day: date,
             if not z or r["symbol"] in seen:
                 continue
             seen.add(r["symbol"])
+            blocked = _acted(records.get(r["symbol"]))
+            if act and blocked in ("sell_all", "trim_to_half", "stop_adding"):
+                notes.append(f"{r['symbol']}: no buy, hysteresis (S87): "
+                             f"{blocked.replace('_', ' ')}")
+                continue
+            if act and r["symbol"] in sold and not hysteresis.reenters(r.get("margin_pt")):
+                notes.append(f"{r['symbol']}: no buy, sold on its thesis; it comes back only "
+                             f"with a {hysteresis.REENTRY_MARGIN_PT:g}pt margin")
+                continue
             ex = r.get("exits") or {}
             tr = []
             for i, x in enumerate(z["tranches"]):
@@ -291,7 +376,7 @@ def _stock_steps(p: Mapping, st: Mapping | None, gap_idr: float, day: date,
         if need >= MIN_STEP_IDR:
             prices = {s: h["price"] for s, h in held.items()}
             values = {s: h["idr"] for s, h in held.items() if h["idr"]}
-            trimmed = {t["symbol"] for t in trims}
+            trimmed = {t["symbol"] for t in trims} | acting
             div = {v["symbol"]: v for v in (p.get("diversification") or {}).get("names") or []}
             red = sorted((v for v in div.values() if v["redundant"] and not v["allowed"]
                           and v["symbol"] in values and v["symbol"] not in trimmed),
@@ -366,15 +451,19 @@ def _bucket_leg(market: str, asset: str, st: Mapping | None, gap_idr: float,
 
 
 def build(day: date, stances: Sequence[Mapping], candidates: Sequence[Mapping],
-          fingerprint: str | None = None, holdings: Sequence[Mapping] = ()) -> dict:
+          fingerprint: str | None = None, holdings: Sequence[Mapping] = (),
+          act: bool | None = None) -> dict:
     """The guide payload for one run. `stances` are the run's stance payloads, `candidates` its
     `out/candidates` payloads (IDN, USA), `holdings` its `out/holdings` payloads (S86): a sell
     step's why says which question drove it (thesis, valuation or fit) and what the record
-    says of the business."""
+    says of the business. `act` (default `hysteresis.ACT_ON_VERDICTS`) makes the records'
+    acted verdicts drive the sells and block buys (S87)."""
+    act = hysteresis.ACT_ON_VERDICTS if act is None else act
     by_key = {(s["subject"], s["asset"]): s for s in stances}
     cands = {p["market"]: p for p in candidates}
     records = {h["market"]: {r["symbol"]: r for r in h.get("holdings") or []}
                for h in holdings}
+    sold = {h["market"]: frozenset(s["symbol"] for s in h.get("sold") or []) for h in holdings}
     value = next((p["sizing"]["portfolio_value_idr"] for p in candidates
                   if (p.get("sizing") or {}).get("portfolio_value_idr")), None)
     notes: list[str] = []
@@ -391,7 +480,8 @@ def build(day: date, stances: Sequence[Mapping], candidates: Sequence[Mapping],
             notes.append(f"{plain.leg(market, asset)}: no stance or portfolio value, no steps")
             continue
         if asset == "stocks" and market in cands:
-            steps += _stock_steps(cands[market], st, gap, day, records.get(market))
+            steps += _stock_steps(cands[market], st, gap, day, records.get(market), act,
+                                  sold.get(market, frozenset()), notes)
         else:
             if asset == "stocks":
                 notes.append(f"{plain.leg(market, asset)}: no candidate list this run")
@@ -423,6 +513,7 @@ def build(day: date, stances: Sequence[Mapping], candidates: Sequence[Mapping],
                    "sells": sum(s["side"] == "sell" for s in steps),
                    "buys": sum(s["side"] == "buy" for s in steps)},
         "config": {"rebalance": rebalance.config(), "min_step_idr": MIN_STEP_IDR,
+                   "act_on_verdicts": act,
                    "dates": "next weekday after the run, then every spacing_days; IDX holidays "
                             "not known"},
         "notes": notes,
