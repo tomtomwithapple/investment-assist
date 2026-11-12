@@ -1684,6 +1684,149 @@ with one, then the larger holding), in place of the largest holding.
 
 Parallel groups: S81 → S82 → S83 → S84.
 
+### Phase P — stable verdicts per holding (planned 2026-11-12)
+
+**Why.** On 2026-11-12 one name, BBNI, got four verdicts in one session from four methods: in
+(the user's Stockbit "Cheap Big Caps"), out (its stricter version, Piotroski 3), "trim" (an ad
+hoc review flag), "sell all of it" (the 11-11 guide), and "thesis intact, fair 3,380"
+(investment-assist with prices fixed). Causes: a quality test unfit for banks, a data bug
+(Stockbit's screener returns no `Price` since 2026-11-10, so `enrich` leaves `price` None and
+every IDN name fails the price floor: dividend pool 0, all 67 held names unrated, 46 "sell all
+of it"), a portfolio-fit rule read as a thesis verdict, and checks run outside the model.
+
+**Rules.**
+
+1. *One method of record.* investment-assist issues every keep / trim / sell. Stockbit
+   screeners (idx-method `screener_preset`, `screener_member`) are a **watchlist only**: they
+   may add a name to the pool to be judged, never a verdict. Reviews call this code, not
+   hand-rolled flags.
+2. *Three questions per held name, answered apart.* **Thesis** (fundamentals, pass / fail: the
+   only sell trigger), **valuation** (price vs fair price: the only take-profit trigger, "stop
+   adding and trim to half"), **fit** (redundant group, rebalance need: orders the cuts, never
+   "beyond saving").
+3. *Bad data holds.* A key input null across the market, or a passing screen with an empty
+   pool, makes every held name's verdict `unknown`: the previous verdict stands, marked stale,
+   and the guide and Telegram send a data notice instead of steps.
+4. *Hysteresis.* The thesis is re-judged only when a new quarterly report or dividend record
+   arrives. A **hard fail** acts at once (dividend cut, negative equity, negative CFO); a
+   **soft fail** (F-score, Altman Z, other quality floors) acts only after **two quarterly
+   reports in a row**. Take-profit fires at fair price and re-arms only once the price is **10%
+   below fair** (may change after a retrospective review). A sold name re-enters only when it
+   passes with a margin.
+5. *Banks also need Piotroski >= 4*, beside the prudential floor (user 2026-11-12). BBNI
+   (Piotroski 3) fails it: a soft fail, so it sells only if the next report fails too.
+6. *Every change carries its cause*: new filing, price crossing, rule-version change or data
+   fix. Rule changes go through the locked-numbers process (placebo, agent review) and open a
+   journal segment.
+7. *Stability is measured.* The paper track counts verdict flips per held name; target at
+   most one per name per quarter. A flip caused by data or method is a bug.
+
+**Decided by the user 2026-11-12.** Stockbit screeners watchlist only; soft fails need two
+quarterly reports in a row; take-profit re-arms at 10% below fair; banks also need Piotroski
+>= 4.
+
+- [x] **S85 Data gate and the price fix** (P103-data-gate). `factors.enrich` keeps the price
+  `derive` computes from `cache/history/` when the screener's is None; a check over the
+  enriched table (a key column null for every name, or a passing screen with pool 0) marks the
+  run's IDN verdicts `unknown` and the guide holds its steps with a data notice. Test first.
+  Must land before the Monday 2026-11-16 07:00 weekly run.
+- [ ] **S86 Holding record** (P104-holdings). `out/holdings/IDN.json`: per held name thesis,
+  valuation, fit, inputs, the report period judged, cause of change, model fingerprint;
+  journalled. Read by the guide in place of the unrated / redundant tags.
+- [ ] **S87 Hysteresis** (P105-hysteresis). Rule 4 on the holding record (previous record +
+  new report → verdict); replay over past quarter ends gives the flip rate before and after.
+  A model change.
+- [ ] **S88 Bank Piotroski floor** (P106-bank-f). Rule 5 in `screens._passes_bank`; rerun the
+  dividend replay to show it still beats its placebo before it may change a stance. A model
+  change.
+- [ ] **S89 Watchlist** (P107-watchlist). The custom Stockbit screeners' names join the IDN
+  pool as `source: watchlist`; no verdict from membership.
+- [ ] **S90 Change-only alerts** (P108-change-alerts). The daily 07:00 check sends, send-once,
+  only held names whose verdict changed, with the cause; folds into the Telegram plan.
+- [ ] **S91 Flip counter and docs** (F16-phase-p). Paper-track flips per name; CLAUDE.md line
+  "investment-assist is the only source of verdicts"; STATUS, README; fan-in run.
+
+Parallel groups: S85 → S86 → {S87, S88, S89} → S90 → S91.
+
+### Phase Q — frameworks as measured inputs (planned 2026-11-12)
+
+**Why.** The frameworks document (`investment-frameworks-implementation.md`, §0–§8, about 30
+methods) was mapped against this repo and the stores by a planning review on 2026-11-12. Most
+methods duplicate layers 0–5 (Marks, Dalio, QMJ), need data no store holds (PIN / VPIN and
+Kyle's lambda need signed trades; Beneish needs receivables, PPE, depreciation, SG&A), or
+conflict with the 5% name cap and phase P's single verdict (Markowitz, Black-Litterman, Kelly;
+CAN SLIM's price stops). Each method that is built must show its picks' record against the JCI
+before it may change anything.
+
+**Data limits (checked 2026-11-12).** `fundamentals` covers 416 symbols and no delisted name;
+`factor_series` (2016-11 → today) covers 62 of the 65 delisted names; `pead_filings` is empty,
+so point in time stays `LAG_DAYS` 120; Stockbit's piotroski, altman_z and magic_formula are
+today-only; `cache/history` daily bars start 2021-11-01. So 5y has 1–2 independent windows, 3y
+about 3, 1y about 9: only 1m / 3m / 6m can carry a verdict.
+
+**Rules.**
+
+1. Every framework returns a `FrameworkResult` (§0.2 plus `role` and `gate`) inside the existing
+   payloads and S86's holding record; it is never a second verdict source (phase P rule 1).
+2. Every framework enters as context. A passed placebo and the user's adoption may make it an
+   exclusion (blocks buys only, never sells a held name), a quality input or a valuation input,
+   each through a separate model change.
+3. One picks report for all: price, dividend and total return at 1m / 3m / 6m / 1y / 3y / 5y vs
+   the JCI (price index) and vs the same-date eligible pool equal-weighted, with the number of
+   independent windows beside each figure. Dividends not reinvested, calendar month ends.
+4. Point in time with `LAG_DAYS` 120; every replay prints its delisted coverage.
+
+**Decided by the user 2026-11-12** (the review's defaults, all accepted):
+1. Banks keep Piotroski >= 4 (phase P rule 5); 2 of the 9 signals do not apply to banks and are
+   flagged.
+2. Bank residual income is valuation context beside the Gordon fair price; if its gate passes,
+   take-profit uses the lower of the two.
+3. New quality tests (Graham, Magic Formula floor, Beneish) block buys only and never sell a
+   held name; no new soft fail.
+4. Pass criterion: the existing placebo (t >= 2, control clean) on non-overlapping 3-month
+   windows; 1y–5y are descriptive.
+5. Returns: dividends not reinvested, simple sum, calendar month ends.
+6. Actual weights from financer only where statements cover the start date, else n/a.
+7. Comparators: JCI price index and the eligible pool equal-weighted.
+8. Skipped: Fisher, the moat rubric, narrative FCFF DCF, net-net, CAN SLIM, FF5 / Carhart, QMJ,
+   Quantitative Value, Markowitz, Black-Litterman, risk parity, Kelly, Kyle's lambda, PIN /
+   VPIN, Soros, Marks, Dalio, JCI CAPE. Wyckoff waits for a year of idx-method `broker_top`.
+9. The data ask to idx-method is sent, at low priority.
+
+- [ ] **S92 Picks report** (P109-picks-report). `eval/picks_report.py`, pure: {start: [(sym,
+  weight)]} held to each end; price from `entry.adjusted_closes` (or `factor_series` bars before
+  2021-11), dividend gain = dividends ex in (start, end], split-scaled, / start price; JCI from
+  `sources.idxmethod.jci`; equal and actual weights; a delisted name held at its last bar and
+  flagged. Test first: a split, an ex-date on the boundary, a delisting.
+- [ ] **S93 FrameworkResult** (P110-framework-result). `candidates/frameworks/base.py` (hashed by
+  `RULE_GLOBS`); candidates schema `frameworks` block; journal round trip. A model change.
+- [ ] **S94 Baseline board** (P111-framework-board). S92 over the existing screens' replays
+  (dividend_value, garp, industry_value, value); `assist frameworks` → `out/frameworks/IDN.json`;
+  `/frameworks` page and `.json` twin ranking them side by side (excess total return per window,
+  independent windows, gate state, survivorship note). Test first on the page rows.
+- [ ] **S95 Point-in-time Piotroski** (P112-fscore-pit). 7 of 9 signals from `fundamentals` /
+  `factor_series`, short ones flagged, checked against today's Stockbit `piotroski`; the
+  quality floor becomes replayable. Test first per signal.
+- [ ] **S96 Bank residual income** (P113-bank-ri). B0, ROE faded to the hurdle, payout from
+  dividends, r = IDN hurdle; fair price and justified P/B on bank rows and S86's record; replay
+  and S92 report. Test first on a hand-computed table.
+- [ ] **S97 Graham** (P114-graham). Defensive criteria (17-year dividend record) and Graham
+  Number; context, gated, S92 report.
+- [ ] **S98 Magic Formula** (P115-magic). EBIT/EV and roce ranks, financials out, inside the
+  quality floor; replay on survivorship-inclusive `factor_series`; S92 report.
+- [ ] **S99 GP/A and DuPont** (P116-quality-context). Leverage-driven ROE flag; feeds S96.
+- [ ] **S100 Lynch and Dimson beta** (P117-lynch-beta). Category, Lynch ratio, beta; context.
+- [ ] **S101 Fetcher ask** (P118-idx-items). Note in idx-method's plan: fundamentals items
+  receivables, cogs, ppe_net, depreciation, sga, long_term_debt, retained_earnings; filed dates
+  into `pead_filings`; delisted names in `fundamentals`; daily `broker_top`. Docs only.
+- [ ] **S102 Beneish** (P119-beneish). Blocked on S101; winsorised; exclusion candidate.
+- [ ] **S103 Adoption** (P120-adopt). Each framework whose gate passed and the user adopted goes
+  into its role; reruns the dividend_value replay to show it still passes. A model change.
+- [ ] **S104 Phase Q fan-in** (F17-phase-q). Merge, live run, Progress, STATUS, README.
+
+Parallel groups: S92 → S93 → S94 → {S95, S97, S98, S99, S100}; S96 after S86; S95 before S87's
+replay and S88; S101 any time → S102; all → S103 → S104.
+
 ## Open questions
 
 - ~~**Phase O defaults**~~ (size lines Rp 50T and Rp 5T; the 58-group industry level):
@@ -1824,6 +1967,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S81b Keeper by dividend yield (P98b-keeper-yield) | done | 2026-11-10 | merge `0b9a0dc` | 2 diversify (1 replaced), fixtures (2072 total) | unrated names in a group keep the highest `div_yield` (user 2026-11-10), then the larger holding; `diversification.names[].div_yield`, candidates schema 1.3.1; read-only on the 2026-11-10 run: still 16 redundant of 52, but larger holdings (TOWR, KLBF, TOTO, TPMA, SICO now go, ISAT, TSPC, SPTO, KKGI, MYOH stay), so the guide has 33 sells (16 trims, 16 redundant, 1 pro-rata) against 51, same Rp 27.1m; live `assist run --no-send` 14:32 → 14:39 WIB, exit 0: model `sha256:f38a1c1be6a4…`, journal 857 records, 11 models; candidates schema 1.3.1; guide 33 sells Rp 27.1m and 2 bucket buys Rp 27.8m |
 | P101 SUN 10Y fallback (P101-sun-10y) | done | 2026-11-11 | this commit (branch `j9-sun-10y`) | 3 adapter, 2 bonds, 2 stocks, 1 hurdle, 1 history (2081 total) | `PheiSource` serves `SUN.<tenor>` from idxscape J9's `sun_benchmark_quote` (known on its quote date; migration 11 read apart, store key `idxscape_sun` in the Ref readers, so a store without it still serves IGSYC); order IGSYC → SUN → OECD proxy in `layers/bonds/idn`, `layers/rules/idn_stocks`, `candidates/hurdle`, `layers/candidates_foreign.IDR_10Y` and `history.ten_year_months`; slope still IGSYC only. Read-only live: `ten_year_months` 179 points, 2025-01 → 2026-09 now SUN month ends (6.98 → 6.36%); rules on 2025-06-30 bonds enter (real 5.02%) / stocks reduce (EY gap −1.67pt), 2026-03-31 reduce / reduce, 2026-11-10 hold / hold on IGSYC. Not run: `assist run` (new segment, gate rebuild ~45 min); r1 valuation fix not folded in (user to decide) |
 | P102 Stocks valuation r1 (P102-stocks-r1) | done | 2026-11-11 | this commit (branch `j9-sun-10y`) | 3 new stocks (r1 band, no spread ×3 cases), 4 updated; stocks and history fakes serve spreads (2085 total) | `idn_stocks.py` only: no `G_REAL`; `_hurdle` = US ERP + CRP (else `idn.erp.hurdle`) − IDN `default_spread` from `damodaran_crp` (lag 45 d, max age 450 d; none → no hurdle, no call); `ERP_BAND` and every phase K number unchanged. Read-only live: 2021-12-31 reduce (EY 3.74% after the V4 scrub, diff −5.82), 2022-12-31 hold (−0.17, the peak), 2025-06-30 reduce (−4.96), 2026-11-10 reduce (EY 7.78%, hurdle 4.55%, −1.22; was hold) |
+| S85 Data gate and price fix (P103-data-gate) | done | 2026-11-12 | `1d9c050` (branch `phase-p`) | 2 factors, 2 guide, 1 undervalued (2089 total) | `factors.enrich` takes the history's close when Stockbit's screener `Price` is None (null for all 959 names since 2026-11-10); `factors.data_check` and `undervalued.pool_problems` fill candidates `data_problems` (schema 1.4.0); any entry holds every guide step (`held_for_data`, guide 1.1.0). Live `assist run --no-send` 6 m 29 s, exit 0, model `sha256:7c55d462edbd…`: data_problems none; dividend_value pool 0 → 38, 8 rows (BMRI, ELSA, CPIN, BBRI, STAA, BFIN, BBNI, AUTO, all hold); guide 44 sells Rp 28.4m (22 redundant, 13 rebalance, BMRI to the 5% cap; BBNI no longer sold) and 2 bucket buys Rp 29.1m; Telegram not sent |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

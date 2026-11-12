@@ -43,7 +43,7 @@ __all__ = ["FILE", "MIN_STEP_IDR", "SCHEMA", "SCHEMA_VERSION", "build", "lines",
            "split_shares", "tranche_dates", "validator", "write"]
 
 SCHEMA = SCHEMA_DIR / "guide.schema.json"
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"  # 1.1 held_for_data (P103)
 FILE = "guide.json"
 MIN_STEP_IDR = 100_000.0  # a leg's leftover below this is not worth a step
 BUCKET = {
@@ -328,6 +328,11 @@ def build(day: date, stances: Sequence[Mapping], candidates: Sequence[Mapping],
             if asset == "stocks":
                 notes.append(f"{plain.leg(market, asset)}: no candidate list this run")
             steps += _bucket_leg(market, asset, st, gap, day)
+    held = [f"{p['market']}: {x}" for p in candidates for x in p.get("data_problems") or []]
+    if held:
+        # P103: a verdict read from broken inputs is unknown, so no step goes out on it.
+        notes.insert(0, "Steps held this week, inputs broken: " + "; ".join(held))
+        steps = []
     steps.sort(key=lambda s: (s["side"] != "sell", STRENGTH_ORDER[s["strength"]], -s["idr"],
                               s["symbol"] or ""))
     for i, s in enumerate(steps, 1):
@@ -353,6 +358,7 @@ def build(day: date, stances: Sequence[Mapping], candidates: Sequence[Mapping],
                    "dates": "next weekday after the run, then every spacing_days; IDX holidays "
                             "not known"},
         "notes": notes,
+        "held_for_data": held,
         "disclaimer": DISCLAIMER,
     }
 
@@ -378,6 +384,9 @@ def lines(g: Mapping, limit: int | None = None) -> list[str]:
     out = [f"{g['headline']}. " + (f"Orders are split in {g['split']}." if g["split"] > 1
                                    else "Orders go in one go.")]
     steps = g["steps"]
+    if g.get("held_for_data"):
+        return [*out, "Steps held this week: some inputs are broken, so no order is given on "
+                      "them. Last week's holdings stand.", *(f"- {x}" for x in g["held_for_data"])]
     if not steps:
         return [*out, "Nothing to do this week: every leg is at its target."]
     t = g["totals"]

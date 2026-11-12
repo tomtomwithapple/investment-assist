@@ -88,7 +88,8 @@ __all__ = [
 ]
 
 SCHEMA = SCHEMA_DIR / "candidates.schema.json"
-SCHEMA_VERSION = "1.3.1"  # 1.1 average down; 1.2 exits; 1.3 diversification; 1.3.1 div_yield
+SCHEMA_VERSION = "1.4.0"  # 1.1 average down; 1.2 exits; 1.3 diversification; 1.3.1 div_yield;
+# 1.4 data_problems (P103)
 STYLES = ("dividend_value", "garp")  # S15's industry_value has no expected return: not a style
 TRANCHE_IDR = 10e6  # P21's DEFAULT_ORDER: the tranche costs and capacity are judged at
 DROP_FLAGS = ("over_participation", "below_one_lot")
@@ -123,6 +124,8 @@ class UndervaluedInputs:
     config: dict = field(default_factory=dict)  # market-specific settings for the journal
     # S82: sym → {sector, industry, mktcap} for every name that may be held or ranked
     profiles: dict[str, dict] = field(default_factory=dict)
+    # P103: broken inputs; any one holds the guide's steps (the verdicts read from them are unknown)
+    data_problems: tuple[str, ...] = ()
 
 
 @cache
@@ -491,6 +494,7 @@ def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
                          "gate3": average_down.GATE3, "names": names},
         "config": config(tilt_block["fingerprint"], caps, inp.screens, inp.config),
         "stale_inputs": list(dict.fromkeys(stale)),
+        "data_problems": list(dict.fromkeys(inp.data_problems)),
         "sources": list(dict.fromkeys([*inp.sources, "financer"])) or ["idx-method"],
         "disclaimer": DISCLAIMER,
     }
@@ -573,7 +577,7 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
     plan for the screens' candidates. Each piece that fails becomes a stale input."""
     from assist.candidates import dividend_value, garp, tilt
     from assist.candidates.entry import entry_plan
-    from assist.candidates.factors import load_factors
+    from assist.candidates.factors import data_check, load_factors
     from assist.candidates.screens import GATES
     from assist.sources.base import SourceUnavailable
     from assist.sources.idxmethod_stocks import SOURCE, IdxMethodStocks
@@ -625,14 +629,23 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
         stale += st
     profiles, st = _profiles(table, day)
     stale += st
+    problems = data_check(table) + pool_problems(screens)
     return UndervaluedInputs(
         market="IDN", bar_date=as_of, screens=screens, tilt=t, profiles=profiles,
+        data_problems=tuple(problems),
         factors={s: table[s] for s in syms if s in table} | {
             s: table[s] for s in (r["symbol"] for x in screens.values()
                                   for r in x.get("ranking") or []) if s in table},
         plan=plan, stale_inputs=tuple(stale),
         sources=(SOURCE, "dbnomics", "idxscape", "bisfetcher", "bps-looker", "worldbankscape",
                  "sec-edgar"))
+
+
+def pool_problems(screens: Mapping[str, Mapping]) -> list[str]:
+    """P103: a screen that beat its placebo but judged no name today read broken inputs (on
+    2026-11-10 every name failed the price floor), so its verdicts are unknown."""
+    return [f"{name}: passed its replay but its pool is empty"
+            for name, r in screens.items() if r.get("passed") and not r.get("pool")]
 
 
 def _profiles(table: Mapping[str, Mapping], day: date) -> tuple[dict[str, dict], list[str]]:
