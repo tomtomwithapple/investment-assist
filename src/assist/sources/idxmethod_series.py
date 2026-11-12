@@ -37,6 +37,7 @@ __all__ = [
     "EY_WINDOW",
     "FUNDAMENTALS",
     "SOURCE",
+    "STATEMENT_ITEMS",
     "Bar",
     "FactorSeriesEY",
     "Fundamentals",
@@ -65,6 +66,9 @@ FUNDAMENTALS = (
 EY_WINDOW = timedelta(days=14)
 EY_ECHO_GAP = timedelta(days=14)
 QUARTER_ENDS = ("03-31", "06-30", "09-30", "12-31")
+# `fundamentals` items the point-in-time F-score reads (P112); flows are discrete quarters
+STATEMENT_ITEMS = ("revenue", "gross_profit", "current_assets", "current_liabilities",
+                   "shares_bs", "shares")
 _QE_SQL = ", ".join(f"'{q}'" for q in QUARTER_ENDS)
 
 
@@ -243,6 +247,32 @@ class IdxMethodSeries:
                         p, p + timedelta(days=LAG_DAYS), *(items.get(k) for k in FUNDAMENTALS)
                     )
                 )
+        return out
+
+    def statements(
+        self, items: Iterable[str] = STATEMENT_ITEMS, symbols: Iterable[str] | None = None
+    ) -> dict[str, dict[date, dict[str, float]]]:
+        """`fundamentals` (idx-method's quarterly statements, discrete quarters): per symbol,
+        {period end: {item: value}} for `items`, quarter periods ('2025Q2') only. Not `bs.assets`
+        by default: it is not total assets (A ≠ L + E in most rows), `factor_series` has those."""
+        its = sorted(set(items))
+        sql = (
+            "select symbol, period, item, value from fundamentals where period like '____Q_'"
+            f" and item in ({', '.join('?' for _ in its)})"
+        )
+        params: list = list(its)
+        if symbols is not None:
+            syms = sorted(set(symbols))
+            sql += f" and symbol in ({', '.join('?' for _ in syms)})"
+            params += syms
+        out: dict[str, dict[date, dict[str, float]]] = {}
+        with self._con("fundamentals") as con:
+            for sym, period, item, v in con.execute(sql, params):
+                if v is None or period[-1] not in "1234":
+                    continue
+                m, dd = QUARTER_ENDS[int(period[-1]) - 1].split("-")
+                p = date(int(period[:4]), int(m), int(dd))
+                out.setdefault(sym, {}).setdefault(p, {})[item] = float(v)
         return out
 
     def known_at(self, symbol: str, d: date) -> list[Fundamentals]:

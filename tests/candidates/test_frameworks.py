@@ -157,8 +157,9 @@ def test_a_result_for_another_name_or_framework_is_refused(registry):
     assert r.score is None and r.flags[0].startswith("error: ValueError")
 
 
-def test_nothing_is_registered_today():
-    assert fw.registered() == []
+def test_registered_today():
+    assert [(f.name, f.role, f.gate) for f in fw.registered()] == [
+        ("piotroski_f", "context", "untested")]  # S95
 
 
 def test_base_is_hashed_into_the_model_fingerprint(tmp_path):
