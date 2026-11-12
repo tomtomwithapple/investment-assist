@@ -80,6 +80,11 @@ the run: an error becomes a stale input and no file. Each run journals one `unde
 market (verdicts, sizing, config) and one `undervalued_row` record per row, each carrying the
 config (tilt yaml hash, hurdle constants, sizing caps, screen CONFIGs) beside the model
 fingerprint. Nothing here moves a stance.
+
+S86 (phase P) adds the holding record beside IDN's list: `candidates.holdings.build` over the
+candidates payload, the thesis inputs `gather_live` judged for every name, layer 5 and the
+previous `out/holdings/IDN.json` → `out/holdings/IDN.json`, one `holding` journal record per held
+name, and the guide reads it to say which question (thesis, valuation, fit) drove each sell.
 """
 
 from __future__ import annotations
@@ -97,6 +102,7 @@ from pathlib import Path
 from typing import Any
 
 from assist import brief, guide, journal, layers_out, notify, override_history, stance
+from assist.candidates import holdings as holdings_mod
 from assist.candidates import peers as peer_cmp
 from assist.candidates import tiers_replay
 from assist.eval import gate as rule_gate
@@ -1080,22 +1086,23 @@ def _undervalued_lines(payloads: Sequence[Mapping]) -> list[str]:
 
 
 def _undervalued(day: date, sources: Sources, layers: Layers, stances: Sequence[Mapping],
-                 fp: str, paths: Paths) -> tuple[list[dict], list[str]]:
+                 fp: str, paths: Paths) -> tuple[list[dict], list[str], list[dict]]:
     """The S20 list per market (IDN, then USA) → (payloads written to out/candidates, stale
-    inputs). Never raises: the stances are already written; one market failing skips only it."""
+    inputs, S86 holding payloads written to out/holdings). Never raises: the stances are
+    already written; one market failing skips only it."""
     gathers = [(m, fn) for m, fn in (("IDN", sources.undervalued), ("USA", sources.undervalued_us))
                if fn is not None]
     if not gathers:
-        return [], []
+        return [], [], []
     try:
         statements = list(sources.financer.statements())
     except SourceUnavailable:
         statements = []
-    payloads, stale = [], []
+    payloads, stale, held = [], [], []
     for market, fn in gathers:
         try:
-            payload = _undervalued_one(fn(day, layers.regime), day, statements, layers,
-                                       stances, fp)
+            inp = fn(day, layers.regime)
+            payload = _undervalued_one(inp, day, statements, layers, stances, fp)
         except Exception as e:  # noqa: BLE001 - a candidates failure never fails the run
             first = str(e).splitlines()[0][:160] if str(e) else ""
             label = "undervalued" if market == "IDN" else f"undervalued {market}"
@@ -1103,7 +1110,43 @@ def _undervalued(day: date, sources: Sources, layers: Layers, stances: Sequence[
             continue
         undervalued.write(payload, paths.out)
         payloads.append(payload)
-    return payloads, stale
+        if market == "IDN":  # S86: the thesis inputs are IDN's (idx-method)
+            try:
+                held.append(write_holdings(day, inp, payload, statements, fp, paths.out))
+            except Exception as e:  # noqa: BLE001 - the record never fails the run
+                first = str(e).splitlines()[0][:160] if str(e) else ""
+                stale.append(f"holding record failed: {type(e).__name__}: {first}")
+    return payloads, stale, held
+
+
+def write_holdings(day: date, inp: undervalued.UndervaluedInputs, payload: Mapping,
+                   statements: Sequence[Any], fp: str, out_dir: Path) -> dict:
+    """S86: one record per held name against the previous `out/holdings/{MARKET}.json`,
+    schema-checked and written."""
+    rec = journal.jsonable(holdings_mod.build(
+        payload, inp.judged, day=day, fingerprint=fp,
+        holdings=undervalued.holdings_from(statements, inp.market),
+        previous=holdings_mod.load(out_dir, inp.market)))
+    errors = list(holdings_mod.validator().iter_errors(rec))
+    if errors:
+        raise ValueError(f"holdings payload fails the schema: {errors[0].message}")
+    holdings_mod.write(rec, out_dir)
+    return rec
+
+
+def _journal_holdings(j: journal.Journal, payloads: Sequence[Mapping], fp: str,
+                      run_id: str | None) -> None:
+    """One `holding` record per held name: what was judged, from what, and why it changed."""
+    for p in payloads:
+        for r in p["holdings"]:
+            outputs = {k: v for k, v in r.items() if k not in ("previous", "model_fingerprint")}
+            j.record(kind="holding", fingerprint=fp, subject=p["market"], asset="stocks",
+                     as_of=p["as_of"], run_id=run_id,
+                     inputs={"inputs": r["inputs"], "previous": r["previous"],
+                             "data_problems": p["data_problems"], "config": p["config"],
+                             "hurdle_pt": p["hurdle_pt"]},
+                     outputs=outputs | {"judged_by": r["model_fingerprint"],
+                                        "moves_stance": False})
 
 
 def _undervalued_one(inp: undervalued.UndervaluedInputs, day: date, statements: Sequence[Any],
@@ -1169,14 +1212,16 @@ class RunResult:
     layer_files: list[Path] = field(default_factory=list)
     home: HomeRegime | None = None
     guide: dict | None = None
+    holdings: list[dict] = field(default_factory=list)  # S86: out/holdings payloads
 
 
 def write_guide(day: date, stances: Sequence[Mapping], undervalued: Sequence[Mapping],
-                fp: str, out_dir: Path) -> tuple[dict | None, list[str]]:
+                fp: str, out_dir: Path,
+                holdings: Sequence[Mapping] = ()) -> tuple[dict | None, list[str]]:
     """This week's steps (S75) → (the payload written to out/guide.json, stale inputs). Never
-    raises: the stances are already written."""
+    raises: the stances are already written. `holdings` (S86) words each sell's why."""
     try:
-        payload = journal.jsonable(guide.build(day, stances, undervalued, fp))
+        payload = journal.jsonable(guide.build(day, stances, undervalued, fp, holdings))
         errors = list(guide.validator().iter_errors(payload))
         if errors:
             raise ValueError(f"guide payload fails the schema: {errors[0].message}")
@@ -1299,14 +1344,17 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
         res.layer_files = layers_out.write_layers(
             layers, res.stances, fp, paths.out, fred=sources.fred, idn=sources.idn,
             home_sources=home_sources(sources.idn) if sources.idn is not None else None)
-    res.undervalued, uv_stale = _undervalued(day, sources, layers, res.stances, fp, paths)
+    res.undervalued, uv_stale, res.holdings = _undervalued(day, sources, layers, res.stances,
+                                                           fp, paths)
     res.peers, peer_stale = write_peers(day, sources.peers, paths.out)
     res.tier_replay, tr_stale = write_tier_replay(day, sources.tier_replay, paths.out)
-    res.guide, guide_stale = write_guide(day, res.stances, res.undervalued, fp, paths.out)
+    res.guide, guide_stale = write_guide(day, res.stances, res.undervalued, fp, paths.out,
+                                         res.holdings)
     res.stale_inputs = sorted({*res.stale_inputs, *uv_stale, *peer_stale, *tr_stale,
                                *guide_stale})
     res.run_id = _journal(j, layers, res.stances, fp)
     _journal_undervalued(j, res.undervalued, fp, res.run_id)
+    _journal_holdings(j, res.holdings, fp, res.run_id)
     _journal_peers(j, res.peers, fp, res.run_id)
     _journal_tier_replay(j, res.tier_replay, fp, res.run_id)
     _journal_guide(j, res.guide, fp, res.run_id)

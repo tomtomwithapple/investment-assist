@@ -285,3 +285,98 @@ def test_a_data_problem_holds_every_step_and_says_why():
 def test_no_data_problem_keeps_the_steps():
     g = valid(build(DAY, [stance("IDN", "stocks", 55.0, 48.0)], [cands(problems=[])], None))
     assert g["steps"] and g.get("held_for_data", []) == []
+
+
+# ---------------- S86: the holding record says which question drove a sell ----------------
+
+
+def hrec(sym, status="pass", gate=None, severity=None, above=False, fair=3380.0, price=3400.0):
+    return {"symbol": sym, "stale": False,
+            "thesis": {"status": status, "gate": gate, "severity": severity},
+            "valuation": {"price": price, "fair_price": fair, "above_fair": above}}
+
+
+def held_records(*recs, market="IDN"):
+    return {"market": market, "holdings": list(recs)}
+
+
+def _with(records, trims=(), names=(), cur=52.7, tgt=48.0, div=None):
+    c = cands(trims=trims, names=names)
+    if div is not None:
+        c["diversification"] = {"names": div}
+    return valid(build(DAY, [stance("IDN", "stocks", cur, tgt)], [c], "sha256:x",
+                       holdings=[held_records(*records)]))
+
+
+FULL = "trim in full: fails its screen"
+
+
+def _sym(g, sym):
+    return next(s for s in g["steps"] if s["symbol"] == sym)
+
+
+def test_a_thesis_fail_says_the_business_failed_which_test():
+    g = _with([hrec("AMRT", "fail", "F-score", "soft")],
+              trims=[{"symbol": "AMRT", "idr": 709_500.0, "reason": FULL}],
+              names=[name("AMRT", 500.0, 1419)])
+    s = _sym(g, "AMRT")
+    assert s["question"] == "thesis"
+    assert "fails the F-score test" in s["why"] and "soft" in s["why"]
+
+
+def test_a_price_above_fair_is_a_valuation_sell_and_says_the_business_passes():
+    g = _with([hrec("AMRT", above=True, fair=450.0, price=500.0)],
+              trims=[{"symbol": "AMRT", "idr": 709_500.0, "reason": FULL}],
+              names=[name("AMRT", 500.0, 1419)])
+    s = _sym(g, "AMRT")
+    assert s["question"] == "valuation"
+    assert "above its fair price 450" in s["why"] and "business still passes" in s["why"]
+    assert "fails" not in s["why"]
+
+
+def test_a_cap_trim_is_fit():
+    g = _with([hrec("BMRI")], trims=[{"symbol": "BMRI", "idr": 4e6,
+                                      "reason": "trim to the per-name cap of 5%"}],
+              names=[name("BMRI", 1000.0, 9000)])
+    s = g["steps"][0]
+    assert s["question"] == "fit" and "more than 5% of your portfolio" in s["why"]
+    assert "business still passes" in s["why"]
+
+
+def test_bbni_redundant_sale_is_fit_never_a_thesis_verdict():
+    div = [{**_dv("BMRI", 1, "BMRI", False, basis="kept by a passing screen"),
+            "industry": "Bank", "size": "large"},
+           {**_dv("BBRI", 2, "BMRI", True, basis="kept by a passing screen"),
+            "industry": "Bank", "size": "large"},
+           {**_dv("BBNI", 3, "BMRI", True, basis="kept by a passing screen"),
+            "industry": "Bank", "size": "large"}]
+    names = [name("BMRI", 5000.0, 1000), name("BBRI", 4000.0, 1000), name("BBNI", 3400.0, 1000)]
+    g = _with([hrec("BBNI"), hrec("BBRI"), hrec("BMRI")], names=names, div=div,
+              cur=55.0, tgt=48.0)  # cut 7m: BBNI and BBRI in full
+    by = {s["symbol"]: s for s in g["steps"]}
+    s = by["BBNI"]
+    assert s["question"] == "fit" and "redundant" in s["tags"]
+    assert "BMRI is the one to keep" in s["why"]
+    assert "business still passes" in s["why"] and "near its fair price 3,380" in s["why"]
+    assert "fails" not in s["why"]
+
+
+def test_a_redundant_sale_of_a_failing_name_still_says_the_thesis_failed():
+    div = [{**_dv("BMRI", 1, "BMRI", False), "industry": "Bank", "size": "large"},
+           {**_dv("BBNI", 2, "BMRI", True), "industry": "Bank", "size": "large"}]
+    names = [name("BMRI", 5000.0, 1000), name("BBNI", 3400.0, 1000)]
+    g = _with([hrec("BBNI", "fail", "CAR", "soft")], names=names, div=div, cur=52.0, tgt=48.0)
+    s = {x["symbol"]: x for x in g["steps"]}["BBNI"]
+    assert s["question"] == "fit" and "also fails the CAR test (soft fail)" in s["why"]
+
+
+def test_without_a_record_a_full_trim_names_no_question():
+    g = idn(trims=[{"symbol": "AMRT", "idr": 709_500.0, "reason": FULL}],
+            names=[name("AMRT", 500.0, 1419)], cur=52.7, tgt=48.0)
+    s = _sym(g, "AMRT")
+    assert s["question"] is None and "dividend screen no longer rates it" in s["why"]
+
+
+def test_buys_and_buckets_carry_no_question():
+    g = idn(rows=[row()], cur=42.0, tgt=48.0)
+    assert all(s["question"] is None for s in g["steps"] if s["side"] == "buy")
