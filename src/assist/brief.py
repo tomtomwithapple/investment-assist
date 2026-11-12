@@ -271,6 +271,10 @@ def paper_lines(report: Any) -> list[str]:
     legs = "; ".join(f"{_LEG_NAMES[k]} = {report.legs[k]}" for k in _LEG_NAMES
                      if k in report.legs)
     lines.append(f"Legs: {legs}.")
+    fl = getattr(report, "flips", None)
+    if fl:  # S91: acted verdict flips per held name per quarter
+        from assist import flips as _flips
+        lines += _flips.lines(fl)
     return lines
 
 

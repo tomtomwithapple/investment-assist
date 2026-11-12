@@ -2,7 +2,8 @@
 48% JCI / 32% SBN leg / 20% US stocks in IDR (`stance.BENCHMARK_PCT`, S39), marked weekly and
 scored per model fingerprint; segments journalled before S39 keep the old 60/40 benchmark.
 
-Reads journal records only (`Journal.read()`, kind `stance`, IDN stocks|bonds and USA stocks).
+Reads journal records only (`Journal.read()`, kind `stance`, IDN stocks|bonds and USA stocks;
+kind `holding` for the flip counter).
 Every number here is a score of past decisions, never a decision, so this module is outside the
 fingerprint's rule set.
 
@@ -38,6 +39,9 @@ fingerprint's rule set.
 - **Segments.** Records are grouped by fingerprint. A segment rules the weeks that start from
   its first decision until the next segment's first decision. Each segment is scored on its own
   weeks only; nothing is pooled across fingerprints. Stale weeks are counted, not scored.
+- **Verdict flips (S91, phase P rule 7).** `flips.count` over the journal's `holding` records:
+  acted verdict flips per held name per quarter, real vs method or data (a bug), names over the
+  target of one per quarter, and S87's replay as the baseline (`PaperReport.flips`).
 """
 
 from __future__ import annotations
@@ -52,6 +56,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Protocol
 
+from assist import flips as _flips
 from assist import stance as _stance
 from assist.journal import Journal, jsonable
 from assist.layers.types import DISCLAIMER
@@ -656,6 +661,7 @@ class PaperReport:
     legacy_summary: dict[str, Any] | None = None
     legacy_benchmark: list[Mark] = field(default_factory=list)
     series: dict[str, Any] = field(default_factory=dict)  # the US and USD/IDR series used
+    flips: dict[str, Any] = field(default_factory=dict)  # S91: `flips.count` of holding records
 
     def to_dict(self, marks: bool = True) -> dict:
         out = jsonable(self)
@@ -774,6 +780,7 @@ def paper_track(
     until = until or date.today()
     if records is None:
         records = (journal or Journal()).read()
+    records = list(records)
     jci = jci or JciLeg.from_source()
     bond = bond or bond_leg()
     us = us or us_leg()
@@ -824,7 +831,8 @@ def paper_track(
         legacy_benchmark_pct=dict(LEGACY_BENCHMARK_PCT), legacy_start=legacy_start,
         legacy_summary=summarize([m.benchmark for m in legacy]), legacy_benchmark=legacy,
         series={"usa": {"name": us.name, **_range(us.usd.points)},
-                "usd_idr": [jsonable(p) for p in us.fx_pieces]})
+                "usd_idr": [jsonable(p) for p in us.fx_pieces]},
+        flips=_flips.count(records))
 
 
 def main(argv: Sequence[str] | None = None) -> int:

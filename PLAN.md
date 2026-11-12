@@ -1745,7 +1745,7 @@ quarterly reports in a row; take-profit re-arms at 10% below fair; banks also ne
   pool as `source: watchlist`; no verdict from membership.
 - [x] **S90 Change-only alerts** (P108-change-alerts). The daily 07:00 check sends, send-once,
   only held names whose verdict changed, with the cause; folds into the Telegram plan.
-- [ ] **S91 Flip counter and docs** (F16-phase-p). Paper-track flips per name; CLAUDE.md line
+- [x] **S91 Flip counter and docs** (F16-phase-p). Paper-track flips per name; CLAUDE.md line
   "investment-assist is the only source of verdicts"; STATUS, README; fan-in run.
 
 Parallel groups: S85 → S86 → {S87, S88, S89} → S90 → S91.

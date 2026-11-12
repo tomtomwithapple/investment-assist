@@ -12,6 +12,10 @@ here (the report has no such field). Stale reasons are
 cached on the App per (day, journal mtime), so reloads and HEAD do not reopen the stores; an
 error is not cached, so the next reload tries again.
 
+/paper also shows the verdict flips (S91, `flips.count` on the journal's holding records):
+per quarter, the names over the target of one flip, the method or data flips as bugs, and S87's
+replay as the baseline.
+
 /journal: as `assist journal` does: `verify()` gives the record count or raises ValueError
 (chain BROKEN: reason), then `segments()` per model (records, stances, span of as_of). Neither
 page writes the journal. The .json twins are the report without marks plus what this page
@@ -217,6 +221,47 @@ def _segments(rep: Any) -> str:
     return _card("segments", "Model segments", inner)
 
 
+FLIP_COLUMNS = ("Quarter", "Names", "Flips", "Real", "Method or data", "Over target")
+FLIP_NAME_COLUMNS = ("Market", "Name", "Quarter", "Flips", "Real", "Method or data")
+BUG_COLUMNS = ("Market", "Name", "Date", "From", "To", "Cause")
+
+
+def _flips(rep: Any) -> str:
+    """S91: acted verdict flips per held name per quarter, names over the target, method or
+    data flips flagged as bugs, and S87's replay as the baseline. Absent on an older report."""
+    fl = getattr(rep, "flips", None)
+    if not fl:
+        return ""
+    s, b = fl["summary"], fl["baseline"]
+    base = (f'<p class="muted">Baseline (S87 replay, {esc(b["source"])}): raw '
+            f'{esc(str(b["raw_per_name_quarter"]))} → acted '
+            f'{esc(str(b["acted_per_name_quarter"]))} flips per name-quarter over '
+            f'{b["name_quarters"]:,} name-quarters; {esc(str(b["acted_over_one"]))} acted '
+            "name-quarters over 1.</p>")
+    if not s["name_quarters"]:
+        return _card("flips", "Verdict flips", '<p class="muted">No holding records with an '
+                     "acted verdict in the journal yet (no holding records).</p>" + base)
+    head = (f"<p>Acted verdict (sell / take-profit / hold) per held name, target at most "
+            f"{esc(str(fl['target_per_quarter']))} flip per name per quarter: "
+            f"{esc(str(s['name_quarters']))} name-quarter(s), {esc(str(s['flips']))} flip(s) "
+            f"({esc(str(s['per_name_quarter']))} per name-quarter), {esc(str(s['real']))} "
+            f"real, {esc(str(s['method_or_data']))} method or data.</p>")
+    qs = _rows(FLIP_COLUMNS, [[esc(q), *(esc(str(v[k])) for k in (
+        "names", "flips", "real", "method_or_data", "over_target"))]
+        for q, v in fl["quarters"].items()])
+    over = ("<h3>Names over target</h3>" + _rows(FLIP_NAME_COLUMNS, [
+        [esc(n["market"]), esc(n["symbol"]), esc(n["quarter"]), esc(str(n["flips"])),
+         esc(str(n["real"])), web.chip(str(n["method_or_data"]),
+                                       "bad" if n["method_or_data"] else "good")]
+        for n in fl["over_target"]]) if fl["over_target"]
+        else '<p class="muted">No name over target.</p>')
+    bugs = ("<h3>Method or data flips (each a bug)</h3>" + _rows(BUG_COLUMNS, [
+        [esc(e["market"]), esc(e["symbol"]), esc(e["as_of"]), esc(e["from"]), esc(e["to"]),
+         web.chip(e["cause"] or "no cause", "bad")] for e in fl["bugs"]]) if fl["bugs"]
+        else '<p class="muted">No method or data flip.</p>')
+    return _card("flips", "Verdict flips", head + qs + over + bugs + base)
+
+
 def _data(rep: Any) -> Any:
     return rep.to_dict(marks=False) if hasattr(rep, "to_dict") else jsonable(rep)
 
@@ -234,7 +279,7 @@ def page(app: web.App, _m: re.Match[str]) -> web.View:
     rep = built.report
     try:
         reasons = stale_reasons(rep)
-        body = (head + _summary(rep) + _legacy(rep) + _segments(rep)
+        body = (head + _summary(rep) + _legacy(rep) + _segments(rep) + _flips(rep)
                 + _card("stale", "Stale reasons", _list(reasons))
                 + _card("notes", "Notes", _list(rep.notes))
                 + f'<p class="muted">Report for {esc(str(day))}, built '

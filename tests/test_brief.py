@@ -309,6 +309,22 @@ def test_paper_lines_show_annualised_from_12_scored_weeks():
     assert "annualised -29.0%" in lines[0] and "after 12" not in lines[0]
 
 
+def test_paper_lines_carry_the_flip_count():
+    from assist import brief as _brief
+    from assist import flips as _flips
+    rep = _paper_rep(1, None)
+    rep.flips = _flips.count([])
+    lines = _brief.paper_lines(rep)
+    assert any(x.startswith("Verdict flips: no holding records") for x in lines)
+    assert any("S87 replay" in x and "0.26" in x for x in lines)
+
+
+def test_paper_lines_old_report_without_flips():
+    from assist import brief as _brief
+    lines = _brief.paper_lines(_paper_rep(1, None))
+    assert not any("flips" in x.lower() for x in lines)
+
+
 # ---------------- home (IDN) regime line (S54, P73) ----------------
 
 

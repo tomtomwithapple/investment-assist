@@ -41,7 +41,7 @@ its sources.
 ```sh
 uv sync
 uv run assist doctor                  # every source: present / missing / locked / stale
-uv run assist status                  # (--host 0.0.0.0 for the LAN) local pages on http://127.0.0.1:8790/ (read-only, Ctrl-C stops): / stance grid, /stance/<SUBJECT>/<asset>, /regime (layer 0 inputs and history), /signals[/<SUBJECT>] (layers 2-3), /candidates[/<MKT>], /industries[/<id>], /portfolio (layer 5), /flows[/<YYYY-MM>] (household transfers), /paper, /journal, /status source health + launchd jobs; each has a .json twin
+uv run assist status                  # (--host 0.0.0.0 for the LAN) local pages on http://127.0.0.1:8790/ (read-only, Ctrl-C stops): / stance grid, /stance/<SUBJECT>/<asset>, /regime (layer 0 inputs and history), /signals[/<SUBJECT>] (layers 2-3), /candidates[/<MKT>], /industries[/<id>], /portfolio (layer 5), /flows[/<YYYY-MM>] (household transfers), /paper (with verdict flips per held name), /frameworks (baseline board), /journal, /status source health + launchd jobs; each has a .json twin
 uv run assist run                     # stances → out/, journal/, data/briefs/<day>.md, Telegram once a day
 uv run assist run --no-send           # the same, without Telegram
 uv run assist brief                   # print the brief for the current out/ (--send: summary, once a day)
@@ -50,7 +50,8 @@ uv run assist regime --check          # daily job: journal it, Telegram only if 
 uv run assist regime --check --no-send  # compare only; writes and sends nothing
 uv run assist rules                   # IDN rule gates → out/rules/ (history verdict, live monitor, state, distance per side; --rebuild ~40 min)
 uv run assist overrides               # layer-2 override gates → out/overrides/<SUBJECT>.json (up / down per asset: placebo, Holm, CLI zeroed, live; ~70 s; --subject S, --rebuild)
-uv run assist paper                   # paper track vs the IDR 48/32/20 benchmark, 60/40 alongside (--json [--marks])
+uv run assist paper                   # paper track vs the IDR 48/32/20 benchmark, 60/40 alongside, verdict flips per held name (--json [--marks])
+uv run assist frameworks              # baseline board: each screen's replay picks vs JCI and pool → out/frameworks/IDN.json (for /frameworks; a few minutes; not part of run)
 uv run assist journal                 # decisions per model fingerprint, hash-chain check
 uv run assist flows                   # household transfers from financer → out/flows/<YYYY-MM>.json (for /flows)
 ```
@@ -93,6 +94,35 @@ The brief, top to bottom:
 
 Same inputs give the same bytes, so a rerun on the same day rewrites nothing.
 
+## Holdings, watchlist and verdicts (phase P)
+
+investment-assist is the only source of keep / trim / sell verdicts. Each run writes
+`out/holdings/IDN.json`: one record per held IDX stock that answers three questions apart,
+**thesis** (fundamentals, pass / fail: the only sell trigger), **valuation** (price vs fair price:
+the only take-profit trigger) and **fit** (redundant group, the 5% cap: orders the cuts), with
+the inputs judged, the cause of each change (new filing, price crossing, holdings change, rule
+version, data fix) and the model fingerprint. Each record is journalled (kind `holding`). Its
+`acted` block is the verdict after hysteresis (`candidates/hysteresis.py`): the thesis is
+re-judged only on a new quarterly report or dividend record, a soft fail sells only after two
+reports in a row, and take-profit re-arms only 10% below fair. When a key input is broken for
+the whole market, every verdict holds as it was, marked stale.
+
+- **Watchlist** (`config/watchlist.yaml`): the user's Stockbit screeners (category `Custom` by
+  default), read from idx-method's `stockbiter.db`. A name on one joins the IDN pool to be
+  judged; membership never gives a verdict, a size or a rank.
+- **`ACT_ON_VERDICTS`** in `candidates/hysteresis.py`, off by default: the acted verdict is
+  recorded and shown beside each step of the guide, but the orders keep their earlier amounts.
+  Switched on, the guide's thesis sells, take-profit trims, stop-adding and re-entry follow the
+  acted verdict. It is a model change, so it waits for its placebo and the user's decision.
+- **Verdict flips** (`assist paper`, `/paper`): from the journal's `holding` records, the acted
+  verdict (sell / take-profit / hold) flips per held name per calendar quarter, split into real
+  causes (new filing, price crossing, holdings change) and method or data causes (rule version,
+  data fix, no cause), each of which is a bug. Names over the target of one flip per quarter are
+  listed, beside S87's replay baseline (0.56 raw → 0.26 acted flips per name-quarter).
+- **Frameworks** (`assist frameworks`, `/frameworks`): phase Q's screens and frameworks scored on
+  their replay picks vs the JCI and the pool. They are context only until one passes its placebo
+  and the user adopts it, and then it can only block buys, never sell a held name.
+
 ## Outputs (all gitignored)
 
 | Path | What |
@@ -100,10 +130,13 @@ Same inputs give the same bytes, so a rerun on the same day rewrites nothing.
 | `out/{SUBJECT}/{asset}.json` | one stance per in-scope subject × asset (`schema/stance.schema.json`); a rerun with unchanged inputs writes identical bytes, and out/ holds exactly the last run |
 | `out/rules/IDN-{stocks,bonds}.json` | each IDN rule's gate: historical verdict per side (enter, reduce), live journal monitor, state (passed, insufficient, failed, revoked), months covered, inputs missing; `assist run` rebuilds it when a month end has passed or a rule changed |
 | `out/overrides/{IDN,USA,JPN,EMU,AUS,SGP}.json` | each subject's layer-2 override gate (phase L): per asset an up and a down side, its placebo verdict on the point-in-time override history (complete months only, IDR forward returns), Holm over the subject's tests, the CLI-zeroed check, the live monitor and state; a passed side lets that shift cross a band in its direction (EMU's reaches DEU, FRA, ITA, ESP, NLD); `assist run` rebuilds it when a month end has passed or the override changed |
-| `journal/decisions.jsonl`, `journal/models/` | append-only, hash-chained decisions, each with the model fingerprint; the daily regime check adds `regime` records |
+| `out/holdings/IDN.json` | one record per held IDX stock: thesis, valuation, fit, the acted verdict after hysteresis, the cause of each change, the names sold on their thesis (`sold`); see *Holdings, watchlist and verdicts* |
+| `out/frameworks/IDN.json` | the baseline board, written by `assist frameworks` only |
+| `journal/decisions.jsonl`, `journal/models/` | append-only, hash-chained decisions, each with the model fingerprint; the daily regime check adds `regime` records, each run one `holding` record per held name |
 | `data/briefs/<day>.md` | the Markdown brief, diffed against the previous day's snapshot |
 | `data/snapshots/<day>/` | copy of out/ per run day, for the brief's "changes since last run" |
-| `data/notify/sent/` | send-once markers (`brief_<day>.json`, `regime_<day>.json`); `$ASSIST_NOTIFY_STATE` moves them |
+| `data/notify/sent/` | send-once markers (`brief_<day>.json`, `regime_<day>.json`, `holdings_<day>.json`); `$ASSIST_NOTIFY_STATE` moves them |
+| `data/notify/alerts/` | the daily alerts' state: the last holdings snapshot sent (`holdings_IDN.json`) and the last data health set (`health.json`) |
 | `launchd/weekly.log`, `launchd/regime.log` | the scheduled jobs' output |
 
 Telegram credentials: `ASSIST_TELEGRAM_TOKEN` + `ASSIST_TELEGRAM_CHAT`, else the Keychain item
