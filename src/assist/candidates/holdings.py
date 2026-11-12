@@ -25,8 +25,14 @@ when no answer changed.
 
 **Bad data holds** (rule 3): a run with `data_problems` keeps every previous verdict,
 `stale: true`; a name with no previous record reads `unknown`. A same-day rerun keeps the
-record it replaced as its previous, so reruns are byte-identical. Hysteresis (S87) and the bank
-Piotroski floor (S88) are not here: this is today's raw verdict beside the previous one.
+record it replaced as its previous, so reruns are byte-identical. `thesis` is today's raw verdict
+beside the previous one; `acted` (S87, 1.2.0) is the verdict after phase P rule 4's hysteresis
+(`candidates.hysteresis`: thesis re-judged only on a new report or dividend record, soft fails
+after two reports in a row, take-profit re-armed 10% below fair), with its own `cause` and
+`changed`. `valuation` is at the required return `acted` holds between reports, so a regime
+toggle alone moves no fair price; `acted.valuation.required_live_pt` is today's. `sold` lists
+the names the model sold on their thesis and no longer held (re-entry needs a margin). The bank
+Piotroski floor (S88) is not here.
 `context` is left empty for phase Q's frameworks (context only, never a second verdict).
 `watchlists` (S89, 1.1.0) names the user's Stockbit screeners a held name is on, from the
 candidates payload's `watchlist` block: context only, never compared for a change or a verdict.
@@ -48,7 +54,7 @@ from typing import Any
 
 import jsonschema
 
-from assist.candidates import dividend_value, exits, garp
+from assist.candidates import dividend_value, exits, garp, hysteresis
 from assist.candidates.hurdle import CONFIG as HURDLE_CONFIG
 from assist.candidates.screens import passes_gates, passes_quality
 from assist.layers.types import DISCLAIMER, SCHEMA_DIR
@@ -58,7 +64,7 @@ __all__ = ["CAUSES", "HARD", "SCHEMA", "SCHEMA_VERSION", "answers", "build", "co
 
 VERSION = "0.1.0"
 SCHEMA = SCHEMA_DIR / "holdings.schema.json"
-SCHEMA_VERSION = "1.1.0"  # 1.1 watchlists per record (S89)
+SCHEMA_VERSION = "1.2.0"  # 1.1 watchlists per record (S89); 1.2 acted, sold (S87)
 OUT_DIR = "holdings"
 HARD = ("cut", "negative CFO", "negative equity")  # phase P rule 4: these act at once
 CAUSES = ("first", "rule_version", "data_fix", "new_filing", "price_cross", "holdings_change")
@@ -71,7 +77,8 @@ def config() -> dict:
             "thesis": "quality floor, and the dividend or the GARP gates",
             "valuation": "fair price = dividend legs at the hurdle + sector tilt shift",
             "fit": "diversification group and the per-name cap",
-            "causes": list(CAUSES), "bad_data": "previous verdict kept, stale"}
+            "causes": list(CAUSES), "bad_data": "previous verdict kept, stale",
+            "hysteresis": hysteresis.config()}
 
 
 @cache
@@ -227,8 +234,9 @@ def _cause(prev: Mapping | None, cur: Mapping, held_moved: bool) -> tuple[str | 
 
 
 def _compact(r: Mapping) -> dict:
-    return {k: r[k] for k in ("judged_on", "model_fingerprint", "stale", "thesis", "valuation",
-                              "fit", "inputs")}
+    out = {k: r[k] for k in ("judged_on", "model_fingerprint", "stale", "thesis", "valuation",
+                             "fit", "inputs")}
+    return out | ({"acted": r["acted"]} if r.get("acted") else {})
 
 
 def _baseline(previous: Mapping | None, day: date) -> tuple[dict[str, dict], dict | None]:
@@ -244,6 +252,18 @@ def _baseline(previous: Mapping | None, day: date) -> tuple[dict[str, dict], dic
     return base, {"as_of": previous["as_of"], "held": sorted(base)}
 
 
+def _acted(prev: Mapping | None, r: Mapping, j: Mapping | None, required: float | None) -> dict:
+    """S87: the hysteresis verdict for record `r` (raw answers) against the previous record."""
+    return hysteresis.act((prev or {}).get("acted"), r["thesis"], r["inputs"],
+                          price=r["valuation"]["price"],
+                          dv=(j or {}).get("dividend_value"), required_live=required)
+
+
+def _required(candidates: Mapping, j: Mapping | None) -> float | None:
+    hurdle_pt = (candidates.get("hurdle") or {}).get("required_pt")
+    return None if hurdle_pt is None else hurdle_pt + _shift(candidates, (j or {}).get("sector"))
+
+
 def _shift(candidates: Mapping, sector: str | None) -> float:
     sectors = {s["sector"]: s for s in (candidates.get("tilt") or {}).get("sectors") or []}
     x = float((sectors.get(sector) or {}).get("margin_shift_pt") or 0.0)
@@ -255,9 +275,7 @@ def answers(candidates: Mapping, j: Mapping | None, sym: str, fit_name: Mapping 
             over_cap: bool = False) -> dict:
     """Thesis, valuation, fit and the inputs judged for one name, from the candidates payload
     (hurdle, tilt, average-down prices) and its `judge_inputs`. Pure."""
-    hurdle_pt = (candidates.get("hurdle") or {}).get("required_pt")
-    required = None if hurdle_pt is None else hurdle_pt + _shift(candidates,
-                                                                  (j or {}).get("sector"))
+    required = _required(candidates, j)
     prices = {n["symbol"]: n.get("price")
               for n in (candidates.get("average_down") or {}).get("names") or []}
     price = prices.get(sym) or ((j or {}).get("dividend_value") or {}).get("price")
@@ -269,12 +287,13 @@ def answers(candidates: Mapping, j: Mapping | None, sym: str, fit_name: Mapping 
 
 
 def _unknown(sym: str, held_idr: float, fp: str, previous: Mapping | None) -> dict:
-    return {"symbol": sym, "held_idr": held_idr, "judged_on": None, "model_fingerprint": fp,
-            "stale": True, "cause": None, "changed": [], "thesis": thesis(None) | {
-                "note": "inputs broken this run and no earlier verdict"},
-            "valuation": valuation(None, None, None), "fit": fit(None, False),
-            "inputs": {"report_period": None, "bar_date": None, "last_dividend_ex": None},
-            "context": {}, "previous": previous}
+    r = {"symbol": sym, "held_idr": held_idr, "judged_on": None, "model_fingerprint": fp,
+         "stale": True, "cause": None, "changed": [], "thesis": thesis(None) | {
+             "note": "inputs broken this run and no earlier verdict"},
+         "valuation": valuation(None, None, None), "fit": fit(None, False),
+         "inputs": {"report_period": None, "bar_date": None, "last_dividend_ex": None},
+         "context": {}, "previous": previous}
+    return r | {"acted": _acted(None, r, None, None)}
 
 
 def build(candidates: Mapping, judged: Mapping[str, Mapping], *, day: date, fingerprint: str,
@@ -300,10 +319,15 @@ def build(candidates: Mapping, judged: Mapping[str, Mapping], *, day: date, fing
                   "changed": [], "context": {}, "previous": prev})
             out.append(r | {"watchlists": list(lists.get(sym) or [])})
             continue
+        j = judged.get(sym)
         r = {"symbol": sym, "held_idr": held[sym], "judged_on": day.isoformat(),
              "model_fingerprint": fingerprint, "stale": False,
-             **answers(candidates, judged.get(sym), sym, names.get(sym), sym in capped),
+             **answers(candidates, j, sym, names.get(sym), sym in capped),
              "context": {}, "previous": prev}
+        r["acted"] = _acted(prev, r, j, _required(candidates, j))
+        # the fair price at the required return held between reports (S87, option a)
+        r["valuation"] = valuation(j, r["valuation"]["price"],
+                                   r["acted"]["valuation"]["required_pt"])
         r["cause"], r["changed"] = _cause(prev, r, held_moved)
         out.append(r | {"watchlists": list(lists.get(sym) or [])})
     return {
@@ -317,6 +341,10 @@ def build(candidates: Mapping, judged: Mapping[str, Mapping], *, day: date, fing
         "data_problems": problems,
         "previous_run": prev_run,
         "holdings": out,
+        "sold": hysteresis.sold(
+            [{"symbol": k, **v} for k, v in sorted(base.items())],
+            (previous or {}).get("sold") or [], held=held,
+            since=day.isoformat()),
         "config": config(),
         "sources": ["idx-method", "financer"],
         "disclaimer": DISCLAIMER,

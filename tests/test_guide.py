@@ -380,3 +380,80 @@ def test_without_a_record_a_full_trim_names_no_question():
 def test_buys_and_buckets_carry_no_question():
     g = idn(rows=[row()], cur=42.0, tgt=48.0)
     assert all(s["question"] is None for s in g["steps"] if s["side"] == "buy")
+
+
+# ---------------- S87: the acted verdict (hysteresis), behind ACT_ON_VERDICTS ----------------
+
+
+def arec(sym, action="hold", status="pass", gate=None, severity=None, periods=(), **kw):
+    r = hrec(sym, status, gate, severity, **kw)
+    r["acted"] = {"action": action,
+                  "thesis": {"status": status, "gate": gate, "severity": severity,
+                             "acts": action == "sell_all", "soft_fail_periods": list(periods)},
+                  "valuation": {"fair_price": kw.get("fair", 3380.0), "state":
+                                "fired" if action in ("trim_to_half", "stop_adding") else
+                                "armed", "rearm_below": kw.get("fair", 3380.0) * 0.9}}
+    return r
+
+
+def _acted(records, trims=(), names=(), rows=(), cur=48.0, tgt=48.0, act=True, sold=()):
+    c = cands(trims=trims, names=names, rows=rows)
+    h = held_records(*records) | {"sold": [{"symbol": s, "since": "2026-11-09", "gate": "cut"}
+                                           for s in sold]}
+    return valid(build(DAY, [stance("IDN", "stocks", cur, tgt)], [c], "sha256:x",
+                       holdings=[h], act=act))
+
+
+def test_flag_off_keeps_s86_amounts_and_says_what_hysteresis_would_do():
+    g = _acted([arec("AMRT", "hold", "fail", "F-score", "soft", periods=["2026-09-30"])],
+               trims=[{"symbol": "AMRT", "idr": 709_500.0, "reason": FULL}],
+               names=[name("AMRT", 500.0, 1419)], act=False)
+    s = _sym(g, "AMRT")
+    assert s["idr"] == 709_500.0 and "all of it" in s["tags"]
+    assert "hysteresis: would hold" in s["tags"] and "first soft-fail report" in s["why"]
+
+
+def test_flag_on_a_first_soft_fail_holds_instead_of_selling_in_full():
+    g = _acted([arec("AMRT", "hold", "fail", "F-score", "soft", periods=["2026-09-30"])],
+               trims=[{"symbol": "AMRT", "idr": 709_500.0, "reason": FULL}],
+               names=[name("AMRT", 500.0, 1419)])
+    assert not [s for s in g["steps"] if s["symbol"] == "AMRT"]
+    assert any("AMRT" in n and "hysteresis" in n for n in g["notes"])
+
+
+def test_flag_on_a_thesis_sell_sells_in_full_even_without_a_sizing_trim():
+    g = _acted([arec("AMRT", "sell_all", "fail", "F-score", "soft",
+                     periods=["2026-06-30", "2026-09-30"])],
+               names=[name("AMRT", 500.0, 1419)])
+    s = _sym(g, "AMRT")
+    assert s["question"] == "thesis" and s["shares"] == 1419 and "all of it" in s["tags"]
+    assert "two reports in a row" in s["why"]
+
+
+def test_flag_on_a_hard_fail_sells_in_full():
+    g = _acted([arec("AMRT", "sell_all", "fail", "cut", "hard")],
+               trims=[{"symbol": "AMRT", "idr": 709_500.0, "reason": FULL}],
+               names=[name("AMRT", 500.0, 1419)])
+    s = _sym(g, "AMRT")
+    assert s["question"] == "thesis" and s["shares"] == 1419 and "hard fail" in s["why"]
+
+
+def test_flag_on_take_profit_trims_to_half_once():
+    g = _acted([arec("BBNI", "trim_to_half", above=True, fair=3380.0, price=3500.0)],
+               names=[name("BBNI", 3500.0, 2000)])
+    s = _sym(g, "BBNI")
+    assert s["question"] == "valuation" and s["shares"] == 1000 and "half" in s["tags"]
+    assert "10% below" in s["why"]
+    g2 = _acted([arec("BBNI", "stop_adding", above=True, fair=3380.0, price=3500.0)],
+                names=[name("BBNI", 3500.0, 2000)], rows=[row("BBNI", action="average_down")],
+                cur=40.0)
+    assert not [s for s in g2["steps"] if s["symbol"] == "BBNI"]  # no trim, no add
+
+
+def test_flag_on_a_sold_name_needs_a_margin_to_come_back():
+    thin = _acted([], rows=[row("BBNI", margin_pt=0.5)], cur=40.0, sold=["BBNI"])
+    assert not [s for s in thin["steps"] if s["symbol"] == "BBNI"]
+    wide = _acted([], rows=[row("BBNI", margin_pt=4.1)], cur=40.0, sold=["BBNI"])
+    assert _sym(wide, "BBNI")["side"] == "buy"
+    off = _acted([], rows=[row("BBNI", margin_pt=0.5)], cur=40.0, sold=["BBNI"], act=False)
+    assert _sym(off, "BBNI")["side"] == "buy"

@@ -267,3 +267,63 @@ def test_write_and_load_round_trip(tmp_path):
     assert hd.load(tmp_path, "USA") is None
     path.write_text("{}")
     assert hd.load(tmp_path, "IDN") is None  # fails the schema: no previous
+
+
+# ---------------- S87: the acted verdict (hysteresis) on the record ----------------
+
+
+def _risk(c, pt):
+    return c | {"hurdle": {"required_pt": pt, "drivers": []}}
+
+
+def test_bbni_regime_toggle_moves_no_fair_price_and_no_verdict():
+    """2026-11-11 risk-off (+1pt), 11-12 neutral, no filing: the fair price and the take-profit
+    stay where the last report set them (S87 option a)."""
+    c = cands(held=["BBNI"], price={"BBNI": 3400.0})
+    off = build(_risk(c, HURDLE + 1.0), {"BBNI": judged(price=3400.0)}, day=D("2026-11-11"))
+    on = build(_risk(c, HURDLE), {"BBNI": judged(price=3400.0)}, day=D("2026-11-12"),
+               previous=off)
+    a, b = rec(off, "BBNI"), rec(on, "BBNI")
+    assert b["valuation"]["fair_price"] == a["valuation"]["fair_price"]
+    assert b["valuation"]["required_pt"] == HURDLE + 1.0
+    assert b["acted"]["valuation"]["required_live_pt"] == HURDLE
+    assert b["valuation"]["above_fair"] == a["valuation"]["above_fair"] is True
+    assert b["cause"] is None and b["acted"]["cause"] is None
+    assert b["acted"]["action"] == "stop_adding" and a["acted"]["action"] == "trim_to_half"
+
+
+def test_a_first_soft_fail_holds_and_the_second_report_sells_on_the_record():
+    c = cands(held=["BBNI"], price={"BBNI": 3000.0})
+    first = build(c, {"BBNI": judged(car=10.0, price=3000.0)}, day=D("2026-11-09"))
+    r = rec(first, "BBNI")
+    assert r["thesis"]["status"] == "fail" and r["acted"]["action"] == "hold"
+    j = judged(car=10.0, price=3000.0)
+    j["report_period"] = "2026-09-30"
+    r2 = rec(_again(first, {"BBNI": j}, c=c, day=D("2026-11-16")), "BBNI")
+    assert r2["acted"]["action"] == "sell_all" and r2["acted"]["cause"] == "new_filing"
+    assert r2["acted"]["thesis"]["soft_fail_periods"] == ["2026-06-30", "2026-09-30"]
+
+
+def test_a_raw_thesis_change_without_a_report_is_not_acted():
+    first = build(cands(held=["BBNI"]), {"BBNI": judged()}, day=D("2026-11-09"))
+    r = rec(_again(first, {"BBNI": judged(car=10.0)}), "BBNI")
+    assert r["thesis"]["status"] == "fail" and r["cause"] == "data_fix"  # raw, S86
+    assert r["acted"]["thesis"]["status"] == "pass" and r["acted"]["cause"] is None
+
+
+def test_a_name_sold_on_its_thesis_is_listed_until_bought_back():
+    j = judged(dividends=divs(2021, 2025, 200.0) + divs(2026, 2026, 100.0))  # cut: hard
+    first = build(cands(held=["BBNI", "BMRI"]), {"BBNI": j, "BMRI": judged("BMRI")},
+                  day=D("2026-11-09"))
+    assert rec(first, "BBNI")["acted"]["action"] == "sell_all" and first["sold"] == []
+    p = _again(first, {"BMRI": judged("BMRI")}, c=cands(held=["BMRI"]))
+    assert p["sold"] == [{"symbol": "BBNI", "since": DAY.isoformat(), "gate": "cut"}]
+    p2 = _again(p, {"BMRI": judged("BMRI")}, c=cands(held=["BMRI"]), day=D("2026-11-23"))
+    assert p2["sold"] == p["sold"]
+
+
+def test_the_acted_block_survives_a_stale_run_and_the_config_names_the_numbers():
+    first = build(cands(held=["BBNI"]), {"BBNI": judged()}, day=D("2026-11-09"))
+    p = _again(first, {}, c=cands(held=["BBNI"], problems=["bad"]))
+    assert rec(p, "BBNI")["acted"] == rec(first, "BBNI")["acted"]
+    assert p["config"]["hysteresis"]["rearm_below_fair_pct"] == 10.0

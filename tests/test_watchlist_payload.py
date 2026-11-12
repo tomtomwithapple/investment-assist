@@ -78,7 +78,7 @@ def rows(p):
 
 def test_schema_versions_bumped():
     assert uv.SCHEMA_VERSION == "1.6.0" and payload()["schema_version"] == "1.6.0"
-    assert hd.SCHEMA_VERSION == "1.1.0"
+    assert hd.SCHEMA_VERSION >= "1.1.0"  # 1.2.0 since S87
 
 
 def test_without_a_watchlist_the_payload_has_no_watchlist_block():
