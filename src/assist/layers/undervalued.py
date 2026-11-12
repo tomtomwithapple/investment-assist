@@ -655,9 +655,19 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
     profiles, st = _profiles(table, day)
     stale += st
     problems = data_check(table) + pool_problems(screens)
+    framework_inputs = None  # P112: the point-in-time F-score, context on the rows
+    try:
+        from assist.candidates.frameworks.piotroski import PiotroskiInputs, banks_from
+        from assist.sources.idxmethod_series import IdxMethodSeries
+
+        framework_inputs = PiotroskiInputs(as_of, data.quarters,
+                                           IdxMethodSeries.from_config().statements(),
+                                           banks_from(table))
+    except SourceUnavailable as e:
+        stale.append(e.stale_input)
     return UndervaluedInputs(
         market="IDN", bar_date=as_of, screens=screens, tilt=t, profiles=profiles,
-        data_problems=tuple(problems), judged=judged,
+        data_problems=tuple(problems), judged=judged, framework_inputs=framework_inputs,
         factors={s: table[s] for s in syms if s in table} | {
             s: table[s] for s in (r["symbol"] for x in screens.values()
                                   for r in x.get("ranking") or []) if s in table},
