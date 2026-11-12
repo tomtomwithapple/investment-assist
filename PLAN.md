@@ -1684,6 +1684,70 @@ with one, then the larger holding), in place of the largest holding.
 
 Parallel groups: S81 → S82 → S83 → S84.
 
+### Phase P — stable verdicts per holding (planned 2026-11-12)
+
+**Why.** On 2026-11-12 one name, BBNI, got four verdicts in one session from four methods: in
+(the user's Stockbit "Cheap Big Caps"), out (its stricter version, Piotroski 3), "trim" (an ad
+hoc review flag), "sell all of it" (the 11-11 guide), and "thesis intact, fair 3,380"
+(investment-assist with prices fixed). Causes: a quality test unfit for banks, a data bug
+(Stockbit's screener returns no `Price` since 2026-11-10, so `enrich` leaves `price` None and
+every IDN name fails the price floor: dividend pool 0, all 67 held names unrated, 46 "sell all
+of it"), a portfolio-fit rule read as a thesis verdict, and checks run outside the model.
+
+**Rules.**
+
+1. *One method of record.* investment-assist issues every keep / trim / sell. Stockbit
+   screeners (idx-method `screener_preset`, `screener_member`) are a **watchlist only**: they
+   may add a name to the pool to be judged, never a verdict. Reviews call this code, not
+   hand-rolled flags.
+2. *Three questions per held name, answered apart.* **Thesis** (fundamentals, pass / fail: the
+   only sell trigger), **valuation** (price vs fair price: the only take-profit trigger, "stop
+   adding and trim to half"), **fit** (redundant group, rebalance need: orders the cuts, never
+   "beyond saving").
+3. *Bad data holds.* A key input null across the market, or a passing screen with an empty
+   pool, makes every held name's verdict `unknown`: the previous verdict stands, marked stale,
+   and the guide and Telegram send a data notice instead of steps.
+4. *Hysteresis.* The thesis is re-judged only when a new quarterly report or dividend record
+   arrives. A **hard fail** acts at once (dividend cut, negative equity, negative CFO); a
+   **soft fail** (F-score, Altman Z, other quality floors) acts only after **two quarterly
+   reports in a row**. Take-profit fires at fair price and re-arms only once the price is **10%
+   below fair** (may change after a retrospective review). A sold name re-enters only when it
+   passes with a margin.
+5. *Banks also need Piotroski >= 4*, beside the prudential floor (user 2026-11-12). BBNI
+   (Piotroski 3) fails it: a soft fail, so it sells only if the next report fails too.
+6. *Every change carries its cause*: new filing, price crossing, rule-version change or data
+   fix. Rule changes go through the locked-numbers process (placebo, agent review) and open a
+   journal segment.
+7. *Stability is measured.* The paper track counts verdict flips per held name; target at
+   most one per name per quarter. A flip caused by data or method is a bug.
+
+**Decided by the user 2026-11-12.** Stockbit screeners watchlist only; soft fails need two
+quarterly reports in a row; take-profit re-arms at 10% below fair; banks also need Piotroski
+>= 4.
+
+- [ ] **S85 Data gate and the price fix** (P103-data-gate). `factors.enrich` keeps the price
+  `derive` computes from `cache/history/` when the screener's is None; a check over the
+  enriched table (a key column null for every name, or a passing screen with pool 0) marks the
+  run's IDN verdicts `unknown` and the guide holds its steps with a data notice. Test first.
+  Must land before the Monday 2026-11-16 07:00 weekly run.
+- [ ] **S86 Holding record** (P104-holdings). `out/holdings/IDN.json`: per held name thesis,
+  valuation, fit, inputs, the report period judged, cause of change, model fingerprint;
+  journalled. Read by the guide in place of the unrated / redundant tags.
+- [ ] **S87 Hysteresis** (P105-hysteresis). Rule 4 on the holding record (previous record +
+  new report → verdict); replay over past quarter ends gives the flip rate before and after.
+  A model change.
+- [ ] **S88 Bank Piotroski floor** (P106-bank-f). Rule 5 in `screens._passes_bank`; rerun the
+  dividend replay to show it still beats its placebo before it may change a stance. A model
+  change.
+- [ ] **S89 Watchlist** (P107-watchlist). The custom Stockbit screeners' names join the IDN
+  pool as `source: watchlist`; no verdict from membership.
+- [ ] **S90 Change-only alerts** (P108-change-alerts). The daily 07:00 check sends, send-once,
+  only held names whose verdict changed, with the cause; folds into the Telegram plan.
+- [ ] **S91 Flip counter and docs** (F16-phase-p). Paper-track flips per name; CLAUDE.md line
+  "investment-assist is the only source of verdicts"; STATUS, README; fan-in run.
+
+Parallel groups: S85 → S86 → {S87, S88, S89} → S90 → S91.
+
 ## Open questions
 
 - ~~**Phase O defaults**~~ (size lines Rp 50T and Rp 5T; the 58-group industry level):
