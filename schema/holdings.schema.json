@@ -147,6 +147,7 @@
         "fit": {"$ref": "#/$defs/fit"},
         "inputs": {"$ref": "#/$defs/inputs"},
         "context": {"type": "object", "description": "Phase Q: FrameworkResult blocks, context only, never a verdict."},
+        "watchlists": {"type": "array", "items": {"type": "string"}, "description": "S89 (1.1.0): the user's Stockbit screeners (idx-method screener_member, newest date) this held name is on. Context only: never compared for a change, never a verdict. Absent before 1.1.0."},
         "previous": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/verdict"}]}
       }
     }

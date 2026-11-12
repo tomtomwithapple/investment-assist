@@ -187,11 +187,61 @@
       "type": "array", "items": {"type": "string", "minLength": 1},
       "description": "P103 (1.4.0): inputs found broken this run (a key screener column null for every name, or a passing screen with an empty pool). Any entry holds the guide's steps. Absent before 1.4.0."
     },
+    "watchlist": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["as_of", "stale", "category", "missing", "screeners", "members", "in_pool", "rows"],
+      "description": "S89 (1.6.0): the user's Stockbit screeners read as a watchlist only (phase P rule 1). A name on one that no passing screen ranked is judged by the holding record's code (thesis, valuation, fit) as a `source: watchlist` row; membership never changes a size, a rank, a trim or a verdict. IDN only; absent when no watchlist was read and before 1.6.0.",
+      "properties": {
+        "as_of": {"$ref": "#/$defs/date", "description": "The screener_member date read (newest on or before the run)."},
+        "stale": {"type": ["string", "null"], "description": "Why the member date is too old; a stale input, never a failure."},
+        "category": {"type": ["string", "null"], "description": "The Stockbit category read when no screener is configured."},
+        "missing": {"type": "array", "items": {"type": "string"}, "description": "Configured screeners not found on that date."},
+        "screeners": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "category", "totalrows", "fetched", "members"],
+            "properties": {
+              "id": {"type": "integer"},
+              "name": {"type": "string"},
+              "category": {"type": ["string", "null"]},
+              "totalrows": {"type": ["integer", "null"]},
+              "fetched": {"type": ["integer", "null"]},
+              "members": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        },
+        "members": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}, "description": "symbol → the screeners it is on."},
+        "in_pool": {"type": "array", "items": {"type": "string"}, "description": "Watchlist names a passing screen ranked: judged in their style, no watchlist row."},
+        "rows": {"type": "array", "items": {"$ref": "#/$defs/watchlist_row"}}
+      }
+    },
     "sources": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
     "disclaimer": {"type": "string", "pattern": "[Nn]ot investment advice"}
   },
   "$defs": {
     "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "watchlist_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbol", "source", "screeners", "sector", "held", "held_idr", "action", "size", "thesis", "valuation", "fit", "inputs"],
+      "properties": {
+        "symbol": {"type": "string", "minLength": 1},
+        "source": {"const": "watchlist"},
+        "screeners": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "sector": {"type": ["string", "null"]},
+        "held": {"type": "boolean"},
+        "held_idr": {"type": "number", "minimum": 0},
+        "action": {"const": "watch", "description": "Membership is never an add, a trim or a sell."},
+        "size": {"type": "null"},
+        "thesis": {"type": "object", "required": ["status", "gate", "severity"], "properties": {"status": {"enum": ["pass", "fail", "unknown"]}}},
+        "valuation": {"type": "object", "required": ["price", "fair_price", "above_fair"]},
+        "fit": {"type": "object", "required": ["group", "redundant", "keeper", "ok"]},
+        "inputs": {"type": "object"}
+      }
+    },
     "texts": {"type": "array", "items": {"type": "string", "minLength": 1}},
     "average_down_verdict": {
       "type": "object",

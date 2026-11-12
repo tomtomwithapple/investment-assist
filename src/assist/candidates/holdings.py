@@ -28,6 +28,10 @@ when no answer changed.
 record it replaced as its previous, so reruns are byte-identical. Hysteresis (S87) and the bank
 Piotroski floor (S88) are not here: this is today's raw verdict beside the previous one.
 `context` is left empty for phase Q's frameworks (context only, never a second verdict).
+`watchlists` (S89, 1.1.0) names the user's Stockbit screeners a held name is on, from the
+candidates payload's `watchlist` block: context only, never compared for a change or a verdict.
+`answers` is the one place a name is judged: `build` calls it for held names and
+`undervalued.assemble` for watchlist names, so membership cannot change an answer.
 
 `judge_inputs` reads the screens' loaded data (live, from `undervalued.gather_live`); `build`
 is pure. Hashed by `journal.RULE_GLOBS`.
@@ -49,12 +53,12 @@ from assist.candidates.hurdle import CONFIG as HURDLE_CONFIG
 from assist.candidates.screens import passes_gates, passes_quality
 from assist.layers.types import DISCLAIMER, SCHEMA_DIR
 
-__all__ = ["CAUSES", "HARD", "SCHEMA", "SCHEMA_VERSION", "build", "config", "fit",
+__all__ = ["CAUSES", "HARD", "SCHEMA", "SCHEMA_VERSION", "answers", "build", "config", "fit",
            "judge_all", "judge_inputs", "load", "thesis", "validator", "valuation", "write"]
 
 VERSION = "0.1.0"
 SCHEMA = SCHEMA_DIR / "holdings.schema.json"
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"  # 1.1 watchlists per record (S89)
 OUT_DIR = "holdings"
 HARD = ("cut", "negative CFO", "negative equity")  # phase P rule 4: these act at once
 CAUSES = ("first", "rule_version", "data_fix", "new_filing", "price_cross", "holdings_change")
@@ -247,6 +251,23 @@ def _shift(candidates: Mapping, sector: str | None) -> float:
     return max(-cap, min(cap, x))
 
 
+def answers(candidates: Mapping, j: Mapping | None, sym: str, fit_name: Mapping | None = None,
+            over_cap: bool = False) -> dict:
+    """Thesis, valuation, fit and the inputs judged for one name, from the candidates payload
+    (hurdle, tilt, average-down prices) and its `judge_inputs`. Pure."""
+    hurdle_pt = (candidates.get("hurdle") or {}).get("required_pt")
+    required = None if hurdle_pt is None else hurdle_pt + _shift(candidates,
+                                                                  (j or {}).get("sector"))
+    prices = {n["symbol"]: n.get("price")
+              for n in (candidates.get("average_down") or {}).get("names") or []}
+    price = prices.get(sym) or ((j or {}).get("dividend_value") or {}).get("price")
+    return {"thesis": thesis(j), "valuation": valuation(j, price, required),
+            "fit": fit(fit_name, over_cap),
+            "inputs": {"report_period": (j or {}).get("report_period"),
+                       "bar_date": (j or {}).get("bar_date"),
+                       "last_dividend_ex": (j or {}).get("last_dividend_ex")}}
+
+
 def _unknown(sym: str, held_idr: float, fp: str, previous: Mapping | None) -> dict:
     return {"symbol": sym, "held_idr": held_idr, "judged_on": None, "model_fingerprint": fp,
             "stale": True, "cause": None, "changed": [], "thesis": thesis(None) | {
@@ -264,8 +285,7 @@ def build(candidates: Mapping, judged: Mapping[str, Mapping], *, day: date, fing
     base, prev_run = _baseline(previous, day)
     problems = list(dict.fromkeys(candidates.get("data_problems") or []))
     stale = bool(problems)
-    prices = {n["symbol"]: n.get("price")
-              for n in (candidates.get("average_down") or {}).get("names") or []}
+    lists = (candidates.get("watchlist") or {}).get("members") or {}
     names = {n["symbol"]: n for n in (candidates.get("diversification") or {}).get("names") or []}
     capped = {t["symbol"] for t in (candidates.get("sizing") or {}).get("trims") or []
               if not str(t.get("reason", "")).startswith("trim in full")}
@@ -278,22 +298,14 @@ def build(candidates: Mapping, judged: Mapping[str, Mapping], *, day: date, fing
             r = (_unknown(sym, held[sym], fingerprint, prev) if prev is None else
                  {"symbol": sym, "held_idr": held[sym], **prev, "stale": True, "cause": None,
                   "changed": [], "context": {}, "previous": prev})
-            out.append(r)
+            out.append(r | {"watchlists": list(lists.get(sym) or [])})
             continue
-        j = judged.get(sym)
-        required = None if hurdle_pt is None else hurdle_pt + _shift(candidates,
-                                                                      (j or {}).get("sector"))
-        price = prices.get(sym) or ((j or {}).get("dividend_value") or {}).get("price")
         r = {"symbol": sym, "held_idr": held[sym], "judged_on": day.isoformat(),
              "model_fingerprint": fingerprint, "stale": False,
-             "thesis": thesis(j), "valuation": valuation(j, price, required),
-             "fit": fit(names.get(sym), sym in capped),
-             "inputs": {"report_period": (j or {}).get("report_period"),
-                        "bar_date": (j or {}).get("bar_date"),
-                        "last_dividend_ex": (j or {}).get("last_dividend_ex")},
+             **answers(candidates, judged.get(sym), sym, names.get(sym), sym in capped),
              "context": {}, "previous": prev}
         r["cause"], r["changed"] = _cause(prev, r, held_moved)
-        out.append(r)
+        out.append(r | {"watchlists": list(lists.get(sym) or [])})
     return {
         "schema_version": SCHEMA_VERSION,
         "market": candidates["market"],

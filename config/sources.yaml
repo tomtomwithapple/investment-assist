@@ -185,6 +185,13 @@ sources:
         sqlite: store/data/stockbiter.db
         sql: select max(date) from bars
         max_age_days: 7
+      - name: screener_member watchlist
+        # S89: the user's Stockbit screeners (config/watchlist.yaml), nightly since 2026-11-12;
+        # a watchlist only, and a stale one is a stale input, never a failure
+        sqlite: store/data/stockbiter.db
+        sql: select max(date) from screener_member
+        max_age_days: 3
+        optional: true
 
   openkrx:
     repo: openkrx

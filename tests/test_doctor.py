@@ -648,3 +648,33 @@ def test_socket_guard_allows_localhost():
     finally:
         client.close()
         server.close()
+
+
+def _watchlist_probe():
+    cfg = doctor.load_sources(REPO / "config" / "sources.yaml", root=Path("/r"), env={})
+    src = next(s for s in cfg if s.name == "idx-method")
+    return next(p for p in src.probes if p.name == "screener_member watchlist")
+
+
+def _member_db(path: Path, day: str) -> None:
+    if path.exists():
+        path.unlink()
+    make_sqlite(path, "create table screener_member (date text, screener_id int, rank int, "
+                      f"symbol text); insert into screener_member values ('{day}', 1, 1, 'A');")
+
+
+def test_watchlist_probe_reports_fresh_stale_or_absent(tmp_path):
+    """S89: the Stockbit watchlist (screener_member) is reported; optional, so a store without
+    the table reads absent, and an old date is stale, never an error."""
+    probe = _watchlist_probe()
+    assert probe.optional and probe.sqlite == "store/data/stockbiter.db"
+    spec = {"access": "files", "path": "idx-method", "env": "X",
+            "probes": [{k: v for k, v in vars(probe).items() if v is not None}]}
+    db = tmp_path / "idx-method/store/data/stockbiter.db"
+    make_sqlite(db, "create table bars (date text);")
+    assert one(tmp_path, "idx-method", spec).probes[0].status == "absent"
+    _member_db(db, "2026-10-01")
+    st = one(tmp_path, "idx-method", spec)
+    assert st.probes[0].status == "stale" and st.status == "stale"
+    _member_db(db, TODAY.isoformat())
+    assert one(tmp_path, "idx-method", spec).probes[0].status == "fresh"

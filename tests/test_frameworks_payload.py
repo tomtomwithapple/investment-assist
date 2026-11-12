@@ -63,9 +63,9 @@ def strip(p):
     return q
 
 
-def test_schema_version_is_1_5_0():
-    assert uv.SCHEMA_VERSION == "1.5.0"
-    assert payload()["schema_version"] == "1.5.0"
+def test_schema_version_is_1_6_0():
+    assert uv.SCHEMA_VERSION == "1.6.0"
+    assert payload()["schema_version"] == "1.6.0"
 
 
 def test_with_nothing_registered_no_row_has_frameworks(registry):
