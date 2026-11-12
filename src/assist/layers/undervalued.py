@@ -670,7 +670,7 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
     from assist.candidates import dividend_value, garp, holdings, tilt
     from assist.candidates.entry import entry_plan
     from assist.candidates.factors import data_check, load_factors
-    from assist.candidates.screens import GATES
+    from assist.candidates.screens import GATES, with_bank_f
     from assist.sources.base import SourceUnavailable
     from assist.sources.idxmethod_stocks import SOURCE, IdxMethodStocks
 
@@ -681,6 +681,7 @@ def gather_live(day: date, regime: Regime | str | None) -> UndervaluedInputs:
     stale += st
     bar_dates = [r["bar_date"] for r in table.values() if r.get("bar_date")]
     as_of = max(bar_dates) if bar_dates else day
+    table = with_bank_f(table, data.quarters, data.statements, as_of)  # S88 bank F floor
     flagged: set[str] = set()
     try:
         with (stocks.root / "data" / "special_boards.json").open(encoding="utf-8") as f:

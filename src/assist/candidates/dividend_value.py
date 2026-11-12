@@ -30,6 +30,12 @@ quintile mean excess returns feed `assist.eval.placebo.evaluate` as `screens.eva
 does. A failed verdict still reports the ranking, but names no candidate. Banks in the replay are
 today's (a `car` in the screener), as `screens` replays today's flagged boards.
 
+**Bank F floor in the replay** (S88, `screens.BANK_F_FLOOR_ON`): a bank whose S95
+point-in-time F (`screens.bank_f_series`, the newest report available by the quarter end) is
+below `BANK_FLOOR["min_piotroski"]` is left out; an n/a F is kept, as live. The rest of the
+quality floor (the prudential metrics, Stockbit's F and Altman Z for non-banks) is today-only in
+the screener and is not replayed.
+
 `CONFIG` is hand-set, and this module sits under `candidates/`, so the journal's model
 fingerprint (`journal.RULE_GLOBS`) changes when it does.
 """
@@ -46,11 +52,14 @@ from statistics import fmean, stdev
 
 from assist.candidates.hurdle import Hurdle, margin
 from assist.candidates.screens import (
+    BANK_FLOOR,
     GATES,
     MAX_PER_SECTOR,
     QEND,
     QUANTILES,
     TOP_N,
+    bank_f_at,
+    bank_f_series,
     passes_gates,
     passes_quality,
     select,
@@ -74,6 +83,7 @@ __all__ = [
     "own_yield_percentile",
     "quarter_ends",
     "rank_live",
+    "replay_bank_f",
     "replay_panel",
     "run",
     "run_live",
@@ -299,9 +309,11 @@ def replay_panel(
     *,
     min_mktcap: float = CONFIG["replay_min_mktcap"],
     cfg: Mapping = CONFIG,
+    bank_f: Mapping[str, Sequence[tuple[date, float | None]]] | None = None,
 ) -> list[tuple[date, list[dict]]]:
     """→ [(quarter end, [{symbol, expected_pt, fwd}])]: the names passing the safety gates and
-    size floor on that date, with the price-plus-dividend return to the next quarter end."""
+    size floor on that date, with the price-plus-dividend return to the next quarter end.
+    `bank_f` (`screens.bank_f_series`): a bank below the F floor on that date is left out."""
     firsts = [b[0].date for b in bars.values() if b]
     lasts = [b[-1].date for b in bars.values() if b]
     if not firsts:
@@ -320,6 +332,10 @@ def replay_panel(
                 continue
             if a.bar_date < q - timedelta(days=10):
                 continue  # no trading near the quarter end
+            if bank_f is not None and sym in bank_f:
+                f = bank_f_at(bank_f[sym], q)
+                if f is not None and f < BANK_FLOOR["min_piotroski"]:
+                    continue  # S88: below the bank F floor point in time
             end = _bar_at(bs, q1, dates[sym])
             if end is None or end.date <= q:
                 continue
@@ -329,6 +345,16 @@ def replay_panel(
                          "fwd": (end.price + paid) / a.price - 1})
         panel.append((q, recs))
     return panel
+
+
+def replay_bank_f(data: DividendData, banks: Iterable[str]
+                  ) -> dict[str, list[tuple[date, float | None]]] | None:
+    """The replay's bank F series (S88), or None with `screens.BANK_F_FLOOR_ON` off."""
+    from assist.candidates import screens
+
+    if not screens.BANK_F_FLOOR_ON:
+        return None
+    return bank_f_series(data.quarters, data.statements, banks)
 
 
 def observations(
@@ -371,6 +397,7 @@ class DividendData:
     quarters: dict[str, list[Fundamentals]] = field(default_factory=dict)
     dividends: dict[str, list[dict]] = field(default_factory=dict)
     shares: dict[str, dict[date, float]] = field(default_factory=dict)
+    statements: dict[str, dict[date, dict[str, float]]] = field(default_factory=dict)
     sectors: dict[str, str] = field(default_factory=dict)
     stale: list[str] = field(default_factory=list)
 
@@ -414,6 +441,8 @@ def load(series: IdxMethodSeries | None = None) -> DividendData:
     if shares is None:
         data.stale.append(f"{SOURCE} fundamentals (no table: dividends not split-adjusted)")
         shares = {}
+    else:
+        data.statements = series.statements()  # S95's F for the bank floor (S88)
     data.shares = shares
     data.dividends = {s: adjust_dividends(recs, data.bars.get(s, []), shares.get(s, {}))
                       for s, recs in raw.items()}
@@ -491,7 +520,8 @@ def run(
         stale.append("IDN hurdle unavailable: ranked by expected return, no candidate")
     banks = {s for s, r in table.items() if r.get("car")}
     if panel is None:
-        panel = replay_panel(data.bars, data.quarters, data.dividends, banks, cfg=cfg)
+        panel = replay_panel(data.bars, data.quarters, data.dividends, banks, cfg=cfg,
+                             bank_f=replay_bank_f(data, banks))
     min_pool = kw.pop("min_pool", cfg["min_pool"])
     verdict = evaluate_replay(panel, min_pool=min_pool, **kw)
     _, _, spreads = observations(panel, min_pool)
@@ -527,6 +557,7 @@ def run_live(as_of: date | None = None, regime=None, **kw) -> dict:
     and the P34 IDN hurdle on the screener's last bar date under `regime` (default: P8's)."""
     from assist.candidates.factors import load_factors
     from assist.candidates.hurdle import hurdle as idn_hurdle
+    from assist.candidates.screens import with_bank_f
 
     stocks = IdxMethodStocks.from_config()
     data = load()
@@ -534,6 +565,7 @@ def run_live(as_of: date | None = None, regime=None, **kw) -> dict:
     data.stale += stale
     bar_dates = [r["bar_date"] for r in table.values() if r.get("bar_date")]
     as_of = max(bar_dates) if bar_dates else (as_of or date.today())
+    table = with_bank_f(table, data.quarters, data.statements, as_of)
     flagged: set[str] = set()
     try:
         with (stocks.root / "data" / "special_boards.json").open(encoding="utf-8") as f:

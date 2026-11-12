@@ -348,3 +348,69 @@ def test_run_screens_on_a_missing_repo_never_crashes(tmp_path):
     out = S.run_screens(IdxMethodStocks(tmp_path / "nope"), **FAST)
     assert out["stale_inputs"] == ["idx-method (missing)"]
     assert all(r["candidates"] == [] for r in out["screens"].values())
+
+
+# ---------------- S88: the bank Piotroski floor ----------------
+
+SOUND_BANK = {"car": 20.0, "npl_gross": 2.0, "npl_cov": 150.0, "ldr": 90.0, "roe": 15.0,
+              "piotroski": 3, "altman_z": 0.7}
+
+
+def test_bank_below_the_point_in_time_f_floor_fails():
+    bank = good_row(**SOUND_BANK, f_pit=3.0)
+    assert S.passes_quality(bank) == (False, "bank F-score")
+    assert S.bank_f_status(bank) == "fail"
+
+
+def test_bank_at_the_f_floor_passes_whatever_stockbit_says():
+    bank = good_row(**SOUND_BANK, f_pit=4.0)  # Stockbit's today-only piotroski 3 is not read
+    assert S.passes_quality(bank) == (True, None) and S.bank_f_status(bank) == "pass"
+
+
+def test_bank_with_no_f_is_flagged_not_failed():
+    for bank in (good_row(**SOUND_BANK, f_pit=None), good_row(**SOUND_BANK)):
+        assert S.passes_quality(bank) == (True, None)
+        assert S.bank_f_status(bank) == "n/a"
+
+
+def test_the_prudential_floor_still_comes_first():
+    bank = good_row(**(SOUND_BANK | {"car": 10.0}), f_pit=2.0)
+    assert S.passes_quality(bank) == (False, "CAR")
+
+
+def test_a_non_bank_is_unaffected_by_the_bank_f():
+    assert S.passes_quality(good_row(f_pit=1.0)) == (True, None)
+    assert S.bank_f_status(good_row(f_pit=1.0)) is None
+
+
+def test_the_bank_f_floor_can_be_switched_off(monkeypatch):
+    monkeypatch.setattr(S, "BANK_F_FLOOR_ON", False)
+    bank = good_row(**SOUND_BANK, f_pit=3.0)
+    assert S.passes_quality(bank) == (True, None) and S.bank_f_status(bank) is None
+
+
+def test_bank_f_at_reads_the_newest_report_available():
+    series = [(date(2025, 4, 30), 5.0), (date(2025, 7, 29), 3.0), (date(2025, 10, 28), None)]
+    assert S.bank_f_at(series, date(2025, 3, 31)) is None
+    assert S.bank_f_at(series, date(2025, 6, 30)) == 5.0
+    assert S.bank_f_at(series, date(2025, 7, 29)) == 3.0
+    assert S.bank_f_at(series, date(2025, 12, 31)) is None  # n/a once the newest is n/a
+
+
+def test_with_bank_f_puts_s95s_f_on_bank_rows_only():
+    from assist.sources.idxmethod_series import Fundamentals
+
+    def q(p, ta, ni, cfo):
+        return Fundamentals(p, p + timedelta(days=120), cfo, 500.0, 0.0, ni, ni, None, None,
+                            ta, 100.0)
+
+    qes = [date(2023, 6, 30), date(2023, 9, 30), date(2023, 12, 31), date(2024, 3, 31),
+           date(2024, 6, 30), date(2024, 9, 30), date(2024, 12, 31), date(2025, 3, 31),
+           date(2025, 6, 30)]
+    quarters = [q(p, 1000.0, 50.0, 60.0) for p in qes]
+    table = {"BANK": good_row(**SOUND_BANK), "AAA": good_row()}
+    out = S.with_bank_f(table, {"BANK": quarters, "AAA": quarters}, {}, date(2025, 11, 1))
+    assert S.BANK_F_KEY not in out["AAA"]
+    assert S.BANK_F_KEY in out["BANK"]  # no statements: s7, s9 n/a, 5 of 7 → None (n/a)
+    assert out["BANK"][S.BANK_F_KEY] is None and S.bank_f_status(out["BANK"]) == "n/a"
+    assert S.BANK_F_KEY not in table["BANK"]  # the input is not changed

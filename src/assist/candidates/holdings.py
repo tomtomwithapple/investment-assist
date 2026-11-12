@@ -25,8 +25,9 @@ when no answer changed.
 
 **Bad data holds** (rule 3): a run with `data_problems` keeps every previous verdict,
 `stale: true`; a name with no previous record reads `unknown`. A same-day rerun keeps the
-record it replaced as its previous, so reruns are byte-identical. Hysteresis (S87) and the bank
-Piotroski floor (S88) are not here: this is today's raw verdict beside the previous one.
+record it replaced as its previous, so reruns are byte-identical. Hysteresis (S87) is not here:
+this is today's raw verdict beside the previous one. The bank Piotroski floor (S88) comes in
+through `passes_quality` (gate "bank F-score", soft); a bank's n/a F is a `note`, not a fail.
 `context` is left empty for phase Q's frameworks (context only, never a second verdict).
 `watchlists` (S89, 1.1.0) names the user's Stockbit screeners a held name is on, from the
 candidates payload's `watchlist` block: context only, never compared for a change or a verdict.
@@ -50,7 +51,7 @@ import jsonschema
 
 from assist.candidates import dividend_value, exits, garp
 from assist.candidates.hurdle import CONFIG as HURDLE_CONFIG
-from assist.candidates.screens import passes_gates, passes_quality
+from assist.candidates.screens import bank_f_status, passes_gates, passes_quality
 from assist.layers.types import DISCLAIMER, SCHEMA_DIR
 
 __all__ = ["CAUSES", "HARD", "SCHEMA", "SCHEMA_VERSION", "answers", "build", "config", "fit",
@@ -109,7 +110,9 @@ def judge_inputs(sym: str, row: Mapping, data: dividend_value.DividendData, as_o
     deep = getattr(levels, "entry_deep", None) if levels is not None else None
     return {
         "symbol": sym, "bank": bank, "sector": data.sectors.get(sym),
-        "quality": {"ok": q_ok, "gate": q_why},
+        "quality": {"ok": q_ok, "gate": q_why,
+                    "note": ("bank F-score n/a (too few signals computable): not counted"
+                             if bank_f_status(row) == "n/a" else None)},
         "buy_gate": None if g_ok else g_why,
         "dividend_value": None if dv is None else {
             "ok": dv.ok, "failed": list(dv.failed), "legs": dv.legs(), "price": dv.price},
@@ -162,7 +165,7 @@ def thesis(j: Mapping | None) -> dict:
     return {"status": "fail" if failed else "pass", "gate": failed[0] if failed else None,
             "severity": ("hard" if hard else "soft") if failed else None, "failed": items,
             "basis": None if failed else ("dividend_value" if dv["ok"] else "garp"),
-            "buy_gate": j.get("buy_gate"), "bank": j.get("bank"), "note": None}
+            "buy_gate": j.get("buy_gate"), "bank": j.get("bank"), "note": q.get("note")}
 
 
 def valuation(j: Mapping | None, price: float | None, required_pt: float | None) -> dict:
