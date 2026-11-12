@@ -26,11 +26,14 @@ def name(sym, price, qty, **kw):
             "entry_status": None, **kw}
 
 
-def cands(market="IDN", trims=(), rows=(), names=(), value=100e6, passed=True):
-    return {"market": market,
-            "styles": [{"style": "dividend_value", "passed": passed, "rows": list(rows)}],
-            "sizing": {"portfolio_value_idr": value, "trims": list(trims)},
-            "average_down": {"names": list(names)}}
+def cands(market="IDN", trims=(), rows=(), names=(), value=100e6, passed=True, problems=None):
+    c = {"market": market,
+         "styles": [{"style": "dividend_value", "passed": passed, "rows": list(rows)}],
+         "sizing": {"portfolio_value_idr": value, "trims": list(trims)},
+         "average_down": {"names": list(names)}}
+    if problems is not None:
+        c["data_problems"] = list(problems)
+    return c
 
 
 def row(sym="BMRI", action="add", **kw):
@@ -260,3 +263,25 @@ def test_an_allowed_redundant_name_is_not_singled_out():
                                       _dv("JPFA", 2, "TAPG", True, allowed=True, size=2)]}
     g = valid(build(DAY, [stance("IDN", "stocks", 51.0, 48.0)], [c], None))
     assert all(s["tags"] == ["rebalance"] for s in g["steps"])
+
+
+# ---------------- P103 data gate ----------------
+
+
+def test_a_data_problem_holds_every_step_and_says_why():
+    st = [stance("IDN", "stocks", 96.9, 45.7), stance("IDN", "bonds", 1.8, 30.5),
+          stance("USA", "stocks", 0.0, 23.8)]
+    bad = "idx-method factors: price is null for 959 of 959 names"
+    g = valid(build(DAY, st, [cands(trims=[{"symbol": "BBNI", "idr": 3e6, "reason": "x"}],
+                                    problems=[bad]), cands("USA", passed=False)], None))
+    assert g["steps"] == [] and g["totals"]["sells"] == 0 and g["totals"]["buys"] == 0
+    assert g["held_for_data"] == [f"IDN: {bad}"]
+    assert any("held" in n and bad in n for n in g["notes"])
+    text = "\n".join(guide.lines(g))
+    assert "Steps held this week" in text and bad in text
+    assert "Nothing to do this week" not in text
+
+
+def test_no_data_problem_keeps_the_steps():
+    g = valid(build(DAY, [stance("IDN", "stocks", 55.0, 48.0)], [cands(problems=[])], None))
+    assert g["steps"] and g.get("held_for_data", []) == []

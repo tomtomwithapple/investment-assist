@@ -25,9 +25,12 @@ from datetime import date
 from assist.sources.base import SourceUnavailable
 from assist.sources.idxmethod_stocks import IdxMethodStocks
 
-__all__ = ["CORP_ACTION_JUMP", "DERIVED", "align", "derive", "enrich", "load_factors"]
+__all__ = ["CORP_ACTION_JUMP", "DERIVED", "KEY_COLUMNS", "align", "data_check", "derive", "enrich",
+           "load_factors"]
 
 DERIVED = ("vol_1y", "amihud", "med_value_60d", "days_traded_60", "mom_12_1", "near_52w_high")
+# P103: screener columns every screen reads; one null for every name is a broken source, not a gap
+KEY_COLUMNS = ("price", "mktcap", "div_yield", "pe")
 CORP_ACTION_JUMP = 0.40  # |1-day return| above this is a split/bonus, not a price move
 YEAR, MONTH, WINDOW = 252, 21, 60
 MIN_TRADED, MIN_RETURNS = 30, 200
@@ -136,12 +139,26 @@ def derive(
 
 def enrich(factors: dict[str, dict], derived: dict[str, dict]) -> dict[str, dict]:
     """A copy of the screener cross-section with the DERIVED columns replaced. A name with no
-    derived row gets None, never the stale value idx-method's last enrich left behind."""
+    derived row gets None, never the stale value idx-method's last enrich left behind. A
+    screener price that is None takes the history's last close (P103: Stockbit's screener
+    returned no Price for any name from 2026-11-10); a screener price is never overwritten."""
     out = {}
     for sym, row in factors.items():
         d = derived.get(sym, {})
         out[sym] = {**row, **{k: d.get(k) for k in DERIVED}, "bar_date": d.get("date")}
+        if row.get("price") is None and d.get("price") is not None:
+            out[sym]["price"] = d["price"]
     return out
+
+
+def data_check(table: dict[str, dict]) -> list[str]:
+    """P103: the enriched table's broken inputs, as stale-style lines. A KEY_COLUMNS column with
+    no value for any name means the source broke, so verdicts read from it are unknown."""
+    if not table:
+        return ["idx-method factors: empty table"]
+    n = len(table)
+    return [f"idx-method factors: {c} is null for {n} of {n} names" for c in KEY_COLUMNS
+            if all(r.get(c) is None for r in table.values())]
 
 
 def load_factors(

@@ -183,6 +183,10 @@
     },
     "config": {"type": "object", "description": "What the model fingerprint does not show by name: the tilt yaml hash, hurdle constants, sizing caps and each screen's CONFIG."},
     "stale_inputs": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "data_problems": {
+      "type": "array", "items": {"type": "string", "minLength": 1},
+      "description": "P103 (1.4.0): inputs found broken this run (a key screener column null for every name, or a passing screen with an empty pool). Any entry holds the guide's steps. Absent before 1.4.0."
+    },
     "sources": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
     "disclaimer": {"type": "string", "pattern": "[Nn]ot investment advice"}
   },

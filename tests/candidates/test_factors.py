@@ -15,7 +15,15 @@ from datetime import date
 import pytest
 from helpers import FIXTURES
 
-from assist.candidates.factors import DERIVED, align, derive, enrich, load_factors
+from assist.candidates.factors import (
+    DERIVED,
+    KEY_COLUMNS,
+    align,
+    data_check,
+    derive,
+    enrich,
+    load_factors,
+)
 from assist.sources.base import SourceUnavailable
 from assist.sources.idxmethod_stocks import SOURCE, IdxMethodStocks
 
@@ -177,6 +185,26 @@ def test_enrich_overwrites_and_blanks_stale_columns(stocks, history):
     assert out["AAA"]["pe"] == fac["AADI"]["pe"]  # screener columns pass through
     assert all(out["BBCA"][k] is None for k in DERIVED)  # no history → no stale carry-over
     assert fac["BBCA"]["mom_12_1"] is not None  # input left untouched
+
+
+def test_enrich_takes_the_price_from_history_when_the_screener_has_none(stocks, history):
+    # Stockbit's screener returned no Price for any name from 2026-11-10 (P103).
+    fac = {s: {**r, "price": None} for s, r in stocks.factors().items()}
+    d = derive(history)
+    out = enrich(fac, d)
+    assert out["AAA"]["price"] == d["AAA"]["price"]
+    assert out["BBCA"]["price"] is None  # no history, nothing to take it from
+    kept = enrich({"AAA": {**fac["AAA"], "price": 123.0}}, d)
+    assert kept["AAA"]["price"] == 123.0  # a screener price is never overwritten
+
+
+def test_data_check_names_a_key_column_null_for_every_name():
+    table = {s: {"price": None, "mktcap": 1e12, "div_yield": 3.0, "pe": 9.0} for s in "ABCD"}
+    assert data_check(table) == ["idx-method factors: price is null for 4 of 4 names"]
+    table["A"]["price"] = 100.0
+    assert data_check(table) == []  # one real value: a gap, not a broken column
+    assert data_check({}) == ["idx-method factors: empty table"]
+    assert set(KEY_COLUMNS) >= {"price", "mktcap", "div_yield", "pe"}
 
 
 def test_load_factors(stocks):

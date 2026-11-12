@@ -50,6 +50,10 @@
     },
     "config": {"type": "object"},
     "notes": {"type": "array", "items": {"type": "string"}},
+    "held_for_data": {
+      "type": "array", "items": {"type": "string", "minLength": 1},
+      "description": "P103 (1.1.0): '<MARKET>: <problem>' per broken input; non-empty means steps is empty on purpose. Absent before 1.1.0."
+    },
     "disclaimer": {"type": "string"}
   },
   "$defs": {

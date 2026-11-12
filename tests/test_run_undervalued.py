@@ -415,7 +415,7 @@ def test_average_down_unfunded_when_the_market_has_no_budget():
     p, rows, names = _ad({"BMRI": 20e6, "JPFA": 5e6, "GGRM": 5e6},
                          {"BMRI": (1200.0, 20_000.0), "JPFA": (1002.0, 5_000.0),
                           "GGRM": (80_000.0, 100.0)})
-    assert p["schema_version"] == "1.3.1"
+    assert p["schema_version"] == "1.4.0"
     assert (p["average_down"]["underwater_pct"], p["average_down"]["gate3"]) == (5.0, "context")
     assert p["config"]["average_down"]["underwater_pct"] == 5.0
     # BMRI: 16.7% below cost, kept, room, no budget: shown, sized 0, still "hold"
@@ -539,3 +539,14 @@ def test_without_profiles_nothing_is_redundant():
                     st=stance("overweight", current=10.0, target=15.0)))
     assert not any(v["redundant"] for v in p["diversification"]["names"])
     assert all(r["action"] == "add" for r in p["styles"][0]["rows"])
+
+
+def test_pool_problems_flags_a_passing_screen_with_no_name_judged():
+    # P103: on 2026-11-10 the dividend screen beat its placebo but every name failed the price
+    # floor, so its pool was empty and every held name read as unrated.
+    from assist.layers.undervalued import pool_problems
+
+    screens = {"dividend_value": {"passed": True, "pool": 0},
+               "garp": {"passed": False, "pool": 0},
+               "value": {"passed": True, "pool": 31}}
+    assert pool_problems(screens) == ["dividend_value: passed its replay but its pool is empty"]
