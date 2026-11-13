@@ -35,8 +35,12 @@ forward return, top-minus-bottom quintile into the placebo (`dividend_value.eval
 `garp.evaluate_replay`, unchanged). The universe is today's listed names (sec-edgar joins
 delisted symbols to no CIK), so the replay is survivorship-biased upwards; a verdict that passes
 is still read with that in mind. Candidates need a passed verdict, both hurdles and a positive
-margin (GARP also a gap of at least `min_gap_pt`). **No peers by SIC**: sec-edgar's
-`edgar_company` has no SIC code, so every name is its own sector bucket.
+margin (GARP also a gap of at least `min_gap_pt`). **Peers by SIC** (sec-edgar S45): a name's
+`sector` is its SIC major group (`sic_sector`, two digits, e.g. `SIC 35`) and its `industry` its
+four-digit SIC (`SIC 3674`), so `select`'s `MAX_PER_SECTOR` and the layer's one name per industry
+and size (`diversify`) bind. SIC divisions are too coarse to be the sector (E holds shipping,
+telecoms and utilities; H banks, insurers and REITs). A name SEC lists no SIC for stays its own
+sector bucket; the count is a stale input (`no_sic_note`).
 
 `CONFIG` is hand-set and this module sits under `candidates/`, so the journal's model fingerprint
 changes when it does.
@@ -90,7 +94,27 @@ CONFIG = {
     "garp": {**garp.CONFIG, "gdp_pt": 4.5, "replay_hurdle_pt": 10.0, "replay_min_mktcap": 2e9},
 }
 STYLES = ("dividend_value", "garp")
-NO_SIC = f"{SOURCE} edgar_company has no SIC: no peer groups, every name its own sector"
+NO_SIC = f"{SOURCE} has no SIC for any name: no peer groups, every name its own sector"
+
+
+def sic_sector(sic: int | None) -> str | None:
+    """SIC major group (the first two of four digits) → `"SIC 35"`; None without a code."""
+    return None if sic is None else f"SIC {sic // 100:02d}"
+
+
+def sic_industry(sic: int | None) -> str | None:
+    return None if sic is None else f"SIC {sic:04d}"
+
+
+def no_sic_note(listings: Mapping[str, Listing], symbols: Iterable[str]) -> str | None:
+    """The stale line for `symbols` without a SIC: NO_SIC when none has one, else a count."""
+    syms = sorted(set(symbols))
+    missing = [s for s in syms if (lst := listings.get(s)) is None or lst.sic is None]
+    if not syms or not missing:
+        return None
+    if len(missing) == len(syms):
+        return NO_SIC
+    return f"{SOURCE}: {len(missing)} of {len(syms)} ranked names have no SIC (own sector each)"
 _ANNUAL = (350, 380)  # days in a fiscal year (52/53 weeks)
 _MIN_PERIOD = 80
 
@@ -461,9 +485,11 @@ def rank_live(style: str, data: UsData, as_of: date, usa: Hurdle | None, idn: Hu
             rejects[why] += 1
             continue
         lst = data.listings.get(sym)
+        sic = lst.sic if lst else None
         row = {
             "symbol": sym, "cik": lst.cik if lst else None, "title": lst.title if lst else None,
-            "sector": None, "bank": sym in data.banks, "style": style,
+            "sic": sic, "sector": sic_sector(sic), "industry": sic_industry(sic),
+            "bank": sym in data.banks, "style": style,
             "expected_usd_pt": a.expected_pt, **idr_margins(a.expected_pt, usa, idn),
             "legs": a.legs(), "price": a.price, "mktcap": a.mktcap,
             "med_value": median_value(data.values.get(sym) or [], as_of, cfg["med_sessions"]),
@@ -496,19 +522,22 @@ def run(style: str, data: UsData, *, as_of: date, usa: Hurdle | None, idn: Hurdl
     bar_pt, binding = usd_bar(usa, idn)
     if bar_pt is None or idn is None or idn.required is None:
         stale.append("USA or IDN hurdle unavailable: no candidate")
-    stale.append(NO_SIC)
     if panel is None:
         panel = replay_panel(style, data, hurdle_pt=bar_pt, cfg=cfg)
     min_pool = kw.pop("min_pool", scfg["min_pool"])
     verdict = engine.evaluate_replay(panel, min_pool=min_pool, **kw)
     _, _, spreads = engine.observations(panel, min_pool)
     rows, rejects = rank_live(style, data, as_of, usa, idn, cfg)
+    note = no_sic_note(data.listings, (r["symbol"] for r in rows))
+    if note:
+        stale.append(note)
     candidates: list = []
     if verdict.passed:
         ok = [r for r in rows if r["margin_pt"] is not None and r["margin_pt"] > 0
               and (style != "garp" or r["gap_pt"] >= scfg["min_gap_pt"])]
         key = "gap_pt" if style == "garp" else "margin_pt"
-        candidates = list(select([(r[key], {}, r) for r in ok], TOP_N, {}, MAX_PER_SECTOR))
+        sectors = {r["symbol"]: r["sector"] for r in ok if r["sector"]}
+        candidates = list(select([(r[key], {}, r) for r in ok], TOP_N, sectors, MAX_PER_SECTOR))
     return {
         "screen": f"us_{style}",
         "as_of": as_of,

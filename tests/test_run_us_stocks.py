@@ -1,7 +1,8 @@
 """F6 (PLAN S21 fan-in): the US undervalued list from P39's engines, assembled as F5 does for
 IDN: out/candidates/USA.json, a USA block in the brief and Telegram, sizes in IDR from the USA
-stocks stance, and the journal. No S16 tilt for the US (default caps, every name its own sector
-bucket: sec-edgar has no SIC). In-memory P39 results and the F1 fixtures only: nothing here reads
+stocks stance, and the journal. No S16 tilt for the US (default caps); peers by SIC since
+sec-edgar S45 (sector = SIC major group, industry = SIC code, sizes on US$ lines). In-memory
+P39 results and the F1 fixtures only: nothing here reads
 a real store or reaches the network."""
 
 from __future__ import annotations
@@ -102,6 +103,31 @@ def valid(payload):
 
 def by_style(payload):
     return {s["style"]: s for s in payload["styles"]}
+
+
+# ---------------- peers by SIC (sec-edgar S45) ----------------
+
+
+def test_us_names_of_one_sic_industry_and_size_get_one_keeper():
+    div = [us_row("KO", "dividend_value", 17.0, 16.1, 7.18, 2.49, price=70.0,
+                  sector="SIC 20", industry="SIC 2086", mktcap=3e11),
+           us_row("PEP", "dividend_value", 16.5, 15.6, 6.68, 1.99, price=140.0,
+                  sector="SIC 20", industry="SIC 2086", mktcap=2e11),
+           us_row("KDP", "dividend_value", 16.0, 15.1, 6.18, 1.49, price=30.0,
+                  sector="SIC 20", industry="SIC 2086", mktcap=4e9),
+           us_row("JNJ", "dividend_value", 15.5, 14.6, 5.68, 0.99, price=150.0,
+                  sector="SIC 28", industry="SIC 2834", mktcap=4e11)]
+    inp = inputs(results(div=div, garp=[], garp_passed=False))
+    assert inp.profiles["KO"] == {"sector": "SIC 20", "industry": "SIC 2086", "mktcap": 3e11,
+                                  "div_yield": None}
+    out = valid(build(inp))
+    names = {v["symbol"]: v for v in out["diversification"]["names"]}
+    assert (names["KO"]["size"], names["KDP"]["size"]) == ("large", "mid")  # US$ lines
+    assert names["PEP"]["redundant"] and names["PEP"]["keeper"] == "KO"
+    assert not names["KDP"]["redundant"] and not names["JNJ"]["redundant"]
+    assert out["diversification"]["size_lines"] == {"large": 10e9, "mid": 2e9}
+    rows = {r["symbol"]: r for r in by_style(out)["dividend_value"]["rows"]}
+    assert rows["PEP"].get("size") is None and rows["KO"]["size"]["idr"] > 0
 
 
 # ---------------- P39 results → inputs ----------------

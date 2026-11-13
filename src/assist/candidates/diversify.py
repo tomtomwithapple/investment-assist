@@ -27,13 +27,16 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-__all__ = ["LEVEL", "SIZE_LINES", "SIZES", "config", "judge", "size_bucket"]
+__all__ = ["LEVEL", "SIZE_LINES", "SIZES", "US_SIZE_LINES", "config", "judge", "size_bucket"]
 
 VERSION = "0.2.0"  # 0.2.0: unrated names keep the highest dividend yield
 LEVEL = "industry"  # idx-method industry_membership column (58 groups)
 SIZES = ("large", "mid", "small")
 # IDR market cap. Three buckets and both lines are the user's (2026-11-10).
 SIZE_LINES = {"large": 50e12, "mid": 5e12}
+# USD market cap for US names (sec-edgar S45): the usual US large / mid lines, $10B and $2B.
+# A default, not yet confirmed by the user; the IDR lines would make nearly every US name large.
+US_SIZE_LINES = {"large": 10e9, "mid": 2e9}
 
 
 def config() -> dict:
@@ -43,12 +46,14 @@ def config() -> dict:
             "tilt": "a redundant name is allowed only where a passed tilt is favourable (> 0)"}
 
 
-def size_bucket(mktcap: float | None) -> str | None:
+def size_bucket(mktcap: float | None, lines: Mapping[str, float] | None = None) -> str | None:
+    """`lines` in the market cap's own currency (default the IDR `SIZE_LINES`)."""
+    lines = lines or SIZE_LINES
     if mktcap is None or not mktcap > 0:
         return None
-    if mktcap >= SIZE_LINES["large"]:
+    if mktcap >= lines["large"]:
         return "large"
-    return "mid" if mktcap >= SIZE_LINES["mid"] else "small"
+    return "mid" if mktcap >= lines["mid"] else "small"
 
 
 def _rank(sym: str, kept: Mapping[str, float], ranked: Mapping[str, float | None],
@@ -67,18 +72,20 @@ def judge(symbols: Iterable[str], profiles: Mapping[str, Mapping[str, Any]], *,
           ranked: Mapping[str, float | None] | None = None,
           held: Mapping[str, float] | None = None,
           sector_tilts: Mapping[str, float] | None = None,
-          industry_tilts: Mapping[str, float] | None = None) -> list[dict]:
+          industry_tilts: Mapping[str, float] | None = None,
+          size_lines: Mapping[str, float] | None = None) -> list[dict]:
     """One verdict per symbol, by symbol. `profiles` is sym → {sector, industry, mktcap, div_yield};
     `kept` sym → margin of the names a passing screen keeps; `ranked` sym → margin of every name
     a passing screen ranked; `held` IDR held per symbol; `sector_tilts` / `industry_tilts` the
-    applied tilt per sector / industry of a **passed** tilt only."""
+    applied tilt per sector / industry of a **passed** tilt only; `size_lines` the market's
+    lines in the profiles' market-cap currency (default IDR `SIZE_LINES`)."""
     kept, ranked, held = kept or {}, ranked or {}, held or {}
     sector_tilts, industry_tilts = sector_tilts or {}, industry_tilts or {}
     groups: dict[tuple[str, str], list[str]] = {}
     info: dict[str, dict] = {}
     for sym in sorted(set(symbols)):
         p = profiles.get(sym) or {}
-        size = size_bucket(p.get("mktcap"))
+        size = size_bucket(p.get("mktcap"), size_lines)
         ind = p.get(LEVEL)
         info[sym] = {"symbol": sym, "sector": p.get("sector"), "industry": ind,
                      "mktcap": p.get("mktcap"), "size": size, "div_yield": p.get("div_yield")}

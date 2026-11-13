@@ -45,8 +45,11 @@ in IDR at the USD/IDR rate of the last session (JISDOR):
 - `expected_pt` is the unhedged IDR return and the hurdle is the **binding** one, the higher of
   the USA and IDN hurdles in IDR, so `margin_pt` (P39's lower of the two margins) is still
   expected − hurdle. Prices, `med_value_60d` and sizes are in IDR; the USD price is a driver.
-- **No tilt** (S16 is IDN only): no margin shift, default caps. sec-edgar has no SIC, so every
-  name is its own sector bucket in sizing too (`sector_buckets=False`), as in P39's `select`.
+- **No tilt** (S16 is IDN only): no margin shift, default caps. **Peers by SIC** (sec-edgar
+  S45): each ranked name's profile is its SIC major group as `sector`, its four-digit SIC as
+  `industry` and its USD market cap, judged by `diversify` on `US_SIZE_LINES` (USD), so one name
+  per industry and size gets new money; a name with no SIC is its own sector bucket in sizing
+  (`sector_buckets=False`) and in no diversify group.
 - **Costs**: P21's model is IDX's (board lots, tick grid, IDX tax), so a hand-set `US_COST`
   stands in: broker fee and the IDR↔USD conversion per side, a large-cap half spread and P21's
   square-root impact; a tranche below one share is `below_one_lot`. No entry levels (P21 reads
@@ -130,7 +133,8 @@ class UndervaluedInputs:
     sources: tuple[str, ...] = ()
     tilt_note: str | None = None  # why there is no tilt, when that is by design (USA)
     lot: int = costs.LOT  # shares per board lot (US: 1)
-    sector_buckets: bool = True  # False: every name its own sector (no SIC in sec-edgar)
+    sector_buckets: bool = True  # False: a name with no sector is its own sector bucket (USA)
+    size_lines: dict | None = None  # diversify's lines in the profiles' mktcap currency; None: IDR
     config: dict = field(default_factory=dict)  # market-specific settings for the journal
     # S82: sym → {sector, industry, mktcap} for every name that may be held or ranked
     profiles: dict[str, dict] = field(default_factory=dict)
@@ -431,7 +435,7 @@ def _watchlist(payload: Mapping, inp: UndervaluedInputs, held: Mapping[str, floa
     for sym in sorted(set(by_sym) - pool):
         group = {v["symbol"]: v for v in diversify.judge(
             members | {sym}, inp.profiles, kept=kept, ranked=ranked, held=held,
-            sector_tilts=sector_tilts)}
+            sector_tilts=sector_tilts, size_lines=inp.size_lines)}
         j = inp.judged.get(sym)
         a = holdings.answers(payload, j, sym, group.get(sym), sym in capped)
         if bad:  # phase P rule 3: broken inputs give no verdict
@@ -479,7 +483,8 @@ def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
     judged = diversify.judge(
         (set(held) | set(kept_margin)) - leaving, inp.profiles, kept=kept_margin,
         ranked={s: r.get("margin_pt") for s, r in ranking.items()}, held=held,
-        sector_tilts={k: v["tilt"] for k, v in sectors.items()} if t_passed else None)
+        sector_tilts={k: v["tilt"] for k, v in sectors.items()} if t_passed else None,
+        size_lines=inp.size_lines)
     blocked = {v["symbol"]: v for v in judged if v["redundant"] and not v["allowed"]}
     for r in rows:
         v = blocked.get(r["symbol"])
@@ -551,7 +556,8 @@ def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
                    "trims": trims_out, "excluded": excluded_out,
                    "fingerprint": sz.fingerprint},
         "diversification": {"level": diversify.LEVEL,
-                            "size_lines": dict(diversify.SIZE_LINES), "names": judged},
+                            "size_lines": dict(inp.size_lines or diversify.SIZE_LINES),
+                            "names": judged},
         "average_down": {"underwater_pct": average_down.UNDERWATER_PCT,
                          "gate3": average_down.GATE3, "names": names},
         "config": config(tilt_block["fingerprint"], caps, inp.screens, inp.config),
@@ -874,6 +880,7 @@ def us_inputs(results: Mapping[str, Mapping], *, idr_per_usd: float | None,
     fx = idr_per_usd
     screens: dict[str, dict] = {}
     factors: dict[str, dict] = {}
+    profiles: dict[str, dict] = {}  # USD market caps, judged on US_SIZE_LINES
     for style, res in results.items():
         usa, idn = res.get("hurdle_pt"), res.get("idn_hurdle_pt")
         binding = None if usa is None or idn is None else max(usa, idn)
@@ -887,6 +894,9 @@ def us_inputs(results: Mapping[str, Mapping], *, idr_per_usd: float | None,
                           "ranking": ranking,
                           "candidates": [_us_row(r, fx) for r in res.get("candidates") or []]}
         for r in ranking:
+            profiles.setdefault(r["symbol"], {
+                "sector": r.get("sector"), "industry": r.get("industry"),
+                "mktcap": r.get("mktcap"), "div_yield": None})
             med = r.get("med_value")
             factors[r["symbol"]] = {
                 "price": r["price"], "vol_1y": vols.get(r["symbol"]),
@@ -900,9 +910,10 @@ def us_inputs(results: Mapping[str, Mapping], *, idr_per_usd: float | None,
     return UndervaluedInputs(
         market="USA", bar_date=bar_date, screens=screens, tilt=None, factors=factors, plan=plan,
         stale_inputs=tuple(st), sources=tuple(sources), tilt_note=US_TILT_NOTE, lot=1,
-        sector_buckets=False,
+        sector_buckets=False, profiles=profiles, size_lines=dict(diversify.US_SIZE_LINES),
         config={"idr_per_usd": fx, "us_cost": dict(US_COST), "lot": 1,
-                "sector_buckets": "one per name (no SIC in sec-edgar)"})
+                "sector_buckets": "SIC major group; a name with no SIC is its own",
+                "size_lines_usd": dict(diversify.US_SIZE_LINES)})
 
 
 def _idr_per_usd(as_of: date) -> tuple[float | None, list[str]]:

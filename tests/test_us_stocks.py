@@ -68,9 +68,9 @@ def fake_serve(path) -> httpx.Client:
     db = UsStocks(Usfin(url=None, path=path))
     universe = _csv(
         ("symbol", "status", "exchange", "name", "sources", "delisted", "first_bar", "last_bar",
-         "bars", "cik", "edgar_ticker", "edgar_title"),
+         "bars", "cik", "edgar_ticker", "edgar_title", "sic"),
         [(r.symbol, "active", "NASDAQ", "", "asset_active", False, "", "", 1, r.cik, r.symbol,
-          r.title) for r in db.universe_duckdb()])
+          r.title, r.sic) for r in db.universe_duckdb()])
     bars = {}
     for sym in ("AAPL", "META", "BRK.B", "NOPE"):
         rows = db.bars_duckdb(sym)
@@ -103,6 +103,39 @@ def test_universe_joins_active_symbols_to_edgar_by_ticker_norm(store):
         Listing("BRK.B", 1067983, "BERKSHIRE HATHAWAY INC"),  # BRK-B under ticker_norm
         Listing("META", 1326801, "Meta Platforms, Inc."),
     ]  # SPY has no EDGAR company, FB is a rename, OLDCO inactive
+
+
+def _add_profiles(path, rows):
+    """sec-edgar S45's `edgar_company_profile` (its migration 029 columns), with `rows` of
+    (cik, sic)."""
+    con = duckdb.connect(str(path))
+    try:
+        con.execute("""create table edgar_company_profile (cik bigint primary key, name varchar,
+            sic integer, sic_description varchar, owner_org varchar, entity_type varchar,
+            category varchar, fiscal_year_end varchar, state_of_incorporation varchar,
+            exchanges varchar[], seen_at timestamp, raw_id bigint)""")
+        con.executemany("insert into edgar_company_profile (cik, sic) values (?, ?)", rows)
+    finally:
+        con.close()
+
+
+def test_universe_carries_each_company_sic_when_the_store_has_profiles(store):
+    _add_profiles(store, [(320193, 3571), (1326801, None)])
+    db = UsStocks(Usfin(url=None, path=store))
+    got = {x.symbol: x.sic for x in db.universe()}
+    assert got == {"AAPL": 3571, "BRK.B": None, "META": None}  # no row / NULL: no SIC
+    http = UsStocks(Usfin(url=URL, path=None, client=fake_serve(store)))
+    assert http.universe() == db.universe()
+
+
+def test_universe_has_no_sic_on_a_store_before_profiles(store):
+    assert all(x.sic is None for x in UsStocks(Usfin(url=None, path=store)).universe())
+
+
+def test_sic_sector_is_the_major_group_and_industry_the_code():
+    assert (us.sic_sector(3674), us.sic_industry(3674)) == ("SIC 36", "SIC 3674")
+    assert (us.sic_sector(100), us.sic_industry(100)) == ("SIC 01", "SIC 0100")
+    assert us.sic_sector(None) is None and us.sic_industry(None) is None
 
 
 def test_bars_per_symbol_follow_the_security_across_renames_and_take_the_latest_version(store):
@@ -422,6 +455,40 @@ def test_run_garp_discounts_at_the_usd_bar_and_reports_idr_margins(monkeypatch):
                           "margin_usa_pt", "margin_idn_pt", "margin_pt", "legs"}
     for c in out["candidates"]:
         assert c["gap_pt"] >= us.CONFIG["garp"]["min_gap_pt"]
+
+
+def _with_sic(data: us.UsData, sic_of) -> us.UsData:
+    for sym, lst in list(data.listings.items()):
+        data.listings[sym] = lst._replace(sic=sic_of(int(sym[1:])))
+    return data
+
+
+def test_run_caps_candidates_per_sic_major_group(monkeypatch):
+    monkeypatch.setattr(dv, "evaluate_replay", lambda panel, **kw: _passed())
+    loose_idn = Hurdle("IDN", D("2026-10-22"), "IDR", "neutral", 3.0, 3.0)
+    free = us.run("dividend_value", _big(synth(n=40, edge=True)), as_of=D("2023-12-29"),
+                  usa=USA, idn=loose_idn, panel=[])
+    assert len(free["candidates"]) > us.MAX_PER_SECTOR  # every name its own sector
+    data = _with_sic(_big(synth(n=40, edge=True)), lambda i: 3674 if i % 2 else 3571)
+    out = us.run("dividend_value", data, as_of=D("2023-12-29"), usa=USA, idn=loose_idn,
+                 panel=[])
+    sectors = [c["sector"] for c in out["candidates"]]
+    assert set(sectors) <= {"SIC 35", "SIC 36"}
+    assert all(sectors.count(x) <= us.MAX_PER_SECTOR for x in set(sectors))
+    assert len(out["candidates"]) == min(len(free["candidates"]), 2 * us.MAX_PER_SECTOR)
+    r = out["ranking"][0]
+    assert r["industry"] == f"SIC {r['sic']:04d}" and r["sector"] == f"SIC {r['sic'] // 100}"
+    assert not any("SIC" in x for x in out["stale_inputs"])  # every ranked name has one
+
+
+def test_names_without_sic_are_counted_as_a_stale_input():
+    data = _with_sic(_big(synth(n=40, edge=True)), lambda i: None if i % 3 == 0 else 3571)
+    out = us.run("dividend_value", data, as_of=D("2023-12-29"), usa=USA, idn=IDN, panel=[],
+                 n_shuffles=20, n_controls=1)
+    missing = sum(1 for r in out["ranking"] if r["sic"] is None)
+    assert missing and f"{missing} of {out['pool']} ranked names have no SIC" in " ".join(
+        out["stale_inputs"])
+    assert out["ranking"][0]["sector"] in (None, "SIC 35")
 
 
 def test_run_without_hurdles_ranks_but_names_no_one():

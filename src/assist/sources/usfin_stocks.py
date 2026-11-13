@@ -6,7 +6,8 @@ Read through `Usfin` (usfin.py): `usfin serve` CSV when it answers, a read-only 
 - **Universe**: `/prices/universe?status=active&matched=1&format=csv`, or the same join on the
   store: `alpaca_universe` symbols of source `asset_active` → active `edgar_company` rows by
   `ticker_norm`, lowest CIK on a shared one (sec-edgar's How › EDGAR link). Delisted symbols do
-  not join, so the universe is today's listed names (survivorship: see us_stocks).
+  not join, so the universe is today's listed names (survivorship: see us_stocks). Each listing
+  carries its company's SIC code (sec-edgar S45: `edgar_company_profile`, the route's `sic`).
 - **Bars** per symbol: `/prices?symbol=…&format=csv`, or sec-edgar's web/prices.py `bars` query:
   `alpaca_bar_adjusted_lookup(sym)` (the security the symbol names today, across renames) joined
   to the newest version of each `alpaca_bar` for its volume. Never the whole
@@ -24,7 +25,7 @@ Read through `Usfin` (usfin.py): `usfin serve` CSV when it answers, a read-only 
   which SEC moves to the newest filing), so facts come only from the ATTACH, which is `locked`
   while `serve` runs.
 
-Schema: ../sec-edgar/src/usfin/migrations/007, 014, 019, 024, 025, 027, 028; routes: its
+Schema: ../sec-edgar/src/usfin/migrations/007, 014, 019, 024, 025, 027, 028, 029; routes: its
 web/app.py `prices_page`, `prices_universe_page`.
 """
 
@@ -60,6 +61,7 @@ class Listing(NamedTuple):
     symbol: str
     cik: int
     title: str
+    sic: int | None = None  # SEC SIC code (sec-edgar S45); None: SEC lists none, or an old store
 
 
 class UsBar(NamedTuple):
@@ -98,11 +100,15 @@ _UNIVERSE_SQL = """
         select ticker_norm, min(cik) as cik, arg_min(title, cik) as title
         from edgar_company where active group by ticker_norm
     )
-    select distinct u.symbol, e.cik, e.title
+    select distinct u.symbol, e.cik, e.title, {sic}
     from alpaca_universe u join e on e.ticker_norm = ticker_norm(u.symbol)
+    {join}
     where u.source = 'asset_active'
     order by u.symbol
 """
+# sec-edgar before S45 has no `edgar_company_profile`: every listing then has no SIC.
+_SIC = {True: ("p.sic", "left join edgar_company_profile p on p.cik = e.cik"),
+        False: ("cast(null as integer) as sic", "")}
 
 _BARS_SQL = """
     with adj as (select * from alpaca_bar_adjusted_lookup(?)),
@@ -173,13 +179,19 @@ class UsStocks:
 
     def universe_http(self) -> list[Listing]:
         rows = self.usfin.get_csv("/prices/universe", {"status": "active", "matched": "1"}) or []
-        return sorted(Listing(r["symbol"], int(r["cik"]), r["edgar_title"])
+        return sorted(Listing(r["symbol"], int(r["cik"]), r["edgar_title"],
+                              int(r["sic"]) if r.get("sic") else None)
                       for r in rows if r.get("cik"))
 
     def universe_duckdb(self) -> list[Listing]:
         with self.usfin.attached() as con:
-            found = con.execute(_UNIVERSE_SQL).fetchall()
-        return [Listing(s, int(c), t) for s, c, t in found]
+            has = con.execute(
+                "select count(*) from duckdb_tables() where database_name = current_database()"
+                " and table_name = 'edgar_company_profile'").fetchone()[0] > 0
+            sic, join = _SIC[has]
+            found = con.execute(_UNIVERSE_SQL.format(sic=sic, join=join)).fetchall()
+        return [Listing(s, int(c), t, None if sic is None else int(sic))
+                for s, c, t, sic in found]
 
     # ---------------- bars ----------------
 
