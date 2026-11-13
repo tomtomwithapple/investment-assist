@@ -289,7 +289,7 @@ def test_run_writes_both_markets_and_journals_every_row(
     text = res.brief_path.read_text()
     assert "**USA**" in text and "MSFT" in text
     body = parse_qs(telegram[0][0].content.decode())["text"][0]
-    assert "<b>Buy Rp" in body or "<b>Sell Rp" in body or "No steps this run" in body
+    assert "stocks to buy</b>" in body or "No steps this run" in body
 
 
 def test_a_failing_us_source_leaves_idn_and_the_run_alone(paths, wbs, financer):  # noqa: F811

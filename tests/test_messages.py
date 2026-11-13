@@ -103,12 +103,10 @@ def test_buys_come_first_and_are_never_cut():
     assert t.index("# Other buys") < t.index("# 5. US stocks to sell")
 
 
-def test_totals_put_buy_first_and_dates_once():
+def test_no_totals_or_dates_block():  # user 2026-11-13
     t = text()
-    assert "# Buy Rp 41.1m, sell Rp 13.2m" in t
-    assert "In 3 parts: 17 Nov, 27 Nov, 7 Dec, at market" in t
-    assert "Smaller orders go in fewer parts." in t  # GEMS goes in one
-    assert t.count("27 Nov") == 1
+    for gone in ("# Buy Rp", "In 3 parts", "fewer parts", "at market"):
+        assert gone not in t, gone
 
 
 def test_sells_one_name_a_line_largest_first_no_reason():
@@ -170,7 +168,7 @@ def test_moods_name_the_warning_signs_that_fired():
 def test_six_sections_in_the_users_order():
     t = text()
     heads = [ln for ln in t.splitlines() if ln.startswith("# ")]
-    order = ["# 1. World mood", "# 2. Indonesia mood", "# Buy Rp", "# 3. US stocks to buy",
+    order = ["# 1. World mood", "# 2. Indonesia mood", "# 3. US stocks to buy",
              "# 4. Indonesian stocks to buy", "# Other buys", "# 5. US stocks to sell",
              "# 6. Indonesian stocks to sell"]
     assert [next(h for h in heads if h.startswith(o)) for o in order] == heads[1:]
@@ -203,7 +201,6 @@ def test_best_value_names_are_buy_lines_to_target_or_full():
     assert "Buy: NEWX Rp 5.00m (full)" in text(undervalued=swapped)
     none = [{"market": "IDN", "styles": [{"style": "garp", "passed": False, "rows": []}]}]
     assert "No Indonesian stock passes a value screen this week." in flat(text(undervalued=none))
-    assert "# Buy Rp 41.1m, sell Rp 13.2m" in t  # value buys and thesis sells count
 
 
 def test_nothing_to_do_and_held_for_data():

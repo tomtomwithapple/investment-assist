@@ -8,7 +8,6 @@ user's 2026-11-13 wording):
   (`out/layers/regime.json`), the dollar (strengthening, steady, weakening) with its meaning,
   whether orders are split;
 - **2 Indonesia mood**: the home regime's warning points and the checks that gave them;
-- **Buy Rp x, sell Rp y**: the totals of the lines below; the tranche dates once;
 - **3 US stocks to buy**, **4 Indonesian stocks to buy**: that market's buy steps from the
   guide ("Buy: SBN Rp 15.90m", then "(1.8% of 30% target)"), else the leg's share of its
   target; then the passing screens' top 5 (`out/candidates`) as buy lines up to the 5%
@@ -30,7 +29,6 @@ from __future__ import annotations
 
 import re
 import textwrap
-from collections import Counter
 from collections.abc import Mapping, Sequence
 from datetime import date
 
@@ -126,21 +124,6 @@ def _home(regime: Mapping | None, stances: Sequence[Mapping]) -> list[str]:
         out += wrap("Indonesian stock and bond orders are split into parts.", rest="")
     elif state is None:
         out.append("Not measured this run.")
-    return out
-
-
-def _dates(steps: Sequence[Mapping]) -> list[str]:
-    plans = Counter(tuple(t["date"] for t in s["tranches"]) for s in steps if s.get("tranches"))
-    if not plans:
-        return []
-    common = plans.most_common(1)[0][0]
-    if len(common) == 1:
-        out = wrap(f"In one go on {_day(common[0])}, at market.", rest="")
-    else:
-        out = wrap(f"In {len(common)} parts: " + ", ".join(_day(d) for d in common)
-                   + ", at market.", rest="")
-    if len(plans) > 1:
-        out.append("Smaller orders go in fewer parts.")
     return out
 
 
@@ -278,7 +261,6 @@ def weekly(*, day: date, guide_payload: Mapping | None, stances: Sequence[Mappin
     value = {m: _value(undervalued, m, sold, (g or {}).get("portfolio_value_idr")) if orders
              else None for m in ("USA", "IDN")}
     buy_idr = sum(s["idr"] for s in buys) + sum(v[1] for v in value.values() if v)
-    sell_idr = sum(s["idr"] for s in sells)
     if g is None:
         lines += ["", "No steps this run: the guide is missing. Open the home page."]
     elif g.get("held_for_data"):
@@ -287,10 +269,6 @@ def weekly(*, day: date, guide_payload: Mapping | None, stances: Sequence[Mappin
         lines += [x for h in g["held_for_data"] for x in wrap(h, first="• ")]
     elif not (buy_idr or sells):
         lines += ["", "Nothing to do this week: every leg is at its target."]
-    else:
-        head = ", ".join(x for x in (f"buy Rp {_m(buy_idr)}" if buy_idr else "",
-                                      f"sell Rp {_m(sell_idr)}" if sells else "") if x)
-        lines += ["", f"# {head[:1].upper()}{head[1:]}", *_dates(steps)]
 
     for n, market in ((3, "USA"), (4, "IDN")):
         mine = [s for s in buys if _is(s, market)]

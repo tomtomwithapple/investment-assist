@@ -1918,7 +1918,7 @@ Order: T1 → T2 → T5 → T3 → T4. Then one test send to the user's chat (`-
   sell", then line by line on the render). The Monday message is now: **1 World mood** (the
   warning signs "1 of 5 (2 make it nervous)" that fired, from `out/layers/regime.json`; the
   dollar as strengthening / steady / weakening, also in `plain.DOLLAR`); **2 Indonesia mood**
-  (its warning points and checks); **Buy Rp x, sell Rp y** (no "This week:") and the dates;
+  (its warning points and checks); no totals or tranche dates (user: removed);
   **3 US stocks to buy**, **4 Indonesian stocks to buy**: "Buy: SBN Rp 15.90m" then "(1.8% of
   30% target)" ("(US stocks 0% of 24% target)" for a stock bucket); the passing screens' top 5
   as buy lines up to the 5% per-name cap, "(to target)" when held, "(full)" when new, names

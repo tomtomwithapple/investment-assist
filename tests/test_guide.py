@@ -206,8 +206,8 @@ def test_brief_and_telegram_open_with_the_steps():
     assert "\n1. Buy BMRI Rp 6.0m" in text
     assert brief.with_guide("x", []) == "x"
     msg = pipeline.message(day=DAY, guide_payload=g)
-    assert "# Buy Rp 6.0m" in msg and "Buy: BMRI Rp 6.00m" in msg
-    assert "# Buy Rp" not in pipeline.message(day=DAY)
+    assert "Buy: BMRI Rp 6.00m" in msg
+    assert "Buy: " not in pipeline.message(day=DAY)
 
 
 def test_write_guide_never_raises(tmp_path):
