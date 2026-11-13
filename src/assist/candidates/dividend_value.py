@@ -8,7 +8,9 @@
 - **Safety gates**: payout below 90% of `ni_ttm`; dividends covered by `cfo_ttm` (not for banks,
   whose CFO swings with deposits: they are judged on `screens.BANK_FLOOR` instead); paid in at
   least 4 of the last 5 years; no cut in the last 2 years unless `ni_ttm` is above its level a
-  year earlier. Live, `screens.passes_gates` and `passes_quality` run first, and a name whose
+  year earlier. A dip is no cut once the latest 12 months are back within `cut_tol` of the level
+  before it (P121, 2026-11-13: KKGI's move to interim payments read as a cut while its dividend
+  was already back). Live, `screens.passes_gates` and `passes_quality` run first, and a name whose
   sector map marks it a holding company is skipped.
 - **Cheapness leg**: today's yield as a percentile of the name's own quarter-end yields over the
   last 5 years (1 = the highest it has been). Reported, not ranked on.
@@ -256,7 +258,10 @@ def assess(
     annual = [trailing_dividend(divs, d - timedelta(days=YEAR_DAYS * k))
               for k in range(max(cfg["paid_years"], cfg["cut_years"] + 1))]
     paid = sum(a > 0 for a in annual[: cfg["paid_years"]])
-    cut = any(annual[k] < (1 - cfg["cut_tol"]) * annual[k + 1] for k in range(cfg["cut_years"]))
+    # a dip the latest 12 months are back from (within cut_tol) is no cut (P121)
+    floor = 1 - cfg["cut_tol"]
+    cut = any(annual[k] < floor * annual[k + 1] and annual[0] < floor * annual[k + 1]
+              for k in range(cfg["cut_years"]))
     recovered = _recovered(known)
 
     failed: list[str] = []

@@ -130,6 +130,33 @@ def test_gate_cut_in_last_two_years_unless_earnings_recovered():
     assert b.cut is True and b.recovered is True and b.ok, b.reasons
 
 
+def _div(ex: str, v: float) -> dict:
+    return {"ex": ex, "value": v, "ccy": "CURRENCY_IDR"}
+
+
+FLAT = [fund("2025-03-31", ni=100.0), fund("2025-06-30"), fund("2025-12-31"),
+        fund("2026-03-31", ni=100.0)]
+
+
+def test_a_dip_the_dividend_has_recovered_from_is_not_a_cut():
+    # KKGI: 50, then 30 over the next 12 months (interim timing), now 49
+    divs = (annual_divs(2021, 2024, 50.0, "09-01") + [_div("2025-04-10", 30.0)]
+            + [_div("2026-04-10", 49.0)])
+    a = dv.assess(AS_OF, BARS, FLAT, divs)
+    assert a.cut is False, a.reasons
+    # not back within the tolerance: still a cut
+    low = divs[:-1] + [_div("2026-04-10", 40.0)]
+    assert dv.assess(AS_OF, BARS, FLAT, low).cut is True
+
+
+def test_a_real_cut_still_fails():
+    # ADMF: 972 -> 703 -> 630
+    divs = (annual_divs(2021, 2024, 9.72) + [_div("2025-04-10", 7.03)]
+            + [_div("2026-04-10", 6.30)])
+    a = dv.assess(AS_OF, BARS, FLAT, divs)
+    assert a.cut is True and "cut" in a.failed
+
+
 def test_gate_needs_positive_earnings_and_a_dividend():
     q = [*QUARTERS[:-1], fund("2026-03-31", ni=-5.0)]
     a = dv.assess(AS_OF, BARS, q, annual_divs(2021, 2026, 5.0))
