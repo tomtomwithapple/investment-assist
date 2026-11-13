@@ -1888,7 +1888,7 @@ model change.
 **Decided by the user 2026-11-13:** sells grouped by reason, top 3 names per group; the known
 gaps are muted until they change; the brief file name is dropped, no link.
 
-- [ ] **T1 Weekly from the guide** (R1-weekly-guide). `pipeline.message` built from the guide
+- [x] **T1 Weekly from the guide** (R1-weekly-guide). `pipeline.message` built from the guide
   only: header (title, one line "Paper only. Heuristic, not investment advice."), a market line
   in words (world regime, dollar, Indonesia), totals (buy first), tranche dates once, **Buy**
   (every bucket and named buy, with its `why` shortened), **Sell** grouped by reason (the
@@ -1897,9 +1897,9 @@ gaps are muted until they change; the brief file name is dropped, no link.
   passing screen's top 5, held or not). Drops `_undervalued_lines`, `trade_lines`, the
   average-down block, `leg_line`, `[medium]`, the brief file name. `assist brief --send` uses
   the same builder.
-- [ ] **T2 Thesis line** (R2-thesis-line). From `out/holdings/IDN.json`: the names whose
+- [x] **T2 Thesis line** (R2-thesis-line). From `out/holdings/IDN.json`: the names whose
   business fails (acted thesis `acts`), with "not acted on yet" while `ACT_ON_VERDICTS` is off.
-- [ ] **T5 Phone format** (R5-phone-format). Plain HTML with bold section heads and bullets,
+- [x] **T5 Phone format** (R5-phone-format). Plain HTML with bold section heads and bullets,
   not one `<pre>`; every line <= 60 characters (test); chunks still split on line boundaries.
 - [ ] **T3 One 07:00 message** (R3-one-morning). Regime change, holding changes and health in
   one message, kind `morning`, send-once per day, still silent when nothing changed. The regime

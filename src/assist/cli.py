@@ -12,7 +12,8 @@ from pathlib import Path
 
 import httpx
 
-from assist import alerts, brief, doctor, journal, notify, paper, pipeline, status, web
+from assist import alerts, brief, doctor, guide, journal, notify, paper, pipeline, status, web
+from assist.candidates import holdings as holdings_mod
 from assist.layers import regime as regime_layer
 from assist.layers import undervalued
 from assist.layers.types import DISCLAIMER
@@ -338,10 +339,12 @@ def _brief(args: argparse.Namespace) -> int:
         print("telegram: nothing to send (out/ is empty)", file=sys.stderr)
         return 1
     day = date.fromisoformat(max(s["as_of"] for s in loaded.stances))
-    msg = pipeline.message(day=day, brief_path=paths.briefs / f"{day}.md",
-                           undervalued=undervalued.load_out(paths.out),
-                           stances=loaded.stances)
-    result = notify.send(msg, kind="brief", day=day, state_dir=paths.notify)
+    g, _ = guide.load(paths.out)
+    msg = pipeline.message(day=day, undervalued=undervalued.load_out(paths.out),
+                           stances=loaded.stances, guide_payload=g,
+                           holdings=holdings_mod.load(paths.out, "IDN"))
+    result = notify.send(msg, kind="brief", day=day, state_dir=paths.notify, pre=False,
+                         heads=True)
     print(notify.describe(result), file=sys.stderr)
     return 0
 

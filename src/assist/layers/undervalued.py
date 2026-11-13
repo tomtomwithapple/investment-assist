@@ -89,7 +89,6 @@ __all__ = [
     "holdings_from",
     "load_out",
     "read_watchlist",
-    "telegram_lines",
     "top",
     "us_cost",
     "us_inputs",
@@ -602,24 +601,6 @@ def top(payload: Mapping, n: int = 5) -> list[dict]:
             if i < len(rows) and len(out) < n:
                 out.append(rows[i])
     return out
-
-
-def telegram_lines(payloads: Sequence[Mapping], n: int = 5) -> list[str]:
-    """A few lines per market for the Telegram summary: each style's verdict, then the top `n`."""
-    lines: list[str] = []
-    for p in payloads:
-        verdicts = "; ".join(
-            f"{s['style']} {len(s['rows'])}" if s["passed"] else f"{s['style']} failed"
-            for s in p["styles"])
-        lines.append(f"Undervalued {p['market']} ({verdicts}):")
-        for r in top(p, n):
-            size = f", add IDR {r['size']['idr'] / 1e6:,.1f}m" if r["size"] else ""
-            held = ", held" if r["held"] else ""
-            lines.append(f"  {r['symbol']:<5} {r['style']} #{r['rank']} margin "
-                         f"{r['margin_pt']:+.1f}pt{held}{size}")
-        if not top(p, n):
-            lines.append("  no names")
-    return lines
 
 
 # ---------------- out/ ----------------

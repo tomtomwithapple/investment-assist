@@ -250,12 +250,6 @@ def test_brief_has_a_usa_block_after_idn(tmp_path):
     assert "US$" in usa
 
 
-def test_message_has_a_usa_top_five():
-    p = journal.jsonable(build(inputs()))
-    text = pipeline.message(day=DAY, brief_path=None, undervalued=[p])
-    assert "Undervalued USA" in text and "MSFT" in text and "KO" in text
-
-
 # ---------------- assist run ----------------
 
 
@@ -295,7 +289,7 @@ def test_run_writes_both_markets_and_journals_every_row(
     text = res.brief_path.read_text()
     assert "**USA**" in text and "MSFT" in text
     body = parse_qs(telegram[0][0].content.decode())["text"][0]
-    assert "Undervalued IDN" in body and "Undervalued USA" in body
+    assert "<b>This week" in body or "No steps this run" in body
 
 
 def test_a_failing_us_source_leaves_idn_and_the_run_alone(paths, wbs, financer):  # noqa: F811

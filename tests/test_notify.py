@@ -179,6 +179,13 @@ def test_send_plain_without_pre(tmp_path):
     assert form(log[0])["text"] == "x"
 
 
+def test_send_heads_bold_without_pre(tmp_path):
+    log: list = []
+    notify.send("# Buy <now>\n• a & b\n#nohead", kind="brief", day=D, creds=CREDS,
+                client=client(ok_handler(log)), state_dir=tmp_path, pre=False, heads=True)
+    assert form(log[0])["text"] == "<b>Buy &lt;now&gt;</b>\n• a &amp; b\n#nohead"
+
+
 def test_send_once_per_kind_and_day(tmp_path):
     log: list = []
     c = client(ok_handler(log))
@@ -347,90 +354,3 @@ def test_summary_from_sample_stances():
     for s in stances:
         assert s["subject"] in text and s["stance"] in text
     assert "not investment advice" in text.lower()
-
-
-# ---------------- paper header and rebalance vs tilt (S42) ----------------
-
-
-def _leg(subject, asset, current, target, rebalance, tilt):
-    return {"subject": subject, "asset": asset, "stance": "neutral",
-            "portfolio": {"current_pct": current, "target_pct": target, "benchmark_pct": 48.0,
-                          "delta": "x", "rebalance_pt": rebalance, "tilt_pt": tilt}}
-
-
-LEGS = [_leg("IDN", "stocks", 96.9, 45.7, -51.2, 0.0), _leg("USA", "stocks", 0.0, 23.8, 19.0, 4.8),
-        _leg("IDN", "bonds", 3.1, 30.5, 27.4, 0.0)]
-
-
-def test_paper_line_names_the_benchmark():
-    assert notify.PAPER_LINE == ("Paper only, not an order. Sizes rebalance to the 48/32/20 "
-                                 "benchmark plus the model tilt; read the brief.")
-
-
-def test_header_puts_the_paper_line_right_after_the_disclaimer():
-    lines = notify.header(D)
-    assert lines[0] == "investment-assist 2026-10-26"
-    assert lines[1] == "Heuristic, not investment advice."
-    assert lines[2] == notify.PAPER_LINE
-
-
-def test_leg_line_splits_rebalance_and_tilt():
-    assert notify.leg_line(LEGS, "IDN") == (
-        "IDN stocks leg (paper): -51.2pt = -51.2pt rebalance to benchmark, +0.0pt tilt")
-    assert notify.leg_line(LEGS, "USA") == (
-        "USA stocks leg (paper): +23.8pt = +19.0pt rebalance to benchmark, +4.8pt tilt")
-    assert notify.leg_line(LEGS, "JPN") is None
-    no_holdings = [_leg("IDN", "stocks", None, 45.7, None, None)]
-    assert notify.leg_line(no_holdings, "IDN") == (
-        "IDN stocks leg (paper): rebalance vs tilt n/a (holdings unavailable)")
-
-
-def test_message_carries_the_paper_header_and_leg_labels():
-    from assist import pipeline
-
-    idn = {"market": "IDN", "styles": [{"style": "garp", "passed": False, "rows": []}],
-           "sizing": {"budget_idr": 0, "trims": [
-               {"symbol": "PWON", "idr": 2.7e6, "reason": "trim in full: fails its screen"}]}}
-    usa = {"market": "USA", "styles": [{"style": "garp", "passed": False, "rows": []}],
-           "sizing": {"budget_idr": 13.2e6, "trims": []}}
-    text = pipeline.message(day=D, brief_path=None, undervalued=[idn, usa], stances=LEGS)
-    lines = text.splitlines()
-    assert lines[1] == "Heuristic, not investment advice." and lines[2] == notify.PAPER_LINE
-    i = lines.index("IDN to sell (1, IDR 2.7m):")
-    assert lines[i - 1].startswith("IDN stocks leg (paper): -51.2pt = -51.2pt rebalance")
-    j = lines.index("USA to sell: none")
-    assert lines[j - 1].startswith("USA stocks leg (paper): +23.8pt = +19.0pt rebalance")
-    assert text.endswith("not investment advice.")
-
-
-# ---------------- home (IDN) regime line (S54, P73) ----------------
-
-
-def _home_legs(state: str) -> list[dict]:
-    import copy
-
-    legs = copy.deepcopy(LEGS)
-    for s in legs:
-        if s["subject"] == "IDN":
-            s["home_regime"] = {"state": state, "points": 2 if state == "risk_off" else 0,
-                                "drivers": ["JCI -17.5% vs 20d high (2)"], "stale_inputs": []}
-    return legs
-
-
-def test_message_has_one_home_line_on_home_risk_off():
-    from assist import pipeline
-
-    text = pipeline.message(day=D, brief_path=None, stances=_home_legs("risk_off"))
-    lines = text.splitlines()
-    home = [x for x in lines if x.startswith("Home regime (IDN)")]
-    assert home == ["Home regime (IDN) risk_off (2 points: JCI -17.5% vs 20d high (2)): IDN "
-                    "stocks and bonds adds and trims laddered"]
-    assert lines.index(home[0]) == 4  # right after the header
-
-
-def test_message_has_no_home_line_when_neutral_or_absent():
-    from assist import pipeline
-
-    for legs in (_home_legs("neutral"), LEGS):
-        text = pipeline.message(day=D, brief_path=None, stances=legs)
-        assert "Home regime" not in text

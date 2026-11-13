@@ -188,33 +188,6 @@ def test_missing_layer1_writes_nothing_and_sends_nothing(paths, financer, tmp_pa
     assert telegram[0] == []
 
 
-def test_message_is_undervalued_and_trades_only():
-    def row(sym, rank, size=None):
-        return {"symbol": sym, "rank": rank, "style": "dividend_value", "margin_pt": 1.0,
-                "held": False, "size": None if size is None else {"idr": size}}
-    idn = {"market": "IDN", "styles": [{"style": "dividend_value", "passed": True,
-                                        "rows": [row("BMRI", 1, 4e6), row("BBRI", 2)]},
-                                       {"style": "garp", "passed": False, "rows": []}],
-           "sizing": {"budget_idr": 4e6, "trims": [
-               {"symbol": "PWON", "idr": 2.7e6, "reason": "trim in full: fails its screen"},
-               {"symbol": "BMRI", "idr": 1.9e6, "reason": "trim to the per-name cap of 5%"}]}}
-    usa = {"market": "USA", "styles": [{"style": "garp", "passed": False, "rows": []}],
-           "sizing": {"budget_idr": 13.2e6, "trims": []}}
-    text = pipeline.message(day=DAY, brief_path=None, undervalued=[idn, usa])
-    assert "Undervalued IDN" in text and "Undervalued USA" in text
-    assert "IDN to sell (2, IDR 4.6m):\n  PWON    2.7m  trim in full" in text
-    assert "IDN to buy (1, IDR 4.0m):\n  BMRI    4.0m  dividend_value #1" in text
-    assert "USA to sell: none" in text and "USA to buy: none (IDR 13.2m budget unspent)" in text
-    assert "regime" not in text and "overweight" not in text
-    assert text.endswith("not investment advice.") and len(notify.chunks(text)) == 1
-
-
-def test_message_without_candidates_says_so():
-    text = pipeline.message(day=DAY, brief_path=None)
-    assert "no market read" in text and "to sell" not in text
-
-
-
 # ---------------- CLI ----------------
 
 

@@ -205,9 +205,9 @@ def test_brief_and_telegram_open_with_the_steps():
     assert "- Markets are nervous. Orders are split in 3." in text
     assert "\n1. Buy BMRI Rp 6.0m" in text
     assert brief.with_guide("x", []) == "x"
-    msg = pipeline.message(day=DAY, brief_path=None, guide_payload=g).splitlines()
-    assert msg[4] == "This week:" and msg[5].startswith("Markets are nervous")
-    assert "This week:" not in pipeline.message(day=DAY, brief_path=None)
+    msg = pipeline.message(day=DAY, guide_payload=g)
+    assert "# This week: buy Rp 6.0m" in msg and "BMRI Rp 6.0m" in msg
+    assert "# This week" not in pipeline.message(day=DAY)
 
 
 def test_write_guide_never_raises(tmp_path):
