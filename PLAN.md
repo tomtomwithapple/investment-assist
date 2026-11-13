@@ -11,12 +11,17 @@ is in `CLAUDE.md` (*Investment decision flow*); this plan is how it gets built.
 **Phases P and Q done to fan-in (2026-11-13, main, 2402 tests).** S85–S91 (P) and S92–S101 (Q)
 merged; S91 (flip counter, `src/assist/flips.py`, on `/paper` and in the brief) merged
 `588fa50`. Open, in order:
-1. **User decisions pending:** `ACT_ON_VERDICTS` (S87, off: whether thesis sells act; the
-   fan-in run has 11 hard thesis fails: ADMF, ADRO, ASII, DOSS, HAIS, JECC, JPFA, KKGI, LPPF,
-   TMAS, TPMA); re-entry margin 1.0pt (agent's default); take-profit on the first record fires on
-   26 of 67 (baseline instead?); watchlist = all 13 Custom screeners or only ids 7377506–08;
-   **S103 adoption** (Magic Formula t 2.92 and Lynch t 4.56 passed their board replays; Lynch
-   reads today's industries on past dates).
+1. **User decisions made 2026-11-13** (P124-decisions): `ACT_ON_VERDICTS` **on** (the 10 hard
+   thesis sells act: ADMF, ADRO, ASII, HAIS, JECC, LPPF, TMAS, TPMA cuts; DOSS, JPFA negative
+   CFO, JPFA checked: Stockbit's 2026Q1–Q3 CFO 2.22T − 4.45T − 2.33T = −4.56T 9M matches the
+   reported 9M deficit, inventory build-up, so real, not a data error; the filing itself not
+   found online); re-entry margin 1.0pt confirmed; take-profit on a first record is a
+   **baseline** (above fair: stop adding, no trim; trims only on a later crossing after
+   re-arming); watchlist = only 7377506–08 (the three dividend screens); **S103: Magic Formula
+   adopted** as an exclusion (blocks buys only; P123-magic-floor), Lynch stays context (its
+   replay reads today's industries); US peers: industry = three-digit SIC group (`SIC 367`), size
+   lines US$10B / US$2B confirmed. Note: shippers SIC 4400 and 4412 still fall in different
+   groups (440 vs 441); only the two-digit major group would join them.
 2. **S102** Beneish blocked on idx-method (its PLAN `ed2e72c`); also tell idx-method: BTPS CAR 0
    in the screener; 48 USD reporters' flows vs IDR assets in `fundamentals`.
 3. S22 (still open from phase F).
@@ -1934,10 +1939,9 @@ Order: T1 → T2 → T5 → T3 → T4. Then one test send to the user's chat (`-
 
 ## Open questions
 
-- **US peer groups (P122)**: size lines US$10B / US$2B are a default, not confirmed; industry is
-  the four-digit SIC, so two shippers (4400, 4412) or a REIT pair at different sizes are not
-  redundant. Options: three-digit SIC industry groups, or the two-digit major group (as the
-  sector cap already uses).
+- ~~**US peer groups (P122)**~~: three-digit SIC industry groups and the US$10B / US$2B size
+  lines, confirmed by the user 2026-11-13 (P124); a generic code like 4400 (group 440) is not
+  joined to 4412 (group 441).
 
 - ~~**Phase O defaults**~~ (size lines Rp 50T and Rp 5T; the 58-group industry level):
   confirmed by the user 2026-11-10, with the keeper among unrated names changed to the highest
@@ -2096,6 +2100,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S104 Phase Q fan-in (F17-phase-q) | done | 2026-11-13 | this commit | none (2402 total) | Live run on main, exit 0, 1396 s: model `sha256:5926367c74ac…`, journal 1154 records; first `out/holdings/IDN.json` (67 holdings: 30 hold, 26 take-profit, 11 hard thesis sells, not acted as `ACT_ON_VERDICTS` is off); duplicate S99/S100 checklist lines removed. S102 and S103 stay open (blocked / user's call) |
 | P121 Dividend cut recovered (P121-div-recovered) | done | 2026-11-13 | this commit (branch `p121-special-div`) | 2 dividend_value (2405 total) | `dividend_value.assess`: a cut at year k counts only if the latest 12 months are also below (1 − `cut_tol`) × the year before the dip; no new CONFIG key. Live: KKGI's cut clears, the other ten hard fails stand. Replay t 2.60 → 3.00 (p 0.003, control t 0.06), passed |
 | P122 US peers by SIC (P122-us-sic) | done | 2026-11-13 | this commit | 3 adapter, 3 us_stocks, 1 run_us_stocks (2429 total) | sec-edgar S45 (`edgar_company_profile`, `/prices/universe` `sic`): `Listing.sic` over HTTP and ATTACH (a store without the table reads no SIC); US rows carry `sector` = SIC major group (`SIC 36`) and `industry` = four-digit SIC (`SIC 3674`), so P39's `select` caps 5 a major group and `diversify` keeps one name per industry and size; US sizes on `US_SIZE_LINES` (US$10B / US$2B, unconfirmed default) via a `size_lines` argument (IDN unchanged on Rp 50T / 5T); the blanket no-SIC stale line becomes a count of ranked names without one. Read-only live (bars 2026-11-12): universe 7 179, 6 732 with SIC; every ranked name has one (dividend pool 584, GARP 374); today's top 10s: no redundant pair (FIX large / IESC mid, UDR large / KRG mid, PGR large / ORI mid are different sizes) and no major group over 5. Both replays still fail, so no US name either way. Not run: `assist run` (rule modules changed: new journal segment) |
+| P124 User decisions (P124-decisions) | done | 2026-11-13 | this commit | 2 hysteresis, 1 holdings, 2 alerts, 1 watchlist, 2 us_stocks edited (2431 total) | User 2026-11-13: `ACT_ON_VERDICTS` True; `REENTRY_MARGIN_PT` 1.0 confirmed; a first holding record at or above fair is a take-profit **baseline** (`fired`, `stop_adding`, `valuation.baseline` true, no trim; hysteresis 0.2.0, holdings schema 1.3.0); `config/watchlist.yaml` screeners 7377506–08 only; US `industry` = three-digit SIC group; `US_SIZE_LINES` confirmed. JPFA negative CFO checked (9M −4.56T on Stockbit quarters matches the reported 9M deficit), kept as a hard fail. Rule modules changed: the next run opens a journal segment |
 | T1, T2, T5 Monday message (R1, R2, R5) | done | 2026-11-13 | `3c3ab50` (branch `phase-r`) | 16 messages, 1 notify; 6 notify, 2 e2e, 1 us_stocks message tests removed, 5 rewritten | `messages.weekly` from `out/guide.json` only; `notify.send(heads=True)`; today's message 2,908 → 1,016 characters, longest line 59 |
 | T3 One 07:00 message (R3-one-morning) | done | 2026-11-13 | branch `phase-r` | 3 messages, 5 ops | `pipeline.morning_check` (kind `morning`), `regime_read` / `regime_commit`, `alerts.prepare` / `commit`; a day the old `regime` / `holdings` markers cover is not resent |
 | T4 Known gaps muted (R4-known-gaps) | done | 2026-11-13 | this commit (branch `phase-r`) | 3 alerts (2420 total) | `config/alerts.yaml` `accepted` keys (satudatascape, openkrx missing; jquantster investor_types); idx-method failures end with a next step (session → `./run.sh session`, else "usually cleared by the next run") |

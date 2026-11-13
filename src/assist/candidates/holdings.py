@@ -66,7 +66,7 @@ __all__ = ["CAUSES", "HARD", "SCHEMA", "SCHEMA_VERSION", "answers", "build", "co
 
 VERSION = "0.1.0"
 SCHEMA = SCHEMA_DIR / "holdings.schema.json"
-SCHEMA_VERSION = "1.2.0"  # 1.1 watchlists per record (S89); 1.2 acted, sold (S87)
+SCHEMA_VERSION = "1.3.0"  # 1.1 watchlists (S89); 1.2 acted, sold (S87); 1.3 baseline
 OUT_DIR = "holdings"
 HARD = ("cut", "negative CFO", "negative equity")  # phase P rule 4: these act at once
 CAUSES = ("first", "rule_version", "data_fix", "new_filing", "price_cross", "holdings_change")

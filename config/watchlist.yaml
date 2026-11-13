@@ -8,5 +8,8 @@
 # max_age_days  an older member date is still read, named a stale input
 
 category: Custom
-screeners: []
+screeners:  # user 2026-11-13: only the three dividend screens, not the framework replicas
+  - 7377506  # Cheap Big Caps with Dividend
+  - 7377507  # Cheap Mid Caps with Dividend
+  - 7377508  # Cheap Small Caps with Dividend
 max_age_days: 3

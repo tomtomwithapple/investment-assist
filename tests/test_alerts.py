@@ -219,11 +219,21 @@ def test_no_holding_record_is_no_holdings_section(out, state, telegram):
     assert chk.text is None and chk.holdings_note == "no out/holdings/IDN.json yet"
 
 
-def test_paper_line_while_act_on_verdicts_is_off(out, state, telegram):
-    write(out, payload())
+PAPER_LINE = "Paper: acted verdicts move no order yet (ACT_ON_VERDICTS off)."
+
+
+def test_no_paper_line_while_act_on_verdicts_is_on(out, state, telegram):
+    write(out, payload())  # ACT_ON_VERDICTS on since the user's call 2026-11-13
     check(out, state, telegram)
-    assert "Paper: acted verdicts move no order yet (ACT_ON_VERDICTS off)." in \
-        text_of(telegram[0][0])
+    assert PAPER_LINE not in text_of(telegram[0][0])
+
+
+def test_paper_line_while_act_on_verdicts_is_off(out, state, telegram):
+    p = payload()
+    p["config"]["hysteresis"]["act_on_verdicts"] = False
+    write(out, p)
+    check(out, state, telegram)
+    assert PAPER_LINE in text_of(telegram[0][0])
 
 
 # ---------------- data and source health ----------------

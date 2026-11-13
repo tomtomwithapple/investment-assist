@@ -35,7 +35,7 @@ SIZES = ("large", "mid", "small")
 # IDR market cap. Three buckets and both lines are the user's (2026-11-10).
 SIZE_LINES = {"large": 50e12, "mid": 5e12}
 # USD market cap for US names (sec-edgar S45): the usual US large / mid lines, $10B and $2B.
-# A default, not yet confirmed by the user; the IDR lines would make nearly every US name large.
+# Confirmed by the user 2026-11-13; the IDR lines would make nearly every US name large.
 US_SIZE_LINES = {"large": 10e9, "mid": 2e9}
 
 
