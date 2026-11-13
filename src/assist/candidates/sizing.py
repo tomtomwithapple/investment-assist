@@ -21,6 +21,9 @@
 - **Redundancy (S82).** A row carrying `redundant` (set by the caller from
   `candidates.diversify`: same industry and size as a better-ranked name, no favourable tilt)
   gets no new money and is listed in `excluded`. It is not trimmed for that.
+- **Buy blocks (S103).** A row carrying `buy_blocked` (an adopted exclusion framework, e.g. the
+  Magic Formula's bottom fifth) likewise gets no new money, is listed in `excluded` with that
+  reason, and is never trimmed for it: an exclusion blocks buys only.
 - **Trims.** A held name that is not in the list, fails it, or whose margin is ≤ 0 is trimmed
   in full; one above the per-name cap is trimmed back to it.
 
@@ -176,6 +179,8 @@ def size(
         why = _fails(r)
         if why is None and r.get("redundant"):
             why = str(r["redundant"])  # S82: no new money for a redundant name; never a trim
+        if why is None and r.get("buy_blocked"):
+            why = str(r["buy_blocked"])  # S103: an adopted exclusion; never a trim
         if why is None and not (r.get("vol_1y") or 0) > 0:
             why = "no vol_1y"
         if why is None and not (r.get("price") or 0) > 0:

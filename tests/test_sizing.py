@@ -191,3 +191,13 @@ def test_deterministic():
     a = Z.size(rows, stance(), V, {"CCCC": 1e6}, "neutral")
     b = Z.size(list(reversed(rows)), stance(), V, {"CCCC": 1e6}, "neutral")
     assert a == b
+
+
+def test_buy_blocked_row_gets_no_new_money_and_is_never_trimmed_for_it():
+    # S103: an adopted exclusion (Magic Formula bottom fifth) blocks buys only
+    why = "Magic Formula bottom fifth (position 9 of 10)"
+    rows = [row("GOOD"), row("BLOK") | {"buy_blocked": why}]
+    r = Z.size(rows, stance(), V, {"BLOK": 10e6}, "neutral")
+    assert set(by_sym(r)) == {"GOOD"}
+    assert ("BLOK", why) in r.excluded
+    assert not any(t.symbol == "BLOK" for t in r.trims)

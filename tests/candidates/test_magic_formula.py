@@ -87,7 +87,7 @@ def test_ranks_on_a_hand_built_cross_section():
     assert all(r.components["n_universe"] == 5 for r in out.values())
     assert out["AAAA"].as_of == SEEN
     assert (out["AAAA"].framework, out["AAAA"].role, out["AAAA"].gate) == (
-        "magic_formula", "context", "untested")
+        "magic_formula", "exclusion", "passed")  # S103: adopted 2026-11-13
     assert any("EBIT" in f and "<= 0" in f for f in out["EEEE"].flags)
 
 
@@ -216,7 +216,7 @@ def test_history_liquidity_point_in_time():
 
 def test_registered_with_a_replay():
     f = mf.MagicFormula()
-    assert (f.role, f.gate) == ("context", "untested") and callable(f.replay)
+    assert (f.role, f.gate) == ("exclusion", "passed") and callable(f.replay)  # S103
 
 
 def test_board_replay_prints_the_delisted_coverage():
