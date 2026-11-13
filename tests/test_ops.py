@@ -400,7 +400,7 @@ def test_paper_lines_benchmark_only_until_the_journal_has_history():
                                "week(s) scored from 2026-08-07")
     assert any(x.startswith("Legacy benchmark (segments before S39) 60% JCI / 40% SBN leg: 7 "
                             "week(s)") for x in lines)
-    assert "US stocks (IDR) = test SPY x USD/IDR" in lines[-1]
+    assert any(x.startswith("Legs:") and "US stocks (IDR) = test SPY x USD/IDR" in x for x in lines)
     assert "4 stale week(s), not scored" in lines[0]
     assert "No stance history in the journal yet: benchmark marks only." in text
     assert "Stale: JCI ends 2026-09-30 (idxscape index_daily)" in text

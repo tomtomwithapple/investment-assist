@@ -54,6 +54,13 @@ a disclaimer and source attribution.
 
 geospacer (alternative data) is for theme research only and does not feed the flow.
 
+**One source of verdicts (phase P).** investment-assist is the only source of keep / trim / sell
+verdicts; reviews call its code, never hand-rolled flags. Stockbit screeners are a watchlist only
+(`config/watchlist.yaml`): they add names to be judged, never a verdict. Each holding answers
+thesis, valuation and fit separately (`out/holdings/IDN.json`). Phase Q frameworks are context
+until they pass the placebo and the user adopts them (S103); then they can only block buys, never
+sell a held name. Flips per held name are counted on `/paper` (target ≤ 1 per quarter).
+
 ### Decision rules by asset
 
 - **IDN bonds (SBN):** real yield (yield − CPI), PHEI curve slope, change in foreign SBN

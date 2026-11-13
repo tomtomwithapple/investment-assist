@@ -426,3 +426,36 @@ def test_paper_shows_annualised_from_12_scored_weeks(jroot):
     assert "<th>Annualised</th><td>-29.0%</td>" in c
     d = json.loads(_get(_app(jroot, Paper(rep)), "/paper.json").body)
     assert d["annualized_note"] is None
+
+
+def _flip_rec(sym, as_of, verdict, cause=None):
+    return {"kind": "holding", "fingerprint": FP_A, "subject": "IDN", "as_of": as_of,
+            "outputs": {"symbol": sym, "cause": cause, "acted": {
+                "thesis": {"acts": verdict == "sell"},
+                "valuation": {"state": "fired" if verdict == "take_profit" else "armed"},
+                "cause": None}}}
+
+
+def test_paper_flip_card_names_over_target_bugs_and_baseline(jroot):
+    from assist import flips
+    rep = report()
+    rep.flips = flips.count([
+        _flip_rec(EVIL, "2026-10-02", "hold"),
+        _flip_rec(EVIL, "2026-10-09", "take_profit", "price_cross"),
+        _flip_rec(EVIL, "2026-10-16", "sell", "data_fix")])
+    r = _get(_app(jroot, paper=Paper(rep)), "/paper")
+    c = _card(r.body, "flips")
+    assert EVIL not in r.body and "&lt;script&gt;" in c
+    assert "2026Q4" in c and "over target" in c and "bug" in c and "data_fix" in c
+    assert "0.56" in c and "0.26" in c
+    d = json.loads(_get(_app(jroot, paper=Paper(rep)), "/paper.json").body)
+    assert d["report"]["flips"]["summary"]["method_or_data"] == 1
+
+
+def test_paper_flip_card_empty_and_absent(jroot):
+    from assist import flips
+    rep = report()
+    rep.flips = flips.count([])
+    c = _card(_get(_app(jroot, paper=Paper(rep)), "/paper").body, "flips")
+    assert "no holding records" in c and "0.26" in c
+    assert 'class="card flips"' not in _get(_app(jroot), "/paper").body
