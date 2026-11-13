@@ -1862,6 +1862,57 @@ about 3, 1y about 9: only 1m / 3m / 6m can carry a verdict.
 Parallel groups: S92 → S93 → S94 → {S95, S97, S98, S99, S100}; S96 after S86; S95 before S87's
 replay and S88; S101 any time → S102; all → S103 → S104.
 
+### Phase R — Telegram messages a phone can act on (planned 2026-11-13)
+
+**Why.** A review of the three messages on 2026-11-13 (Monday brief 2,908 characters / 55
+lines; 07:00 regime change; 07:00 holdings and health) found: the Monday brief never shows the
+guide's two buys (SBN Rp 15.9m, US index fund Rp 13.2m: they sort after 43 sells and fall past
+the 12-step cut), and below it says "IDN to buy: none" and "USA to buy: none (IDR 13.2m budget
+unspent)", against the guide; the same orders counted three ways (guide 43 sells Rp 28.4m,
+`trade_lines` 10 sells Rp 10.3m, BMRI "#1 held" beside "Sell BMRI"); "Paper only, not an
+order" then "Orders are split in 3"; the disclaimer twice; every step repeats its three tranche
+dates, 44 of 45 are `[medium]`, the step's `why` is left out, jargon (`-51.2pt = -51.2pt
+rebalance to benchmark, +0.0pt tilt`, `dividend_value #1 margin +5.1pt`) and a `brief:
+2026-11-13.md` file name a phone cannot open; the 10 thesis fails are nowhere. At 07:00 a home
+regime clearing (risk_off → neutral) lists only a US driver (a cleared regime has no warning
+left to list) and says nothing about what changes; regime and alerts go out as two messages 6 s
+apart; the known permanent gaps (satudatascape, openkrx missing; jquantster `investor_types`
+empty) are re-sent every 7 days and bury a real failure (idx-method 2026-11-12 DNS); every
+message is one `<pre>` block with ~100-character lines.
+
+**Rules.** The guide (`out/guide.json`) is the only source of the numbers in the Monday message.
+Buys are never cut. One disclaimer line per message. Plain words (see the UI memory's terms).
+Message builders stay pure and are tested on fixed output. No hashed module is touched, so no
+model change.
+
+**Decided by the user 2026-11-13:** sells grouped by reason, top 3 names per group; the known
+gaps are muted until they change; the brief file name is dropped, no link.
+
+- [ ] **T1 Weekly from the guide** (R1-weekly-guide). `pipeline.message` built from the guide
+  only: header (title, one line "Paper only. Heuristic, not investment advice."), a market line
+  in words (world regime, dollar, Indonesia), totals (buy first), tranche dates once, **Buy**
+  (every bucket and named buy, with its `why` shortened), **Sell** grouped by reason (the
+  step's `why` class: fails its screen, over the 5% cap, redundant industry and size, share of
+  the cut) with the group count, total and its top 3 names by amount, the best-value line (the
+  passing screen's top 5, held or not). Drops `_undervalued_lines`, `trade_lines`, the
+  average-down block, `leg_line`, `[medium]`, the brief file name. `assist brief --send` uses
+  the same builder.
+- [ ] **T2 Thesis line** (R2-thesis-line). From `out/holdings/IDN.json`: the names whose
+  business fails (acted thesis `acts`), with "not acted on yet" while `ACT_ON_VERDICTS` is off.
+- [ ] **T5 Phone format** (R5-phone-format). Plain HTML with bold section heads and bullets,
+  not one `<pre>`; every line <= 60 characters (test); chunks still split on line boundaries.
+- [ ] **T3 One 07:00 message** (R3-one-morning). Regime change, holding changes and health in
+  one message, kind `morning`, send-once per day, still silent when nothing changed. The regime
+  part says which regime changed, why (a cleared one says what cleared: the previous record's
+  drivers against today's values) and one line on what it means for Monday (laddered or not).
+  The `regime` and `holdings` markers stay readable so a day already sent is not resent.
+- [ ] **T4 Known gaps muted** (R4-known-gaps). `config/alerts.yaml` `accepted:` problem keys
+  (satudatascape missing, openkrx missing, jquantster `investor_types` empty) that health skips
+  until the key's text changes; each idx-method job failure carries a next step ("cleared by
+  the next run" when a later run of the same job succeeded, else "run ./run.sh session").
+
+Order: T1 → T2 → T5 → T3 → T4. Then one test send to the user's chat (`--force`).
+
 ## Open questions
 
 - ~~**Phase O defaults**~~ (size lines Rp 50T and Rp 5T; the 58-group industry level):
