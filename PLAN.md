@@ -21,7 +21,17 @@ merged; S91 (flip counter, `src/assist/flips.py`, on `/paper` and in the brief) 
    in the screener; 48 USD reporters' flows vs IDR assets in `fundamentals`.
 3. S22 (still open from phase F).
 
-**Last updated:** 2026-11-13 (**S91 + S104 fan-in**: S91 merged after one test fix (the brief's Legs line is no
+**Last updated:** 2026-11-13 (**P121-div-recovered**: the dividend cut gate no longer counts a dip the latest 12
+months are back from (within `cut_tol` 10%); found reviewing the fan-in run's 11 hard thesis
+fails, of which only KKGI changes (50 → 30 on its move to interim payments, now 49; it still
+fails payout, soft). The other ten stay: ADMF, ASII, HAIS, JECC, LPPF, TMAS, TPMA cuts, ADRO's
+regular dividend 409 → 273 → 263 after the AADI spin-off (its 2024-11 special left aside), DOSS
+and JPFA negative CFO (JPFA's −Rp 1.75T TTM is Stockbit's own, from 2026Q2–Q3; idx-method left
+those quarters out of its cleaned `cfo`, worth a check against the filing). A special-dividend
+filter was tried and dropped: a median of payments marks every final dividend of an
+interim + final payer (ASII) special. Replay on the same store (idx-method daily 2026-11-13):
+t 2.60 → 3.00, p 0.009 → 0.003, control t 0.10 → 0.06, pool 37 → 38, still passed.
+`dividend_value.py` is hashed: the next run opens a journal segment. 2405 tests). Earlier: 2026-11-13 (**S91 + S104 fan-in**: S91 merged after one test fix (the brief's Legs line is no
 longer last), 2402 tests. **Live run** `assist run --no-send` on main `588fa50`, exit 0, 23 m 16 s
 (rule history rebuilt cold, 1010 s): model `sha256:5926367c74ac…`, journal 1154 records, 14
 models, chain ok; regime neutral, dollar up; 49 stances (16 overweight, 29 neutral, 2
@@ -2009,6 +2019,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S90 Change-only alerts (P108-change-alerts) | done | 2026-11-12 | this commit (branch `p108-change-alerts`) | 21 alerts, 2 notify (.env) (2381 total) | `alerts.py` (plumbing; no hashed code touched): the daily `assist regime --check` also reads `out/holdings/IDN.json` against a snapshot of the last record sent (`data/notify/alerts/holdings_IDN.json`) and sends one message (kind `holdings`, send-once per day) listing only held names whose acted verdict (action, thesis, take-profit state) or fit changed: name, old → new, question, cause (the record's own, else derived against the snapshot); thesis sell, take-profit and review price reached in words; names bought or sold one line each. No snapshot = baseline, one line. Data health block: the run's `data_problems` / `held_for_data`, the doctor's non-fresh sources, idx-method's last `open`/`close`/`daily`/`backfill` run from its `store/data/archive/*.log` (rc != 0, killed at the cap, no result 3 h after start); keys carry no counts or dates, so a persistent set is silent until it changes (an all-clear once it empties) or 7 days pass (a reminder). Saved only once sent or already sent; never raises. `notify.credentials` reads the repo `.env` (KEY=VALUE text, no eval) after the env, before the Keychain. Live read-only preview 2026-11-12 (sending off): no `out/holdings/` in the main checkout yet, so no holdings section; health block: satudatascape and openkrx missing, jquantster stale, idx-method open 09:00 DNS failure, close 16:30 10 endpoints stored nothing, backfill 17:00 18 failures. |
 | S91 Flip counter and docs (F16-phase-p) | done | 2026-11-13 | `588fa50` (branch `f16-phase-p`) | 1 flips module, 2 brief, 2 view_paper, 1 ops edited (2402 total) | `flips.py` (not hashed: a score, outside `RULE_GLOBS`): acted verdict (sell / take_profit / hold) flips per held name per quarter from journal `holding` records, real vs method-or-data causes, names over 1, S87 baseline 0.56 → 0.26; on `PaperReport.flips`, `/paper`, the brief; CLAUDE.md "one source of verdicts", README phase P section. Live: 67 name-quarters, 0 flips (first records) |
 | S104 Phase Q fan-in (F17-phase-q) | done | 2026-11-13 | this commit | none (2402 total) | Live run on main, exit 0, 1396 s: model `sha256:5926367c74ac…`, journal 1154 records; first `out/holdings/IDN.json` (67 holdings: 30 hold, 26 take-profit, 11 hard thesis sells, not acted as `ACT_ON_VERDICTS` is off); duplicate S99/S100 checklist lines removed. S102 and S103 stay open (blocked / user's call) |
+| P121 Dividend cut recovered (P121-div-recovered) | done | 2026-11-13 | this commit (branch `p121-special-div`) | 2 dividend_value (2405 total) | `dividend_value.assess`: a cut at year k counts only if the latest 12 months are also below (1 − `cut_tol`) × the year before the dip; no new CONFIG key. Live: KKGI's cut clears, the other ten hard fails stand. Replay t 2.60 → 3.00 (p 0.003, control t 0.06), passed |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`
