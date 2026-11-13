@@ -15,9 +15,8 @@ and never reruns the model.
 - **Data health.** The newest run's `data_problems` / `held_for_data`, every source the doctor
   finds missing, locked, failing or stale beyond its cadence, and idx-method's last job runs
   (`idxmethod_jobs`: a non-zero exit, a run killed at its cap, a run that never reported). Each
-  problem has a key without counts or dates; the block goes out when the set of keys changed
-  since it was last sent (an all-clear line once it empties), or as a reminder after
-  `REMIND_DAYS` of the same set, so a persistent problem does not repeat every day.
+  problem has a key without counts or dates; only keys new since the last check are sent
+  (user 2026-11-13): no re-list of known problems, no reminder, no all-clear.
 - **One message**, kind `holdings`, send-once per day (`notify.send`), silent when neither part
   has anything. The snapshot and the health state are saved only when the message was sent or
   already sent today: a failed send saves nothing, so the next check finds the same changes and
@@ -41,7 +40,7 @@ from assist import notify
 from assist.candidates import holdings as holdings_mod
 from assist.layers.types import DISCLAIMER
 
-__all__ = ["JOBS", "KIND", "REMIND_DAYS", "AlertCheck", "Problem", "accepted_keys", "commit",
+__all__ = ["JOBS", "KIND", "AlertCheck", "Problem", "accepted_keys", "commit", "save_health",
            "daily_check",
            "data_problems", "doctor_problems", "holding_lines", "idxmethod_jobs",
            "live_idx_jobs", "load_snapshot", "prepare", "save_snapshot", "snapshot"]
@@ -51,7 +50,6 @@ ACCEPTED = Path(__file__).resolve().parents[2] / "config" / "alerts.yaml"
 NEXT_SESSION = "Next: in idx-method, ./run.sh session."
 NEXT_RUN = "Next: usually cleared by the next run."
 MARKET = "IDN"
-REMIND_DAYS = 7
 STATE = "alerts"
 JOBS = ("open", "close", "daily", "backfill")  # idx-method's launchd jobs (store/launchd/)
 JOB_LOG = "store/data/archive/{job}.log"
@@ -372,32 +370,23 @@ def live_idx_jobs(day: date) -> list[Problem]:
 
 def _health(problems: Sequence[Problem], last: Mapping | None, day: date
             ) -> tuple[list[str], dict | None]:
-    """(lines to send, health state to save on a send). Nothing when the set is unchanged and
-    the last send is under `REMIND_DAYS` old."""
+    """(lines to send, health state to save). Only problems that are new since the last
+    check are sent (user 2026-11-13: "remove data health overall if ok, only show degrading
+    ones"): no full re-list, no reminder, no all-clear. The state is the current set of keys,
+    saved also when nothing is sent (`save_health`), so a problem that cleared and comes back
+    is new again. None when the set is unchanged."""
     keys = sorted({p.key for p in problems})
-    last = last or {}
-    before = last.get("keys") or []
-    if keys == before:
-        if not keys or not last.get("last_sent"):
-            return [], None
-        if day - date.fromisoformat(last["last_sent"]) < timedelta(days=REMIND_DAYS):
-            return [], None
-        head = f"Data health (reminder, unchanged since {last.get('first_sent')}):"
-        state = dict(last) | {"last_sent": day.isoformat()}
-    elif not keys:
-        return (["Data health: all clear again (the problems sent on "
-                 f"{last.get('first_sent')} are gone)."],
-                {"keys": [], "first_sent": day.isoformat(), "last_sent": day.isoformat()})
-    else:
-        head = "Data health:"
-        state = {"keys": keys, "first_sent": day.isoformat(), "last_sent": day.isoformat()}
+    before = set((last or {}).get("keys") or [])
+    if keys == sorted(before):
+        return [], None
+    state = {"keys": keys, "first_sent": day.isoformat(), "last_sent": day.isoformat()}
     seen: set[str] = set()
-    lines = [head]
+    lines = []
     for p in problems:
-        if p.text not in seen:
+        if p.key not in before and p.text not in seen:
             seen.add(p.text)
             lines.append(f"- {p.text}")
-    return lines, state
+    return (["Data health:", *lines] if lines else []), state
 
 
 def _load_health(state_dir: Path) -> dict | None:
@@ -471,6 +460,17 @@ def commit(chk: AlertCheck, state_dir: Path) -> None:
         chk.error = f"{type(e).__name__}: {e}"
 
 
+def save_health(chk: AlertCheck, state_dir: Path) -> None:
+    """Nothing was sent but the problem set shrank: save it, so a problem that comes back is
+    new again. Never raises."""
+    if chk.health or chk.health_state is None:
+        return
+    try:
+        _write(_state(state_dir) / "health.json", chk.health_state)
+    except Exception as e:  # noqa: BLE001
+        chk.error = f"{type(e).__name__}: {e}"
+
+
 def daily_check(day: date, *, out_dir: Path, state_dir: Path, statuses: Sequence[Any] = (),
                 jobs: Sequence[Problem] = (), send: bool = True,
                 notify_kw: Mapping[str, Any] | None = None) -> AlertCheck:
@@ -479,6 +479,8 @@ def daily_check(day: date, *, out_dir: Path, state_dir: Path, statuses: Sequence
     something. Never raises."""
     chk = prepare(day, out_dir=out_dir, state_dir=state_dir, statuses=statuses, jobs=jobs)
     if chk.error or (not chk.holdings and not chk.health):
+        if send and not chk.error:
+            save_health(chk, state_dir)
         return chk
     chk.text = message(day, chk.holdings, chk.health, chk.act_on)
     if not send:

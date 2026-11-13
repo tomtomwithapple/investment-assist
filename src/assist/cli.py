@@ -342,7 +342,8 @@ def _brief(args: argparse.Namespace) -> int:
     g, _ = guide.load(paths.out)
     msg = pipeline.message(day=day, undervalued=undervalued.load_out(paths.out),
                            stances=loaded.stances, guide_payload=g,
-                           holdings=holdings_mod.load(paths.out, "IDN"))
+                           holdings=holdings_mod.load(paths.out, "IDN"),
+                           regime=pipeline.load_regime(paths.out))
     result = notify.send(msg, kind="brief", day=day, state_dir=paths.notify, pre=False,
                          heads=True)
     print(notify.describe(result), file=sys.stderr)

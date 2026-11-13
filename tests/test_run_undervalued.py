@@ -326,9 +326,11 @@ def test_build_brief_adds_the_section_from_out_candidates(tmp_path):
 def test_message_lists_top_five():
     p = build(inputs({"dividend_value": screen("dividend_value", cands=DIV),
                       "garp": screen("garp", cands=GARP)}))
-    text = pipeline.message(day=DAY, undervalued=[p])
-    assert "# Best value now" in text
+    g = {"steps": [], "legs": [], "portfolio_value_idr": 1e9, "held_for_data": []}
+    text = pipeline.message(day=DAY, undervalued=[p], guide_payload=g)
+    assert "Buy: BMRI Rp" in text
     assert text.index("BMRI") < text.index("NICL")
+    assert " ".join(text.split()).count("ELSA") == 1  # passes both screens, listed once
 
 
 # ---------------- assist run ----------------
@@ -371,7 +373,7 @@ def test_run_writes_candidates_journals_every_row_and_adds_brief_and_telegram(
     text = res.brief_path.read_text()
     assert "## Undervalued candidates" in text and "BMRI" in text
     body = parse_qs(telegram[0][0].content.decode())["text"][0]
-    assert "<b>Best value now" in body and "BMRI" in body
+    assert "<b>4. Indonesian stocks to buy" in body and "Buy: BMRI Rp" in body
 
 
 def test_run_is_byte_identical_on_rerun_and_survives_a_failing_source(

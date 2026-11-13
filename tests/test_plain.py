@@ -16,7 +16,7 @@ def test_styles_stances_strengths_and_unknown_terms():
     assert "Growth at a reasonable price" in plain.meaning("style", "garp")
     assert plain.label("stance", "avoid") == "Hold none"
     assert plain.label("strength", "strong") == "Strong"
-    assert plain.label("dollar", "up") == "Dollar rising"
+    assert plain.label("dollar", "up") == "Dollar strengthening"
     assert plain.label("style", "industry_value") == "industry value"
     assert plain.meaning("style", "industry_value") is None
 

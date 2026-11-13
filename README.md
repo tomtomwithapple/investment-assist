@@ -4,8 +4,8 @@ Reads the sibling fetcher repos in `../` (read-only) and turns their data into a
 entry plan per country × asset class, for an IDR-based investor. It never fetches from the
 internet and never writes into another repo; the only outbound call is the Telegram message.
 
-Heuristic context, **not investment advice**. Every stance, brief and message says so and names
-its sources.
+Heuristic context, **not investment advice**. Every stance and brief says so and names its
+sources; the Telegram messages leave the line out (user 2026-11-13).
 
 - Decision flow: [`CLAUDE.md`](CLAUDE.md), section *Investment decision flow*.
 - Build plan and progress: [`PLAN.md`](PLAN.md). Phases A–D and G–K are done (2026-11-09; K: the IDN rules gated on their point-in-time history, and an IDN home regime); E is 0 of 2 (S15 open, S31 built but its live verdict is open) and F 7 of 8 (S22 open).
@@ -160,8 +160,8 @@ How the daily check works:
 - Then (S90) it reads `out/holdings/IDN.json`, `out/guide.json`, the doctor and idx-method's job
   logs, and sends one message (kind `holdings`, once a day) only when something changed: held
   names whose acted verdict changed since the last record sent, with the question and the cause;
-  a take-profit, thesis sell or review price reached; and a data health block when the set of
-  problems is new or changed, or a week old (a reminder). The first record only sets a baseline
+  a take-profit, thesis sell or review price reached; and a data health block with only the
+  problems new since the last check (no re-list, reminder or all-clear). The first record only sets a baseline
   (one line). It never reruns the model.
 
 Both jobs run `launchd/job.sh` from the main checkout

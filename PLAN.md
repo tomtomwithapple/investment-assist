@@ -1881,7 +1881,7 @@ empty) are re-sent every 7 days and bury a real failure (idx-method 2026-11-12 D
 message is one `<pre>` block with ~100-character lines.
 
 **Rules.** The guide (`out/guide.json`) is the only source of the numbers in the Monday message.
-Buys are never cut. One disclaimer line per message. Plain words (see the UI memory's terms).
+Buys are never cut. One disclaimer line per message (dropped in T6). Plain words (see the UI memory's terms).
 Message builders stay pure and are tested on fixed output. No hashed module is touched, so no
 model change.
 
@@ -1912,6 +1912,25 @@ gaps are muted until they change; the brief file name is dropped, no link.
   the next run" when a later run of the same job succeeded, else "run ./run.sh session").
 
 Order: T1 → T2 → T5 → T3 → T4. Then one test send to the user's chat (`--force`).
+
+- [x] **T6 Six sections** (user 2026-11-13: "world regime, IDN regime, undervalued US stocks to
+  buy, undervalued IDN stocks to buy, portfolio US stocks to sell, portfolio IDN stocks to
+  sell", then line by line on the render). The Monday message is now: **1 World mood** (the
+  warning signs "1 of 5 (2 make it nervous)" that fired, from `out/layers/regime.json`; the
+  dollar as strengthening / steady / weakening, also in `plain.DOLLAR`); **2 Indonesia mood**
+  (its warning points and checks); **Buy Rp x, sell Rp y** (no "This week:") and the dates;
+  **3 US stocks to buy**, **4 Indonesian stocks to buy**: "Buy: SBN Rp 15.90m" then "(1.8% of
+  30% target)" ("(US stocks 0% of 24% target)" for a stock bucket); the passing screens' top 5
+  as buy lines up to the 5% per-name cap, "(to target)" when held, "(full)" when new, names
+  sold this week left out; **Other buys** (SBN); **5 US stocks to sell** ("None: no US stocks
+  held."), **6 Indonesian stocks to sell**: one name a line, no reasons, "KLBF 2.4m", "PWON
+  all", with the thesis fails folded in ("all" for `sell_all`, "trim x" for `trim_to_half`),
+  listed even while `ACT_ON_VERDICTS` is off. **No disclaimer line** in either Telegram message
+  (the JSON payloads keep theirs). The totals count the value buys and thesis sells, so they
+  can exceed the guide's (the "guide only" rule of T1 is relaxed by the user). At 07:00 the
+  data health block lists only problems new since the last check: no re-list, no weekly
+  reminder, no all-clear; a cleared problem is forgotten quietly, so it is new again if it
+  returns. No hashed module touched.
 
 ## Open questions
 
