@@ -31,7 +31,7 @@ those quarters out of its cleaned `cfo`, worth a check against the filing). A sp
 filter was tried and dropped: a median of payments marks every final dividend of an
 interim + final payer (ASII) special. Replay on the same store (idx-method daily 2026-11-13):
 t 2.60 → 3.00, p 0.009 → 0.003, control t 0.10 → 0.06, pool 37 → 38, still passed.
-`dividend_value.py` is hashed: the next run opens a journal segment. 2405 tests). Earlier: 2026-11-13 (**S91 + S104 fan-in**: S91 merged after one test fix (the brief's Legs line is no
+`dividend_value.py` is hashed. **Live run** `assist run --no-send` on main `0001b9a`, exit 0, 6 m 49 s: model `sha256:e3330828912d…`, journal 1299 records, 15 models, chain ok; holdings 31 hold / 26 take-profit / 10 sell (KKGI now a soft payout fail), flips 0; stances unchanged. 2405 tests). Earlier: 2026-11-13 (**S91 + S104 fan-in**: S91 merged after one test fix (the brief's Legs line is no
 longer last), 2402 tests. **Live run** `assist run --no-send` on main `588fa50`, exit 0, 23 m 16 s
 (rule history rebuilt cold, 1010 s): model `sha256:5926367c74ac…`, journal 1154 records, 14
 models, chain ok; regime neutral, dollar up; 49 stances (16 overweight, 29 neutral, 2
