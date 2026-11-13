@@ -195,3 +195,57 @@ def test_heads_marked_for_bold():
     t = text().splitlines()
     assert t[0] == "# investment-assist, Mon 16 Nov 2026"
     assert t[1] == "Paper only. Heuristic, not investment advice."
+
+
+# ---------------- T3: one 07:00 message ----------------
+
+
+PREV = {"as_of": "2026-11-12", "state": "neutral", "dollar": "up", "home": "risk_off",
+        "drivers": ["10Y real yield 2.78% (risk-off)"],
+        "home_drivers": ["JCI -12.8% vs 20d high (2)"]}
+
+
+def test_regime_lines_say_what_cleared_and_what_it_means():
+    lines = messages.regime_lines(PREV, world="neutral", dollar="up", drivers=[],
+                                  home="neutral", home_drivers=[])
+    t = flat("\n".join(lines))
+    assert lines[0] == "# Mood changed"
+    assert "Indonesia: nervous → calm." in t
+    assert "Cleared: JCI -12.8% vs 20d high." in t
+    assert "Monday: the extra caution for Indonesia ends." in t
+    assert "World" not in t and "Dollar" not in t  # unchanged parts are not repeated
+
+
+def test_regime_lines_world_turns_nervous_with_why():
+    prev = {**PREV, "home": "neutral", "home_drivers": []}
+    lines = messages.regime_lines(prev, world="risk_off", dollar="flat",
+                                  drivers=["VIX 31 (risk-off)", "HY spread 5.1% (risk-off)"],
+                                  home="neutral", home_drivers=[])
+    t = flat("\n".join(lines))
+    assert "World: normal → nervous." in t
+    assert "Why: VIX 31; HY spread 5.1%." in t
+    assert "Dollar: rising → steady." in t
+    assert "Monday: orders split in 3, new buys need a higher return." in t
+    assert all(len(x) <= messages.WIDTH for x in lines)
+
+
+def test_morning_message_one_disclaimer_and_sections():
+    t = messages.morning(DAY, regime=["# Mood changed", "Indonesia: nervous → calm."],
+                         holdings=["Holdings: baseline set: 67 held names as of 2026-11-13; "
+                                   "from now on only changes are sent."],
+                         health=["Data health:", "- openkrx: missing (no directory)",
+                                 "- idx-method close 2026-11-12 16:30: failed (rc 1)"],
+                         act_on=False)
+    lines = t.splitlines()
+    assert lines[0] == "# investment-assist morning, Mon 16 Nov 2026"
+    assert t.count("not investment advice") == 1
+    assert "# Holdings" in lines and "# Data health" in lines
+    assert "• baseline set: 67 held names" in t and "• openkrx: missing" in t
+    assert "not acted on yet" in t
+    assert all(len(x) <= messages.WIDTH for x in lines)
+    clear = messages.morning(DAY, regime=[], holdings=[], act_on=None, health=[
+        "Data health: all clear again (the problems sent on 2026-11-06 are gone)."])
+    assert "# Data health" in clear and "all clear again" in clear
+    reminder = messages.morning(DAY, regime=[], holdings=[], act_on=None, health=[
+        "Data health (reminder, unchanged since 2026-11-06):", "- x"])
+    assert "# Data health (reminder, unchanged since 2026-11-06)" in reminder

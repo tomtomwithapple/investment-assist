@@ -355,19 +355,33 @@ def _home_source(sources: pipeline.Sources):
 
 
 def _regime_check(args: argparse.Namespace) -> int:
-    """Daily job: Telegram when the regime, the dollar direction or the home (IDN) regime
-    changed, then the change-only holding and data health alerts (S90)."""
+    """Daily job: one Telegram message (phase R, kind `morning`) when the regime, the dollar or
+    the home (IDN) regime changed, a held name's verdict changed, or the data health did."""
     day = _today(args)
     sources = pipeline.Sources.default()
     paths = pipeline.Paths.default()
-    code = 0
     try:
-        _regime_change(args, day, sources, paths)
-    except Exception as e:  # noqa: BLE001 - the alerts below still run; the job exits 1
-        print(f"regime check failed: {type(e).__name__}: {e}")
-        code = 1
-    _alerts(args, day, sources, paths)
-    return code
+        m = pipeline.morning_check(
+            day, paths=paths, source=sources.fred, home_source=_home_source(sources),
+            statuses=_never_fail("doctor", sources.doctor, day),
+            jobs=_never_fail("idx-method jobs", sources.idx_jobs, day),
+            send=not args.no_send)
+    except Exception as e:  # noqa: BLE001 - the job exits 1, nothing else to do
+        print(f"morning check failed: {type(e).__name__}: {e}")
+        return 1
+    _print_regime(m.regime, day)
+    _print_alerts(m.alerts)
+    if m.text is None:
+        print("morning: nothing changed: nothing sent")
+    elif m.notify is None:
+        print("morning: not sent (--no-send)")
+    else:
+        print("morning " + notify.describe(m.notify))
+        if m.regime.changed and not m.regime.journalled:
+            print("regime not journalled: the next check retries the message")
+        if not m.alerts.saved and (m.alerts.holdings or m.alerts.health):
+            print("alerts not saved: the next check retries the message")
+    return 0
 
 
 def _never_fail(name: str, fn, *a) -> list:
@@ -380,37 +394,18 @@ def _never_fail(name: str, fn, *a) -> list:
         return []
 
 
-def _alerts(args: argparse.Namespace, day: date, sources: pipeline.Sources,
-            paths: pipeline.Paths) -> None:
-    """S90: changed held names and data health, one message (kind `holdings`), send-once."""
-    chk = alerts.daily_check(day, out_dir=paths.out, state_dir=paths.notify,
-                             statuses=_never_fail("doctor", sources.doctor, day),
-                             jobs=_never_fail("idx-method jobs", sources.idx_jobs, day),
-                             send=not args.no_send)
+def _print_alerts(chk: alerts.AlertCheck) -> None:
     if chk.error:
-        print(f"alerts: error ({chk.error}), nothing sent")
-        return
+        print(f"alerts: error ({chk.error}), not part of the message")
     if chk.holdings_note:
         print(f"holdings: {chk.holdings_note}")
-    if chk.text is None:
-        print("alerts: no held name changed, no new data problem: nothing sent")
-        return
     for line in chk.holdings:
         print(f"holdings: {line[len('Holdings: '):] if line.startswith('Holdings: ') else line}")
     for line in chk.health:
         print(f"health: {line}")
-    if chk.notify is None:
-        print("alerts: not sent (--no-send)")
-    else:
-        print("alerts " + notify.describe(chk.notify))
-        if not chk.saved:
-            print("alerts not saved: the next check retries the message")
 
 
-def _regime_change(args: argparse.Namespace, day: date, sources: pipeline.Sources,
-                   paths: pipeline.Paths) -> None:
-    chk = pipeline.regime_check(day, paths=paths, source=sources.fred,
-                                send=not args.no_send, home_source=_home_source(sources))
+def _print_regime(chk: pipeline.RegimeCheck, day: date) -> None:
     reg = chk.regime
     print(f"regime check {day}: {reg.state}, dollar {reg.dollar}")
     for s in reg.stale_inputs:
@@ -422,7 +417,7 @@ def _regime_change(args: argparse.Namespace, day: date, sources: pipeline.Source
         for s in h.stale_inputs:
             print(f"  home stale: {s}")
     if not chk.available:
-        print("regime unreadable (no FRED source): nothing compared, nothing sent")
+        print("regime unreadable (no FRED source): nothing compared")
         return
     prev = chk.previous
     if prev is None:
@@ -431,17 +426,8 @@ def _regime_change(args: argparse.Namespace, day: date, sources: pipeline.Source
         return
     print(f"last journalled {prev['as_of']}: {prev['state']}, dollar {prev['dollar']}"
           + (f", home {prev['home']}" if prev.get("home") else ""))
-    if not chk.changed:
-        print("unchanged: nothing sent")
-        return
-    for c in chk.changes():
+    for c in chk.changes() or ["regime unchanged"]:
         print(c)
-    if chk.notify is None:
-        print("telegram: not sent (--no-send)")
-    else:
-        print(notify.describe(chk.notify))
-        if not chk.journalled:
-            print("not journalled: the next check retries the message")
 
 
 def _paper(args: argparse.Namespace) -> int:

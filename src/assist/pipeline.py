@@ -1354,7 +1354,8 @@ def last_regime(records: Iterable[Mapping], day: date) -> dict | None:
         if best is None or as_of >= best["as_of"]:
             home = out.get("home") if isinstance(out.get("home"), Mapping) else {}
             best = {"as_of": as_of, "state": out["state"], "dollar": out["dollar"],
-                    "home": home.get("state")}
+                    "home": home.get("state"), "drivers": list(out.get("drivers") or ()),
+                    "home_drivers": list(home.get("drivers") or ())}
     return best
 
 
@@ -1438,6 +1439,19 @@ def regime_check(day: date, *, paths: Paths | None = None, source: Any = None,
       and sends nothing; an unreadable home regime is no home change.
     """
     paths = paths or Paths.default()
+    chk = regime_read(day, paths=paths, source=source, home_source=home_source)
+    if not send or not chk.available:
+        return chk
+    if chk.changed:
+        chk.notify = notify.send(regime_message(chk), kind="regime", day=day,
+                                 state_dir=paths.notify, **dict(notify_kw or {}))
+    regime_commit(chk, paths)
+    return chk
+
+
+def regime_read(day: date, *, paths: Paths, source: Any = None,
+                home_source: Any = None) -> RegimeCheck:
+    """Read only: today's regime (and home regime) against the last journalled one."""
     j = journal.Journal(paths.journal)
     reg = regime.regime(day, source=source if source is not None else Sources.default().fred)
     prev = last_regime(j.read(), day)
@@ -1447,19 +1461,78 @@ def regime_check(day: date, *, paths: Paths | None = None, source: Any = None,
                       home=home)
     chk.changed = available and prev is not None and (
         (prev["state"], prev["dollar"]) != (reg.state, reg.dollar) or chk.home_changed)
-    if not send or not available:
-        return chk
-    if chk.changed:
-        chk.notify = notify.send(regime_message(chk), kind="regime", day=day,
-                                 state_dir=paths.notify, **dict(notify_kw or {}))
+    return chk
+
+
+def regime_commit(chk: RegimeCheck, paths: Paths) -> None:
+    """Journal the regime on a baseline (no record yet, or no home state yet), or on a change
+    whose message was sent or already sent today. A failed send journals nothing."""
+    if not chk.available:
+        return
+    prev, home = chk.previous, chk.home
     home_baseline = home is not None and prev is not None and prev.get("home") is None
-    if prev is None or home_baseline or (
-            chk.changed and (chk.notify["sent"] or chk.notify["skipped"])):
+    sent = bool(chk.notify and (chk.notify["sent"] or chk.notify["skipped"]))
+    if prev is None or home_baseline or (chk.changed and sent):
+        j = journal.Journal(paths.journal)
         fp = j.register_model()
-        outputs = journal.jsonable(reg)
+        outputs = journal.jsonable(chk.regime)
         if home is not None:
             outputs["home"] = journal.jsonable(home)
-        j.record(kind="regime", fingerprint=fp, inputs={"day": day, "job": "regime"},
-                 outputs=outputs, as_of=day, run_id=uuid.uuid4().hex)
+        j.record(kind="regime", fingerprint=fp, inputs={"day": chk.day, "job": "regime"},
+                 outputs=outputs, as_of=chk.day, run_id=uuid.uuid4().hex)
         chk.journalled = True
-    return chk
+
+
+@dataclass
+class MorningCheck:
+    """The one 07:00 message (phase R, T3): the regime check and the alerts, sent together."""
+
+    day: date
+    regime: RegimeCheck
+    alerts: alerts.AlertCheck
+    text: str | None = None
+    notify: dict | None = None
+
+
+MORNING_KIND = "morning"
+OLD_MORNING_KINDS = ("regime", "holdings")  # before phase R: a day they cover is not resent
+
+
+def morning_check(day: date, *, paths: Paths | None = None, source: Any = None,
+                  home_source: Any = None, statuses: Sequence[Any] = (),
+                  jobs: Sequence[Any] = (), send: bool = True,
+                  notify_kw: Mapping[str, Any] | None = None) -> MorningCheck:
+    """Read the regime and the alerts, send one message (kind `morning`, send-once per day)
+    when either has something, then journal the regime and save the alerts' state only if it
+    was sent or already sent today. Silent when nothing changed (a regime baseline is still
+    journalled). `send=False` writes nothing."""
+    paths = paths or Paths.default()
+    r = regime_read(day, paths=paths, source=source, home_source=home_source)
+    a = alerts.prepare(day, out_dir=paths.out, state_dir=paths.notify, statuses=statuses,
+                       jobs=jobs)
+    m = MorningCheck(day=day, regime=r, alerts=a)
+    mood = []
+    if r.changed:
+        home = r.home
+        mood = messages.regime_lines(
+            r.previous, world=r.regime.state, dollar=r.regime.dollar,
+            drivers=r.regime.drivers, home=home.state if home else None,
+            home_drivers=home.drivers if home else ())
+    if mood or a.holdings or a.health:
+        m.text = messages.morning(day, regime=mood, holdings=a.holdings, health=a.health,
+                                  act_on=a.act_on)
+    if not send:
+        return m
+    if m.text is not None:
+        kw = {"pre": False, "heads": True, **dict(notify_kw or {})}
+        if not kw.get("force") and any(notify.already_sent(k, day, paths.notify)
+                                       for k in OLD_MORNING_KINDS):
+            m.notify = {"sent": False, "skipped": True, "parts": 0, "reason": "already sent"}
+        else:
+            m.notify = notify.send(m.text, kind=MORNING_KIND, day=day, state_dir=paths.notify,
+                                   **kw)
+        r.notify = m.notify if r.changed else None
+        a.notify = m.notify
+        alerts.commit(a, paths.notify)
+    regime_commit(r, paths)
+    return m

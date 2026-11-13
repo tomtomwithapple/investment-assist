@@ -1901,7 +1901,7 @@ gaps are muted until they change; the brief file name is dropped, no link.
   business fails (acted thesis `acts`), with "not acted on yet" while `ACT_ON_VERDICTS` is off.
 - [x] **T5 Phone format** (R5-phone-format). Plain HTML with bold section heads and bullets,
   not one `<pre>`; every line <= 60 characters (test); chunks still split on line boundaries.
-- [ ] **T3 One 07:00 message** (R3-one-morning). Regime change, holding changes and health in
+- [x] **T3 One 07:00 message** (R3-one-morning). Regime change, holding changes and health in
   one message, kind `morning`, send-once per day, still silent when nothing changed. The regime
   part says which regime changed, why (a cleared one says what cleared: the previous record's
   drivers against today's values) and one line on what it means for Monday (laddered or not).

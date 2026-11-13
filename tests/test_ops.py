@@ -130,7 +130,8 @@ def test_last_regime_is_the_newest_journalled_on_or_before_the_day():
                                                                 "dollar": "down"}},
     ]
     last = pipeline.last_regime(recs, DAY)
-    assert last == {"as_of": "2026-10-21", "state": "risk_off", "dollar": "up", "home": None}
+    assert last == {"as_of": "2026-10-21", "state": "risk_off", "dollar": "up", "home": None,
+                    "drivers": [], "home_drivers": []}
     assert pipeline.last_regime(recs, date(2026, 10, 18)) is None
     assert pipeline.last_regime([], DAY) is None
 
@@ -690,3 +691,58 @@ def test_cli_overrides_writes_out_overrides(tmp_path, monkeypatch, capsys):
     assert cli.main(["overrides", "--today", DAY.isoformat(), "--subject", "IDN",
                      "--rebuild"]) == 0
     assert len(build.calls) == 2
+
+
+# ---------------- one 07:00 message (phase R, T3) ----------------
+
+
+def _morning(paths, fred, day=DAY, telegram=None, send=True, home_source="HOME"):
+    kw = {"creds": CREDS, "client": telegram[1]} if telegram is not None else {}
+    return pipeline.morning_check(day, paths=paths, source=fred, home_source=home_source,
+                                  send=send, notify_kw=kw)
+
+
+def test_morning_sends_regime_and_alerts_in_one_message(paths, telegram, home):
+    _hcheck(paths, FakeFred(), day=DAY - timedelta(days=1))
+    home.now = _home("risk_off", 2, ["JCI -17.5% vs 20d high (2)"])
+    m = _morning(paths, FakeFred(), telegram=telegram)
+    assert m.regime.changed and m.notify["sent"] and len(telegram[0]) == 1
+    text = parse_qs(telegram[0][0].content.decode())["text"][0]
+    assert "<b>Mood changed</b>" in text and "Indonesia: calm → nervous." in text
+    assert notify.already_sent("morning", DAY, paths.notify)
+    assert [r["outputs"]["home"]["state"] for r in _regime_records(paths)] == [
+        "neutral", "risk_off"]
+    again = _morning(paths, FakeFred(), telegram=telegram)
+    assert not again.regime.changed and len(telegram[0]) == 1
+
+
+def test_morning_silent_when_nothing_changed_still_journals_a_baseline(paths, telegram, home):
+    m = _morning(paths, FakeFred(), telegram=telegram)
+    assert m.text is None and telegram[0] == []
+    assert m.regime.journalled and len(_regime_records(paths)) == 1
+
+
+def test_morning_failed_send_journals_and_saves_nothing(paths, home):
+    _hcheck(paths, FakeFred(), day=DAY - timedelta(days=1))
+
+    def fail(request):
+        return httpx.Response(502, text="<html>bad gateway</html>")
+
+    bad = (None, httpx.Client(transport=httpx.MockTransport(fail)))
+    m = _morning(paths, FakeFred(stress=True), telegram=bad)
+    assert m.regime.changed and not m.notify["sent"] and not m.regime.journalled
+    assert len(_regime_records(paths)) == 1 and not m.alerts.saved
+
+
+def test_morning_skips_a_day_the_old_regime_marker_already_covers(paths, telegram, home):
+    _hcheck(paths, FakeFred(), day=DAY - timedelta(days=1))
+    (paths.notify / "sent").mkdir(parents=True, exist_ok=True)
+    (paths.notify / "sent" / f"regime_{DAY}.json").write_text("{}")
+    m = _morning(paths, FakeFred(stress=True), telegram=telegram)
+    assert m.notify["skipped"] and telegram[0] == [] and m.regime.journalled
+
+
+def test_morning_dry_run_writes_nothing(paths, home):
+    _hcheck(paths, FakeFred(), day=DAY - timedelta(days=1))
+    m = _morning(paths, FakeFred(stress=True), send=False)
+    assert m.text and m.notify is None and len(_regime_records(paths)) == 1

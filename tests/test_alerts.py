@@ -388,7 +388,7 @@ def test_cli_regime_check_prints_the_alert_and_sends_nothing_with_no_send(
     assert cli.main(["regime", "--check", "--no-send", "--today", DAY.isoformat()]) == 0
     printed = capsys.readouterr().out
     assert "holdings: baseline set: 3 held names as of 2026-11-16" in printed
-    assert "idxscape: stale" in printed and "alerts: not sent (--no-send)" in printed
+    assert "idxscape: stale" in printed and "morning: not sent (--no-send)" in printed
     assert not paths.notify.exists()
 
 

@@ -28,7 +28,8 @@ from datetime import date
 from assist import plain
 from assist.layers import undervalued as _undervalued
 
-__all__ = ["DISCLAIMER_LINE", "SELL_GROUPS", "TOP_PER_GROUP", "WIDTH", "weekly", "wrap"]
+__all__ = ["DISCLAIMER_LINE", "SELL_GROUPS", "TOP_PER_GROUP", "WIDTH", "morning", "regime_lines",
+           "weekly", "wrap"]
 
 WIDTH = 60  # a phone shows about this many characters a line
 TOP_PER_GROUP = 3  # user 2026-11-13
@@ -43,6 +44,7 @@ SELL_GROUPS = (  # (key, plain label), matched in this order
 )
 WORLD = {"risk_on": "calm", "neutral": "normal", "risk_off": "nervous"}
 DOLLAR = {"up": "dollar rising", "flat": "dollar steady", "down": "dollar falling"}
+HOME = {"neutral": "calm", "risk_off": "nervous"}  # the home regime has no risk_on
 
 
 # ---------------- small helpers ----------------
@@ -210,4 +212,80 @@ def weekly(*, day: date, guide_payload: Mapping | None, stances: Sequence[Mappin
             lines += ["", f"# Sell ({len(sells)}, Rp {_m(t['sell_idr'])})", *_sells(sells)]
     lines += _thesis(holdings)
     lines += _best(undervalued)
+    return "\n".join(lines)
+
+
+# ---------------- the 07:00 message (T3) ----------------
+
+
+DOLLAR_WORD = {"up": "rising", "flat": "steady", "down": "falling"}
+
+
+def _drop_points(drivers: Sequence[str]) -> list[str]:
+    """'JCI -12.8% vs 20d high (2)' and '10Y real yield 2.78% (risk-off)' without the tail."""
+    return [re.sub(r"\s*\((\d+|risk-off|risk-on)\)$", "", d) for d in drivers]
+
+
+def regime_lines(previous: Mapping, *, world: str, dollar: str, drivers: Sequence[str],
+                 home: str | None, home_drivers: Sequence[str]) -> list[str]:
+    """What changed since the last journalled regime, why, and what it means for Monday. A mood
+    that cleared says what cleared (the previous record's warning signs). Only changed parts."""
+    out: list[str] = []
+
+    def mood(name: str, before: str, now: str, why_now: Sequence[str], why_before: Sequence[str],
+             monday_on: str, monday_off: str, words: Mapping[str, str] = WORLD) -> None:
+        out.extend(wrap(f"{name}: {words.get(before, before)} → {words.get(now, now)}.", rest=""))
+        if now == "risk_off" and why_now:
+            out.extend(wrap("Why: " + "; ".join(_drop_points(why_now)) + ".", rest=""))
+        elif before == "risk_off" and why_before:
+            out.extend(wrap("Cleared: " + "; ".join(_drop_points(why_before)) + ".", rest=""))
+        if now == "risk_off":
+            out.extend(wrap(monday_on, rest=""))
+        elif before == "risk_off":
+            out.extend(wrap(monday_off, rest=""))
+
+    if previous["state"] != world:
+        mood("World", previous["state"], world, drivers, previous.get("drivers") or (),
+             "Monday: orders split in 3, new buys need a higher return.",
+             "Monday: the extra caution for the world mood ends.")
+    if previous["dollar"] != dollar:
+        out.extend(wrap(f"Dollar: {DOLLAR_WORD.get(previous['dollar'], previous['dollar'])} → "
+                        f"{DOLLAR_WORD.get(dollar, dollar)}.", rest=""))
+        meaning = plain.meaning("dollar", dollar)
+        if meaning:
+            out.extend(wrap(meaning, rest=""))
+    if home is not None and previous.get("home") is not None and previous["home"] != home:
+        mood("Indonesia", previous["home"], home, home_drivers,
+             previous.get("home_drivers") or (),
+             "Monday: Indonesian stock and bond orders split in 3.",
+             "Monday: the extra caution for Indonesia ends.", HOME)
+    return ["# Mood changed", *out] if out else []
+
+
+def _health_lines(health: Sequence[str]) -> list[str]:
+    out: list[str] = []
+    for line in health:
+        if line.startswith("- "):
+            out += wrap(line[2:], first="• ")
+        elif line.startswith("Data health"):
+            head, _, rest = line.partition(":")
+            out += ["", f"# {head}"] + (wrap(rest.strip(), rest="") if rest.strip() else [])
+        else:
+            out += wrap(line, rest="")
+    return out
+
+
+def morning(day: date, *, regime: Sequence[str], holdings: Sequence[str],
+            health: Sequence[str], act_on: bool | None) -> str:
+    """The one 07:00 message: mood changes, holding changes, data health; one disclaimer."""
+    lines = [f"# investment-assist morning, {day:%a} {day.day} {day:%b %Y}", DISCLAIMER_LINE]
+    if regime:
+        lines += ["", *regime]
+    if holdings:
+        lines += ["", "# Holdings"]
+        if act_on is False:
+            lines += wrap("Paper: not acted on yet (the switch is off).", rest="")
+        for h in holdings:
+            lines += wrap(re.sub(r"^Holdings:\s*", "", h), first="• ")
+    lines += _health_lines(health)
     return "\n".join(lines)
