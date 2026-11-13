@@ -37,7 +37,8 @@ delisted symbols to no CIK), so the replay is survivorship-biased upwards; a ver
 is still read with that in mind. Candidates need a passed verdict, both hurdles and a positive
 margin (GARP also a gap of at least `min_gap_pt`). **Peers by SIC** (sec-edgar S45): a name's
 `sector` is its SIC major group (`sic_sector`, two digits, e.g. `SIC 35`) and its `industry` its
-four-digit SIC (`SIC 3674`), so `select`'s `MAX_PER_SECTOR` and the layer's one name per industry
+three-digit SIC industry group (`SIC 367`; user 2026-11-13, so shippers 4400 and 4412 are one
+industry), so `select`'s `MAX_PER_SECTOR` and the layer's one name per industry
 and size (`diversify`) bind. SIC divisions are too coarse to be the sector (E holds shipping,
 telecoms and utilities; H banks, insurers and REITs). A name SEC lists no SIC for stays its own
 sector bucket; the count is a stale input (`no_sic_note`).
@@ -103,7 +104,8 @@ def sic_sector(sic: int | None) -> str | None:
 
 
 def sic_industry(sic: int | None) -> str | None:
-    return None if sic is None else f"SIC {sic:04d}"
+    """SIC industry group (the first three digits) → `"SIC 367"`; None without a code."""
+    return None if sic is None else f"SIC {sic // 10:03d}"
 
 
 def no_sic_note(listings: Mapping[str, Listing], symbols: Iterable[str]) -> str | None:

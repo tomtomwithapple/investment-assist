@@ -23,6 +23,9 @@ today's **acted** verdict and the cause of its change. Pure.
 - **Take-profit** fires when the price reaches the fair price (`state` armed → fired, action
   `trim_to_half`: `exits.TP_ACTION`), then `stop_adding` while fired. It re-arms only once the
   price is `REARM_BELOW_FAIR_PCT` (10%) below fair, so a price hovering at fair trims once.
+  **First record is a baseline** (user 2026-11-13): a name already at or above fair on its first
+  record starts `fired` without a trim (`stop_adding`, `baseline` true), so the first run does
+  not trim every rich holding at once; it trims only on a later crossing up after re-arming.
 - **Action**: `sell_all` (the thesis acts) > `trim_to_half` (take-profit fired today) >
   `stop_adding` (fired earlier, not re-armed) > `hold`.
 - **Re-entry**: `sold` lists the names the model sold on its thesis and that are no longer held;
@@ -30,8 +33,8 @@ today's **acted** verdict and the cause of its change. Pure.
   least `REENTRY_MARGIN_PT` (`reenters`), as large as the risk-off premium so a regime toggle
   alone cannot bring it back.
 
-**A model change, behind a flag.** `ACT_ON_VERDICTS` (False) keeps S86's amounts in the guide:
-the acted verdict is recorded and shown beside each step, nothing it says moves an order. True
+**A model change, behind a flag.** `ACT_ON_VERDICTS` (True since the user's call 2026-11-13;
+False keeps S86's amounts in the guide, the acted verdict only shown beside each step). True
 makes the guide's thesis sells, take-profit trims, stop-adding and re-entry follow the acted
 verdict (and drop sizing's "trim in full" where the acted thesis holds). It changes stances'
 orders, so per CLAUDE.md it waits for its placebo and the user's decision (S87 Progress row).
@@ -50,11 +53,11 @@ from assist.candidates import exits
 __all__ = ["ACTIONS", "ACT_ON_VERDICTS", "REARM_BELOW_FAIR_PCT", "REENTRY_MARGIN_PT",
            "SOFT_FAIL_REPORTS", "act", "config", "reenters", "sold"]
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 SOFT_FAIL_REPORTS = 2  # phase P rule 4 (user 2026-11-12)
 REARM_BELOW_FAIR_PCT = 10.0  # rule 4 (user 2026-11-12); may change after a retrospective
-REENTRY_MARGIN_PT = 1.0  # = hurdle risk_off_premium_pt: a regime toggle cannot re-admit
-ACT_ON_VERDICTS = False  # S87: the guide keeps S86's amounts until the user switches this on
+REENTRY_MARGIN_PT = 1.0  # = hurdle risk_off_premium_pt; confirmed by the user 2026-11-13
+ACT_ON_VERDICTS = True  # user 2026-11-13: thesis sells, trims and re-entry move the guide
 ACTIONS = ("hold", "sell_all", "trim_to_half", "stop_adding")
 
 
@@ -62,6 +65,7 @@ def config() -> dict:
     return {"hysteresis_version": VERSION, "soft_fail_reports": SOFT_FAIL_REPORTS,
             "rearm_below_fair_pct": REARM_BELOW_FAIR_PCT,
             "reentry_margin_pt": REENTRY_MARGIN_PT, "act_on_verdicts": ACT_ON_VERDICTS,
+            "first_record": "baseline: above fair stops adding, no trim",
             "rejudged_on": "a new report period or dividend record, or a model change",
             "required_return": "held between reports (set when the thesis is re-judged)"}
 
@@ -108,15 +112,16 @@ def act(prev: Mapping | None, thesis: Mapping, inputs: Mapping, *, price: float 
     fair = exits.fair_price("dividend_value", dv.get("price"), dv.get("legs"), required)
     state, fired_now = pv.get("state") or "armed", False
     ok = bool(price and price > 0)
+    baseline = prev is None and bool(fair and ok and price >= fair)
     if fair and ok:
         if state == "armed" and price >= fair:
-            state, fired_now = "fired", True
+            state, fired_now = "fired", not baseline
         elif state == "fired" and price <= fair * (1 - REARM_BELOW_FAIR_PCT / 100):
             state = "armed"
     val = {"required_pt": required, "required_live_pt": required_live,
            "required_for": dict(judged) if relock else pv.get("required_for"),
            "fair_price": fair, "take_profit": exits._floor_tick(fair) if fair else None,
-           "state": state,
+           "state": state, "baseline": baseline,
            "rearm_below": fair * (1 - REARM_BELOW_FAIR_PCT / 100) if fair else None}
     action = ("sell_all" if th.get("acts") else "trim_to_half" if fired_now
               else "stop_adding" if state == "fired" else "hold")

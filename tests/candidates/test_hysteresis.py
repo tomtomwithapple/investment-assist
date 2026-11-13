@@ -129,6 +129,21 @@ def test_take_profit_fires_at_fair_then_does_not_refire_until_10pct_below():
     assert hy.REARM_BELOW_FAIR_PCT == 10.0
 
 
+def test_a_first_record_above_fair_is_a_baseline_not_a_trim():
+    """User 2026-11-13: a name already above fair on its first record stops adding, no trim;
+    it trims only on a later crossing up through fair after re-arming."""
+    fair = 200 / ((R - 8.0) / 100)
+    acts = chain((PASS, Q2, fair + 10),    # first record above fair: baseline
+                 (PASS, Q2, fair + 20),    # still above: no trim
+                 (PASS, Q2, fair * 0.90),  # re-armed
+                 (PASS, Q2, fair + 10))    # a real crossing: trim
+    assert [a["valuation"]["state"] for a in acts] == ["fired", "fired", "armed", "fired"]
+    assert [a["action"] for a in acts] == [
+        "stop_adding", "stop_adding", "hold", "trim_to_half"]
+    assert acts[0]["valuation"]["baseline"] is True
+    assert acts[0]["cause"] == "first"
+
+
 def test_a_thesis_sell_outranks_take_profit():
     a = act(None, HARD, price=5000.0)
     assert a["action"] == "sell_all" and a["valuation"]["state"] == "fired"
@@ -189,4 +204,5 @@ def test_config_names_the_numbers_and_the_flag():
     c = hy.config()
     assert c["soft_fail_reports"] == 2 and c["rearm_below_fair_pct"] == 10.0
     assert c["act_on_verdicts"] is hy.ACT_ON_VERDICTS
-    assert hy.ACT_ON_VERDICTS is False  # S86 amounts until the user switches it on
+    assert hy.ACT_ON_VERDICTS is True  # user 2026-11-13: thesis sells and trims act
+    assert hy.REENTRY_MARGIN_PT == 1.0  # confirmed by the user 2026-11-13

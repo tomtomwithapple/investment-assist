@@ -171,7 +171,8 @@
             "fair_price": {"type": ["number", "null"]},
             "take_profit": {"type": ["number", "null"]},
             "state": {"enum": ["armed", "fired"], "description": "fired: take-profit trimmed, no new trim or add until the price is rearm_below."},
-            "rearm_below": {"type": ["number", "null"]}
+            "rearm_below": {"type": ["number", "null"]},
+            "baseline": {"type": "boolean", "description": "first record already at or above fair: stop adding, no trim (user 2026-11-13)"}
           }
         },
         "action": {"enum": ["hold", "sell_all", "trim_to_half", "stop_adding"]},

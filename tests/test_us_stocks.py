@@ -133,9 +133,11 @@ def test_universe_has_no_sic_on_a_store_before_profiles(store):
 
 
 def test_sic_sector_is_the_major_group_and_industry_the_code():
-    assert (us.sic_sector(3674), us.sic_industry(3674)) == ("SIC 36", "SIC 3674")
-    assert (us.sic_sector(100), us.sic_industry(100)) == ("SIC 01", "SIC 0100")
+    assert (us.sic_sector(3674), us.sic_industry(3674)) == ("SIC 36", "SIC 367")
+    assert (us.sic_sector(100), us.sic_industry(100)) == ("SIC 01", "SIC 010")
     assert us.sic_sector(None) is None and us.sic_industry(None) is None
+    # user 2026-11-13: industry is the three-digit SIC group, so two shippers are one industry
+    assert us.sic_industry(3672) == us.sic_industry(3674) == "SIC 367"  # one industry group
 
 
 def test_bars_per_symbol_follow_the_security_across_renames_and_take_the_latest_version(store):
@@ -477,7 +479,7 @@ def test_run_caps_candidates_per_sic_major_group(monkeypatch):
     assert all(sectors.count(x) <= us.MAX_PER_SECTOR for x in set(sectors))
     assert len(out["candidates"]) == min(len(free["candidates"]), 2 * us.MAX_PER_SECTOR)
     r = out["ranking"][0]
-    assert r["industry"] == f"SIC {r['sic']:04d}" and r["sector"] == f"SIC {r['sic'] // 100}"
+    assert r["industry"] == f"SIC {r['sic'] // 10:03d}" and r["sector"] == f"SIC {r['sic'] // 100}"
     assert not any("SIC" in x for x in out["stale_inputs"])  # every ranked name has one
 
 

@@ -323,7 +323,9 @@ def test_bbni_regime_toggle_moves_no_fair_price_and_no_verdict():
     assert b["acted"]["valuation"]["required_live_pt"] == HURDLE
     assert b["valuation"]["above_fair"] == a["valuation"]["above_fair"] is True
     assert b["cause"] is None and b["acted"]["cause"] is None
-    assert b["acted"]["action"] == "stop_adding" and a["acted"]["action"] == "trim_to_half"
+    # a first record above fair is a baseline (user 2026-11-13): stop adding, no trim
+    assert b["acted"]["action"] == a["acted"]["action"] == "stop_adding"
+    assert a["acted"]["valuation"]["baseline"] is True
 
 
 def test_a_first_soft_fail_holds_and_the_second_report_sells_on_the_record():

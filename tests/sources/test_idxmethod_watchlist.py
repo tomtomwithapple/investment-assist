@@ -112,7 +112,7 @@ def test_reading_leaves_the_store_unchanged(tmp_path):
     assert sorted(p.name for p in db.parent.iterdir()) == ["stockbiter.db"]
 
 
-def test_shipped_config_defaults_to_every_custom_screener():
-    cfg = load_config(DEFAULT_WATCHLIST)
-    assert cfg["category"] == "Custom" and cfg["screeners"] == []
+def test_shipped_config_reads_only_the_three_dividend_screens():
+    cfg = load_config(DEFAULT_WATCHLIST)  # user 2026-11-13: not the framework replicas
+    assert cfg["category"] == "Custom" and cfg["screeners"] == [7377506, 7377507, 7377508]
     assert cfg["max_age_days"] > 0
