@@ -69,12 +69,11 @@ size go first, in full; the names the dividend screen keeps go last.
 
 `assist run` reads every layer (0 regime, 1 worldbankscape score, 2 overrides, 3 market signals,
 4 candidates, 5 portfolio), writes one stance per subject × asset, journals every decision with
-the model fingerprint, writes the brief and sends one Telegram message a day. The message opens
-with the disclaimer and "Paper only, not an order", then the undervalued IDN and USA lists and
-every name sized to sell or buy per market and the held names to average down (a sized add on a
-held name 5% or more below its average cost; cost basis changes no size), each market labelled with its stocks leg's split
-into a rebalance to the 48/32/20 benchmark and the model's tilt; stances and regime stay in the
-brief. A missing, locked
+the model fingerprint, writes the brief and sends one Telegram message a day (phase R,
+`messages.weekly`), built from this week's steps only, in lines a phone shows whole: the market
+mood in words, buy and sell totals and the tranche dates once, every buy, the sells grouped by
+reason (top 3 names by amount each), the held names whose business no longer passes, and the
+passing IDN screens' best five. A missing, locked
 or stale store is reported and lowers confidence; only a missing layer 1 stops the run.
 
 The brief, top to bottom:
@@ -135,7 +134,7 @@ the whole market, every verdict holds as it was, marked stale.
 | `journal/decisions.jsonl`, `journal/models/` | append-only, hash-chained decisions, each with the model fingerprint; the daily regime check adds `regime` records, each run one `holding` record per held name |
 | `data/briefs/<day>.md` | the Markdown brief, diffed against the previous day's snapshot |
 | `data/snapshots/<day>/` | copy of out/ per run day, for the brief's "changes since last run" |
-| `data/notify/sent/` | send-once markers (`brief_<day>.json`, `regime_<day>.json`, `holdings_<day>.json`); `$ASSIST_NOTIFY_STATE` moves them |
+| `data/notify/sent/` | send-once markers (`brief_<day>.json`, `morning_<day>.json`; before phase R `regime_<day>.json`, `holdings_<day>.json`); `$ASSIST_NOTIFY_STATE` moves them |
 | `data/notify/alerts/` | the daily alerts' state: the last holdings snapshot sent (`holdings_IDN.json`) and the last data health set (`health.json`) |
 | `launchd/weekly.log`, `launchd/regime.log` | the scheduled jobs' output |
 
@@ -148,7 +147,7 @@ and is retried on the next run.
 | Label | When (this Mac's time zone, WIB) | Runs |
 |---|---|---|
 | `com.tommy.investment-assist.weekly` | Monday 07:00, before the IDX open | `assist run`: stances, journal, brief, Telegram summary |
-| `com.tommy.investment-assist.regime` | every day 07:00 | `assist regime --check`: Telegram only when the regime or dollar direction changed, then the change-only holding and data health alerts (S90) |
+| `com.tommy.investment-assist.regime` | every day 07:00 | `assist regime --check`: one Telegram message (kind `morning`), only when the world or Indonesian mood or the dollar changed (what, why, what it means for Monday), a held name's verdict changed, or the data health did; known gaps in `config/alerts.yaml` are muted until they change |
 
 How the daily check works:
 

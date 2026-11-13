@@ -328,7 +328,7 @@ def test_idx_method_dns_failure_is_reported(tmp_path):
     probs = alerts.idxmethod_jobs(root, now=datetime(2026, 11, 13, 7, 0))
     assert [p.text for p in probs] == [
         "idx-method open 2026-11-12 09:00: failed (rc 1): network error, could not reach "
-        "Stockbit (DNS); no Stockbit session"]
+        "Stockbit (DNS); no Stockbit session. Next: in idx-method, ./run.sh session."]
 
 
 def test_idx_method_kill_at_the_cap_and_a_run_with_no_result_are_reported(tmp_path):
@@ -336,11 +336,12 @@ def test_idx_method_kill_at_the_cap_and_a_run_with_no_result_are_reported(tmp_pa
     probs = alerts.idxmethod_jobs(root, now=datetime(2026, 11, 12, 7, 0))
     assert [p.text for p in probs] == [
         "idx-method backfill 2026-11-11 17:00: failed (rc 1): factors_pull.py was killed after "
-        "1800s; factors_pull.py failed"]
+        "1800s; factors_pull.py failed. Next: usually cleared by the next run."]
     root2 = logs(tmp_path / "b", backfill=BACKFILL_HUNG)
     hung = alerts.idxmethod_jobs(root2, now=datetime(2026, 11, 13, 7, 0))
     assert [p.text for p in hung] == [
-        "idx-method backfill 2026-11-12 17:00: no result reported (killed or still running)"]
+        "idx-method backfill 2026-11-12 17:00: no result reported (killed or still running). "
+        "Next: usually cleared by the next run."]
     # still inside its window: not a problem yet
     assert alerts.idxmethod_jobs(root2, now=datetime(2026, 11, 12, 17, 30)) == []
 
@@ -388,7 +389,7 @@ def test_cli_regime_check_prints_the_alert_and_sends_nothing_with_no_send(
     assert cli.main(["regime", "--check", "--no-send", "--today", DAY.isoformat()]) == 0
     printed = capsys.readouterr().out
     assert "holdings: baseline set: 3 held names as of 2026-11-16" in printed
-    assert "idxscape: stale" in printed and "alerts: not sent (--no-send)" in printed
+    assert "idxscape: stale" in printed and "morning: not sent (--no-send)" in printed
     assert not paths.notify.exists()
 
 
@@ -412,6 +413,51 @@ def test_idx_method_reasons_are_short_and_skip_zero_failure_lines(tmp_path):
     probs = alerts.idxmethod_jobs(root, now=datetime(2026, 11, 13, 7, 0))
     assert [p.text for p in probs] == [
         "idx-method close 2026-11-12 16:30: failed (rc 1): 10 endpoint(s) stored nothing "
-        "(fundachart_metrics, running_trade, trade_book_chart, ...)",
+        "(fundachart_metrics, running_trade, trade_book_chart, ...). Next: usually cleared by "
+        "the next run.",
         "idx-method backfill 2026-11-12 17:00: failed (rc 1): 18 failures; factors_pull.py "
-        "failed"]
+        "failed. Next: usually cleared by the next run."]
+
+
+# ---------------- known gaps muted, next steps (phase R, T4) ----------------
+
+
+def test_accepted_problems_are_muted_until_their_key_changes(tmp_path):
+    known = alerts.Problem("doctor:openkrx:missing:", "openkrx: missing")
+    new = alerts.Problem("doctor:idxscape:stale:index_daily", "idxscape: stale")
+    chk = alerts.prepare(DAY, out_dir=tmp_path / "out", state_dir=tmp_path / "state",
+                         jobs=[known], accepted={"doctor:openkrx:missing:"})
+    assert chk.health == []
+    chk = alerts.prepare(DAY, out_dir=tmp_path / "out", state_dir=tmp_path / "state",
+                         jobs=[known, new], accepted={"doctor:openkrx:missing:"})
+    assert chk.health == ["Data health:", "- idxscape: stale"]
+    changed = alerts.Problem("doctor:openkrx:failing:", "openkrx: failing")
+    chk = alerts.prepare(DAY, out_dir=tmp_path / "out", state_dir=tmp_path / "state",
+                         jobs=[changed], accepted={"doctor:openkrx:missing:"})
+    assert chk.health == ["Data health:", "- openkrx: failing"]
+
+
+def test_accepted_keys_come_from_config(tmp_path):
+    cfg = tmp_path / "alerts.yaml"
+    cfg.write_text("accepted:\n  - 'doctor:openkrx:missing:'\n"
+                   "  - 'doctor:satudatascape:missing:'\n")
+    assert alerts.accepted_keys(cfg) == {"doctor:openkrx:missing:",
+                                          "doctor:satudatascape:missing:"}
+    assert alerts.accepted_keys(tmp_path / "none.yaml") == set()
+    assert "doctor:jquantster:stale:investor_types" in alerts.accepted_keys()
+
+
+def test_idx_method_failures_carry_a_next_step(tmp_path):
+    root = tmp_path / "idx"
+    log = root / "store/data/archive"
+    log.mkdir(parents=True)
+    (log / "close.log").write_text(CLOSE_400)
+    (log / "backfill.log").write_text(BACKFILL_FAILURES)
+    (log / "open.log").write_text(
+        "=== 2026-11-12 09:00:01 +0700 open ===\nURLError: nodename nor servname provided\n"
+        "no working Stockbit session\n=== done, rc=1 ===\n")
+    probs = alerts.idxmethod_jobs(root, now=datetime(2026, 11, 12, 20, 0))
+    text = {p.key.split(":")[1]: p.text for p in probs}
+    assert text["open"].endswith("Next: in idx-method, ./run.sh session.")
+    assert text["close"].endswith("Next: usually cleared by the next run.")
+    assert text["backfill"].endswith("Next: usually cleared by the next run.")

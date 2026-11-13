@@ -35,15 +35,21 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from assist import notify
 from assist.candidates import holdings as holdings_mod
 from assist.layers.types import DISCLAIMER
 
-__all__ = ["JOBS", "KIND", "REMIND_DAYS", "AlertCheck", "Problem", "daily_check",
+__all__ = ["JOBS", "KIND", "REMIND_DAYS", "AlertCheck", "Problem", "accepted_keys", "commit",
+           "daily_check",
            "data_problems", "doctor_problems", "holding_lines", "idxmethod_jobs",
-           "live_idx_jobs", "load_snapshot", "save_snapshot", "snapshot"]
+           "live_idx_jobs", "load_snapshot", "prepare", "save_snapshot", "snapshot"]
 
 KIND = "holdings"
+ACCEPTED = Path(__file__).resolve().parents[2] / "config" / "alerts.yaml"
+NEXT_SESSION = "Next: in idx-method, ./run.sh session."
+NEXT_RUN = "Next: usually cleared by the next run."
 MARKET = "IDN"
 REMIND_DAYS = 7
 STATE = "alerts"
@@ -80,6 +86,9 @@ class AlertCheck:
     notify: dict | None = None
     saved: bool = False
     error: str | None = None
+    act_on: bool | None = None
+    snap: dict | None = field(default=None, repr=False)  # saved on a send (commit)
+    health_state: dict | None = field(default=None, repr=False)
 
 
 # ---------------- holdings ----------------
@@ -343,11 +352,13 @@ def idxmethod_jobs(root: Path | None, *, now: datetime | None = None,
             if now - started < JOB_NO_RESULT_AFTER:
                 continue
             out.append(Problem(f"idx-method:{job}:no-result",
-                               f"{head}: no result reported (killed or still running)"))
+                               f"{head}: no result reported (killed or still running). "
+                               + NEXT_RUN))
         elif rc != 0 or any("killed after" in r for r in reasons):
             why = "; ".join(reasons) or (body[-1].strip()[:160] if body else "no detail")
+            step = NEXT_SESSION if "no Stockbit session" in reasons else NEXT_RUN
             out.append(Problem(f"idx-method:{job}:{_norm(why)}",
-                               f"{head}: failed (rc {rc}): {why}"))
+                               f"{head}: failed (rc {rc}): {why}. {step}"))
     return out
 
 
@@ -411,40 +422,68 @@ def message(day: date, holdings: Sequence[str], health: Sequence[str],
     return "\n".join([*lines, "", DISCLAIMER])
 
 
-def daily_check(day: date, *, out_dir: Path, state_dir: Path, statuses: Sequence[Any] = (),
-                jobs: Sequence[Problem] = (), send: bool = True,
-                notify_kw: Mapping[str, Any] | None = None) -> AlertCheck:
-    """Compare the newest holding record with the last sent one and the health problems with
-    the last sent set; send one message (kind `holdings`, send-once per day) when either has
-    something. Never raises."""
+def accepted_keys(path: Path = ACCEPTED) -> set[str]:
+    """The problem keys the user accepted as known (phase R, T4): muted until their key changes.
+    A missing or unreadable file accepts nothing."""
+    try:
+        raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+        return {str(k) for k in raw.get("accepted") or ()}
+    except (OSError, ValueError, AttributeError, yaml.YAMLError):
+        return set()
+
+
+def prepare(day: date, *, out_dir: Path, state_dir: Path, statuses: Sequence[Any] = (),
+            jobs: Sequence[Problem] = (), accepted: set[str] | None = None) -> AlertCheck:
+    """Read only: the holding change lines and the health lines, and the state to save if they
+    are sent (`commit`). Never raises: an error becomes `AlertCheck.error`."""
     chk = AlertCheck(day=day)
     try:
         p = holdings_mod.load(out_dir, MARKET)
-        snap = last = None
-        act_on = None
         if p is None:
             chk.holdings_note = f"no out/holdings/{MARKET}.json yet"
         else:
             last = load_snapshot(state_dir)
             chk.baseline = last is None
             chk.holdings = holding_lines(p, last)
-            snap = snapshot(p)
-            act_on = snap["act_on_verdicts"]
-        problems = [*data_problems(out_dir), *doctor_problems(statuses), *jobs]
-        chk.health, health_state = _health(problems, _load_health(state_dir), day)
-        if not chk.holdings and not chk.health:
-            return chk
-        chk.text = message(day, chk.holdings, chk.health, act_on)
-        if not send:
-            return chk
-        chk.notify = notify.send(chk.text, kind=KIND, day=day, state_dir=state_dir,
-                                 **dict(notify_kw or {}))
-        if chk.notify.get("sent") or chk.notify.get("skipped"):
-            if snap is not None:
-                save_snapshot(state_dir, snap)
-            if health_state is not None:
-                _write(_state(state_dir) / "health.json", health_state)
-            chk.saved = True
+            chk.snap = snapshot(p)
+            chk.act_on = chk.snap["act_on_verdicts"]
+        muted = accepted_keys() if accepted is None else accepted
+        problems = [p for p in (*data_problems(out_dir), *doctor_problems(statuses), *jobs)
+                    if p.key not in muted]
+        chk.health, chk.health_state = _health(problems, _load_health(state_dir), day)
     except Exception as e:  # noqa: BLE001 - the daily check never fails on its alerts
         chk.error = f"{type(e).__name__}: {e}"
+    return chk
+
+
+def commit(chk: AlertCheck, state_dir: Path) -> None:
+    """After a send (or a send already made today): save the snapshot and the health state, so
+    the next check compares against what was sent. A failed send saves nothing."""
+    if not (chk.notify and (chk.notify.get("sent") or chk.notify.get("skipped"))):
+        return
+    try:
+        if chk.snap is not None:
+            save_snapshot(state_dir, chk.snap)
+        if chk.health_state is not None:
+            _write(_state(state_dir) / "health.json", chk.health_state)
+        chk.saved = True
+    except Exception as e:  # noqa: BLE001
+        chk.error = f"{type(e).__name__}: {e}"
+
+
+def daily_check(day: date, *, out_dir: Path, state_dir: Path, statuses: Sequence[Any] = (),
+                jobs: Sequence[Problem] = (), send: bool = True,
+                notify_kw: Mapping[str, Any] | None = None) -> AlertCheck:
+    """Compare the newest holding record with the last sent one and the health problems with
+    the last sent set; send one message (kind `holdings`, send-once per day) when either has
+    something. Never raises."""
+    chk = prepare(day, out_dir=out_dir, state_dir=state_dir, statuses=statuses, jobs=jobs)
+    if chk.error or (not chk.holdings and not chk.health):
+        return chk
+    chk.text = message(day, chk.holdings, chk.health, chk.act_on)
+    if not send:
+        return chk
+    chk.notify = notify.send(chk.text, kind=KIND, day=day, state_dir=state_dir,
+                             **dict(notify_kw or {}))
+    commit(chk, state_dir)
     return chk

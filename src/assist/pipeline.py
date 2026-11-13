@@ -101,7 +101,17 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from assist import alerts, brief, guide, journal, layers_out, notify, override_history, stance
+from assist import (
+    alerts,
+    brief,
+    guide,
+    journal,
+    layers_out,
+    messages,
+    notify,
+    override_history,
+    stance,
+)
 from assist.candidates import holdings as holdings_mod
 from assist.candidates import peers as peer_cmp
 from assist.candidates import tiers_replay
@@ -1011,79 +1021,12 @@ def _journal_idn_overrides(j: journal.Journal, layers: Layers, stances: Mapping,
 # ---------------- notify ----------------
 
 
-GUIDE_TELEGRAM_STEPS = 12  # the message stays short; the rest is on the home page
-
-
-def message(*, day: date, brief_path: Path | None, undervalued: Sequence[Mapping] = (),
-            stances: Sequence[Mapping] = (), guide_payload: Mapping | None = None) -> str:
-    """The Telegram text: `notify.header` (title, disclaimer, paper-only line, S42), per market
-    (IDN, then USA) the undervalued top 5, then the names sized to sell or buy (`sizing`), each
-    market's list labelled with its stocks leg's rebalance vs tilt (`notify.leg_line`). On a
-    home (IDN) risk_off one line after the header (S54). Stances, regime and the portfolio legs
-    are in the brief."""
-    lines = notify.header(day)
-    if guide_payload is not None:  # S78: this week's steps first
-        lines += ["This week:", *guide.lines(guide_payload, limit=GUIDE_TELEGRAM_STEPS), ""]
-    home = brief.home_message_line(stances)  # S54: one line on a home risk_off
-    if home:
-        lines += [home, ""]
-    lines += _undervalued_lines(undervalued) or ["Undervalued: no market read this run"]
-    trades = trade_lines(undervalued, stances)
-    if trades:
-        lines += ["", *trades]
-    if brief_path is not None:
-        lines += ["", f"brief: {brief_path.name}"]
-    lines += ["", "Heuristic, not investment advice."]
-    return "\n".join(lines)
-
-
-def _m(idr: float) -> str:
-    return f"{idr / 1e6:,.1f}m"
-
-
-def trade_lines(payloads: Sequence[Mapping], stances: Sequence[Mapping] = ()) -> list[str]:
-    """Per market: its leg's rebalance vs tilt label when its stance is given (S42), every name
-    sized to sell (`sizing.trims`, largest first, with its reason), then every name sized to buy
-    (a row's `size`), or one line saying there is none; then the held names to average down
-    (S70: funded with the old and new average cost, unfunded, and how many stopped where)."""
-    lines: list[str] = []
-    for p in payloads:
-        mkt, sizing = p["market"], p.get("sizing") or {}
-        label = notify.leg_line(stances, mkt)
-        if label:
-            lines.append(label)
-        trims = sorted(sizing.get("trims") or (), key=lambda t: (-t["idr"], t["symbol"]))
-        if trims:
-            lines.append(f"{mkt} to sell ({len(trims)}, IDR {_m(sum(t['idr'] for t in trims))}):")
-            lines += [f"  {t['symbol']:<5} {_m(t['idr']):>6}  {t['reason']}" for t in trims]
-        else:
-            lines.append(f"{mkt} to sell: none")
-        buys, seen = [], set()
-        for st in p.get("styles") or ():
-            for r in st.get("rows") or ():
-                if r.get("size") and r["symbol"] not in seen:
-                    seen.add(r["symbol"])
-                    buys.append((r, st["style"]))
-        if buys:
-            total = sum(r["size"]["idr"] for r, _ in buys)
-            lines.append(f"{mkt} to buy ({len(buys)}, IDR {_m(total)}):")
-            lines += [f"  {r['symbol']:<5} {_m(r['size']['idr']):>6}  {style} #{r['rank']}"
-                      for r, style in buys]
-        else:
-            budget = sizing.get("budget_idr")
-            why = "" if not budget else f" (IDR {_m(budget)} budget unspent)"
-            lines.append(f"{mkt} to buy: none{why}")
-        down = brief.average_down_lines(p)
-        if len(down) == 1 and down[0].startswith("none"):
-            lines.append(f"{mkt} to average down: {down[0]}")
-        elif down:
-            lines.append(f"{mkt} to average down ({len(down) - 1}):")
-            lines += [f"  {x}" for x in down]
-    return lines
-
-
-def _undervalued_lines(payloads: Sequence[Mapping]) -> list[str]:
-    return undervalued.telegram_lines(payloads) if payloads else []
+def message(*, day: date, guide_payload: Mapping | None = None,
+            undervalued: Sequence[Mapping] = (), stances: Sequence[Mapping] = (),
+            holdings: Mapping | None = None) -> str:
+    """The Monday Telegram text (phase R): `messages.weekly`, built from the guide only."""
+    return messages.weekly(day=day, guide_payload=guide_payload, stances=stances,
+                           undervalued=undervalued, holdings=holdings)
 
 
 # ---------------- undervalued (F5) ----------------
@@ -1374,10 +1317,10 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
     res.ok = True
 
     if send:
-        msg = message(day=day, brief_path=res.brief_path, undervalued=res.undervalued,
-                      stances=res.stances, guide_payload=res.guide)
+        msg = message(day=day, undervalued=res.undervalued, stances=res.stances,
+                      guide_payload=res.guide, holdings=holdings_mod.load(paths.out, "IDN"))
         res.notify = notify.send(msg, kind="brief", day=day, state_dir=paths.notify,
-                                 **dict(notify_kw or {}))
+                                 **{"pre": False, "heads": True, **dict(notify_kw or {})})
     return res
 
 
@@ -1411,7 +1354,8 @@ def last_regime(records: Iterable[Mapping], day: date) -> dict | None:
         if best is None or as_of >= best["as_of"]:
             home = out.get("home") if isinstance(out.get("home"), Mapping) else {}
             best = {"as_of": as_of, "state": out["state"], "dollar": out["dollar"],
-                    "home": home.get("state")}
+                    "home": home.get("state"), "drivers": list(out.get("drivers") or ()),
+                    "home_drivers": list(home.get("drivers") or ())}
     return best
 
 
@@ -1495,6 +1439,19 @@ def regime_check(day: date, *, paths: Paths | None = None, source: Any = None,
       and sends nothing; an unreadable home regime is no home change.
     """
     paths = paths or Paths.default()
+    chk = regime_read(day, paths=paths, source=source, home_source=home_source)
+    if not send or not chk.available:
+        return chk
+    if chk.changed:
+        chk.notify = notify.send(regime_message(chk), kind="regime", day=day,
+                                 state_dir=paths.notify, **dict(notify_kw or {}))
+    regime_commit(chk, paths)
+    return chk
+
+
+def regime_read(day: date, *, paths: Paths, source: Any = None,
+                home_source: Any = None) -> RegimeCheck:
+    """Read only: today's regime (and home regime) against the last journalled one."""
     j = journal.Journal(paths.journal)
     reg = regime.regime(day, source=source if source is not None else Sources.default().fred)
     prev = last_regime(j.read(), day)
@@ -1504,19 +1461,78 @@ def regime_check(day: date, *, paths: Paths | None = None, source: Any = None,
                       home=home)
     chk.changed = available and prev is not None and (
         (prev["state"], prev["dollar"]) != (reg.state, reg.dollar) or chk.home_changed)
-    if not send or not available:
-        return chk
-    if chk.changed:
-        chk.notify = notify.send(regime_message(chk), kind="regime", day=day,
-                                 state_dir=paths.notify, **dict(notify_kw or {}))
+    return chk
+
+
+def regime_commit(chk: RegimeCheck, paths: Paths) -> None:
+    """Journal the regime on a baseline (no record yet, or no home state yet), or on a change
+    whose message was sent or already sent today. A failed send journals nothing."""
+    if not chk.available:
+        return
+    prev, home = chk.previous, chk.home
     home_baseline = home is not None and prev is not None and prev.get("home") is None
-    if prev is None or home_baseline or (
-            chk.changed and (chk.notify["sent"] or chk.notify["skipped"])):
+    sent = bool(chk.notify and (chk.notify["sent"] or chk.notify["skipped"]))
+    if prev is None or home_baseline or (chk.changed and sent):
+        j = journal.Journal(paths.journal)
         fp = j.register_model()
-        outputs = journal.jsonable(reg)
+        outputs = journal.jsonable(chk.regime)
         if home is not None:
             outputs["home"] = journal.jsonable(home)
-        j.record(kind="regime", fingerprint=fp, inputs={"day": day, "job": "regime"},
-                 outputs=outputs, as_of=day, run_id=uuid.uuid4().hex)
+        j.record(kind="regime", fingerprint=fp, inputs={"day": chk.day, "job": "regime"},
+                 outputs=outputs, as_of=chk.day, run_id=uuid.uuid4().hex)
         chk.journalled = True
-    return chk
+
+
+@dataclass
+class MorningCheck:
+    """The one 07:00 message (phase R, T3): the regime check and the alerts, sent together."""
+
+    day: date
+    regime: RegimeCheck
+    alerts: alerts.AlertCheck
+    text: str | None = None
+    notify: dict | None = None
+
+
+MORNING_KIND = "morning"
+OLD_MORNING_KINDS = ("regime", "holdings")  # before phase R: a day they cover is not resent
+
+
+def morning_check(day: date, *, paths: Paths | None = None, source: Any = None,
+                  home_source: Any = None, statuses: Sequence[Any] = (),
+                  jobs: Sequence[Any] = (), send: bool = True,
+                  notify_kw: Mapping[str, Any] | None = None) -> MorningCheck:
+    """Read the regime and the alerts, send one message (kind `morning`, send-once per day)
+    when either has something, then journal the regime and save the alerts' state only if it
+    was sent or already sent today. Silent when nothing changed (a regime baseline is still
+    journalled). `send=False` writes nothing."""
+    paths = paths or Paths.default()
+    r = regime_read(day, paths=paths, source=source, home_source=home_source)
+    a = alerts.prepare(day, out_dir=paths.out, state_dir=paths.notify, statuses=statuses,
+                       jobs=jobs)
+    m = MorningCheck(day=day, regime=r, alerts=a)
+    mood = []
+    if r.changed:
+        home = r.home
+        mood = messages.regime_lines(
+            r.previous, world=r.regime.state, dollar=r.regime.dollar,
+            drivers=r.regime.drivers, home=home.state if home else None,
+            home_drivers=home.drivers if home else ())
+    if mood or a.holdings or a.health:
+        m.text = messages.morning(day, regime=mood, holdings=a.holdings, health=a.health,
+                                  act_on=a.act_on)
+    if not send:
+        return m
+    if m.text is not None:
+        kw = {"pre": False, "heads": True, **dict(notify_kw or {})}
+        if not kw.get("force") and any(notify.already_sent(k, day, paths.notify)
+                                       for k in OLD_MORNING_KINDS):
+            m.notify = {"sent": False, "skipped": True, "parts": 0, "reason": "already sent"}
+        else:
+            m.notify = notify.send(m.text, kind=MORNING_KIND, day=day, state_dir=paths.notify,
+                                   **kw)
+        r.notify = m.notify if r.changed else None
+        a.notify = m.notify
+        alerts.commit(a, paths.notify)
+    regime_commit(r, paths)
+    return m

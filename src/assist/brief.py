@@ -580,16 +580,6 @@ def override_gate_line(stances: Sequence[Mapping]) -> str | None:
     return line
 
 
-def home_message_line(stances: Sequence[Mapping]) -> str | None:
-    """The Telegram line (S54): only on a home risk_off."""
-    h = _home(stances)
-    if h is None or h["state"] != "risk_off":
-        return None
-    why = f": {'; '.join(h['drivers'])}" if h.get("drivers") else ""
-    return (f"Home regime (IDN) risk_off ({h.get('points')} points{why}): IDN stocks and bonds "
-            "adds and trims laddered")
-
-
 def _grouped_line(name: str, groups: Mapping[str, list[str]]) -> str:
     if not groups:
         return f"- {name}: n/a"

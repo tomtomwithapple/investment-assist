@@ -22,9 +22,8 @@ token never enters a log line, a verdict or a repr.
 Text goes out as HTML (`parse_mode=HTML`), wrapped in `<pre>` by default so an aligned table stays
 aligned on a phone, split on line boundaries under Telegram's 4096-character cap.
 
-The brief message (PLAN S42) opens with `header`: the title, the disclaimer, then `PAPER_LINE`,
-so a phone preview says first that every size is paper and mostly a rebalance to the benchmark.
-`leg_line` labels each market's sized list with its stocks leg's rebalance vs tilt split.
+The message text itself is built in `assist.messages` (phase R); with `pre=False, heads=True` a
+line starting with `# ` goes out bold.
 """
 
 from __future__ import annotations
@@ -43,23 +42,17 @@ from typing import Any
 
 import httpx
 
-from assist.layers.types import DISCLAIMER
-from assist.stance import BENCHMARK_TEXT, split_text
-
 __all__ = [
     "API",
     "KEYCHAIN_SERVICE",
     "LEGACY_KEYCHAIN_SERVICE",
     "LIMIT",
-    "PAPER_LINE",
     "Credentials",
     "already_sent",
     "chunks",
     "credentials",
     "describe",
     "esc",
-    "header",
-    "leg_line",
     "send",
     "state_dir",
     "status",
@@ -79,8 +72,6 @@ LIMIT = 3900
 TIMEOUT = 20.0
 REPO = Path(__file__).resolve().parents[2]
 DOTENV = REPO / ".env"  # gitignored, chmod 600; the values never enter a log line
-PAPER_LINE = (f"Paper only, not an order. Sizes rebalance to the {BENCHMARK_TEXT} benchmark plus "
-              "the model tilt; read the brief.")
 KIND_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 Security = Callable[[list[str]], subprocess.CompletedProcess]
@@ -246,6 +237,11 @@ def chunks(text: str, limit: int = LIMIT) -> list[str]:
     return [c for c in out if c.strip()] or [""]
 
 
+def _bold_heads(text: str) -> str:
+    return "\n".join(f"<b>{esc(x[2:])}</b>" if x.startswith("# ") else esc(x)
+                     for x in text.split("\n"))
+
+
 def _redact(s: str, token: str) -> str:
     return s.replace(token, "<token>") if token else s
 
@@ -280,12 +276,14 @@ def send(
     client: Any = None,
     state_dir: Path | None = None,
     pre: bool = True,
+    heads: bool = False,
     force: bool = False,
 ) -> dict:
     """Send `text` once per (kind, day). Never raises.
 
     Returns {"sent", "skipped", "parts", "reason"}: `skipped` is True only when the send-once
-    marker already exists; `parts` counts the messages Telegram accepted.
+    marker already exists; `parts` counts the messages Telegram accepted. With `pre` off and
+    `heads` on, a line starting with `# ` goes out bold, without the marker (phase R, T5).
     """
     token = creds.token if creds else ""
     try:
@@ -303,7 +301,8 @@ def send(
         sent = 0
         try:
             for part in chunks(text, LIMIT - (len("<pre></pre>") if pre else 0)):
-                body = f"<pre>{esc(part)}</pre>" if pre else esc(part)
+                body = (f"<pre>{esc(part)}</pre>" if pre
+                        else _bold_heads(part) if heads else esc(part))
                 ok, detail = _post(http, creds, body)
                 if not ok:
                     reason = _redact(detail, token)
@@ -340,23 +339,6 @@ def describe(result: Mapping) -> str:
 
 
 # ---------------- message text ----------------
-
-
-def header(day: date) -> list[str]:
-    """The first lines of the brief message: title, disclaimer, then the paper-only line."""
-    return [f"investment-assist {day.isoformat()}", DISCLAIMER, PAPER_LINE, ""]
-
-
-def leg_line(stances: Iterable[Mapping], market: str, asset: str = "stocks") -> str | None:
-    """The label over a market's sized list: its leg's gap as rebalance + tilt (S42), or None
-    when no stance for (market, asset) was given."""
-    s = next((s for s in stances if (s.get("subject"), s.get("asset")) == (market, asset)), None)
-    if s is None:
-        return None
-    pf = s.get("portfolio") or {}
-    split = split_text(pf) or ("rebalance vs tilt n/a" + (
-        " (holdings unavailable)" if pf.get("current_pct") is None else ""))
-    return f"{market} {asset} leg (paper): {split}"
 
 
 def summary(stances: Iterable[Mapping], *, regime: str | None, day: date) -> str:
