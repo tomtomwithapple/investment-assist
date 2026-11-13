@@ -98,8 +98,11 @@ __all__ = [
 ]
 
 SCHEMA = SCHEMA_DIR / "candidates.schema.json"
-SCHEMA_VERSION = "1.6.0"  # 1.1 average down; 1.2 exits; 1.3 diversification; 1.3.1 div_yield;
-# 1.4 data_problems (P103); 1.5 per-row frameworks (P110); 1.6 watchlist (P107)
+SCHEMA_VERSION = "1.7.0"  # 1.1 average down; 1.2 exits; 1.3 diversification; 1.3.1 div_yield;
+# 1.4 data_problems (P103); 1.5 per-row frameworks (P110); 1.6 watchlist (P107);
+# 1.7 buy_blocked by an adopted exclusion (P123, S103)
+EXCLUSION_LABELS = {"magic_formula": "Magic Formula"}  # the block reason's name for a framework
+EXCLUSION_SIGNALS = {"bottom": "bottom fifth", "fail": "fail"}  # signals that block a buy
 STYLES = ("dividend_value", "garp")  # S15's industry_value has no expected return: not a style
 TRANCHE_IDR = 10e6  # P21's DEFAULT_ORDER: the tranche costs and capacity are judged at
 DROP_FLAGS = ("over_participation", "below_one_lot")
@@ -404,15 +407,36 @@ def _average_down(styles: Sequence[dict], inp: UndervaluedInputs, held: Mapping[
     return names
 
 
+def _adopted(res: Any) -> bool:
+    """An exclusion result counts only once its gate passed and the user adopted it (S103)."""
+    return res.role != "exclusion" or res.gate == "passed"
+
+
+def _buy_block(sym: str, framework_inputs: Any) -> str | None:
+    """S103: why an adopted exclusion framework blocks a buy of `sym`, or None. An n/a result
+    (a financial, a missing leg) never blocks; its flags ride on the row's `frameworks`."""
+    for res in frameworks.evaluate(sym, framework_inputs, roles=("exclusion",)):
+        if not _adopted(res) or res.signal not in EXCLUSION_SIGNALS:
+            continue
+        c = res.components
+        where = (f" (position {c['position']:.0f} of {c['n_universe']:.0f})"
+                 if c.get("position") is not None and c.get("n_universe") is not None else "")
+        return (f"{EXCLUSION_LABELS.get(res.framework, res.framework)} "
+                f"{EXCLUSION_SIGNALS[res.signal]}{where}: no new money")
+    return None
+
+
 def _attach_frameworks(styles: Sequence[dict], framework_inputs: Any) -> None:
     """P110 (S93): each row's context-role framework results as `frameworks`, after ranking and
-    sizing, so they change no size, rank or verdict. No key when no framework is registered."""
+    sizing, so they change no size, rank or verdict; adopted exclusions (S103) ride beside
+    them, their block already applied. No key when no framework is registered."""
     cache: dict[str, list[dict]] = {}
     for s in styles:
         for r in s["rows"]:
             sym = r["symbol"]
             if sym not in cache:
-                cache[sym] = [x.to_dict() for x in frameworks.evaluate(sym, framework_inputs)]
+                cache[sym] = [x.to_dict() for x in frameworks.evaluate(
+                    sym, framework_inputs, roles=("context", "exclusion")) if _adopted(x)]
             if cache[sym]:
                 r["frameworks"] = [dict(x) for x in cache[sym]]
 
@@ -486,7 +510,13 @@ def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
         if v is not None and r.get("passes"):
             r["redundant"] = (f"redundant with {v['keeper']} (same industry, same size: "
                               f"{v['industry']}, {v['size']})")
-    plan = {k: {"levels": v.get("levels")} for k, v in inp.plan.items()}
+    # S103: an adopted exclusion (Magic Formula bottom fifth) blocks buys only, never a trim
+    buy_blocked = {}
+    if inp.framework_inputs is not None:
+        for r in rows:
+            if r.get("passes") and (why := _buy_block(r["symbol"], inp.framework_inputs)):
+                r["buy_blocked"] = buy_blocked[r["symbol"]] = why
+    plan ={k: {"levels": v.get("levels")} for k, v in inp.plan.items()}
     st = stance or {}
     sz = sizing.size(rows, st, portfolio_value_idr or 0.0, held if any_passed else {},
                      regime, caps=caps, entry=plan)
@@ -502,6 +532,8 @@ def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
         for r in s["rows"]:
             sym = r["symbol"]
             r["held"], r["held_idr"] = sym in held, held.get(sym, 0.0)
+            if sym in buy_blocked:
+                r["buy_blocked"] = buy_blocked[sym]
             z = sized.get(sym)
             if z is not None and sized_style.get(sym) == s["style"]:
                 r["action"] = "add"

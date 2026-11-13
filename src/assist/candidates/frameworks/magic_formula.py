@@ -1,8 +1,13 @@
-"""Greenblatt's Magic Formula (P115, PLAN S98; frameworks document §1.5). Context only: role
-`context`, gate `untested`. The plan's "inside the quality floor" waits for a passed gate, the
-user's adoption (S103) and a separate model change; `screens.passes_quality` is untouched, so
-nothing here changes a stance, a size or a floor (phase Q decision 3: once adopted it may block
-buys only, never sell a held name).
+"""Greenblatt's Magic Formula (P115, PLAN S98; frameworks document §1.5). **Adopted as a buy
+floor** (P123, S103, user 2026-11-13): role `exclusion`, gate `passed` (board replay t 2.92).
+An IDN candidate whose signal is `bottom` (bottom fifth of the combined rank) gets no new money:
+`layers.undervalued` sets the row's `buy_blocked` before sizing, and `sizing` lists it in
+`excluded`. It blocks buys only (phase Q decision 3): it never trims or sells a held name, never
+touches the holding record's thesis or take-profit, and `screens.passes_quality` is unchanged.
+An n/a result (a financial, a missing leg) never blocks; its flags ride on the row. With the
+floor applied point in time the dividend_value replay still passes (t 3.00 → 3.31, p 0.003 →
+0.002, control t 0.06 → 0.03; 33 of 2,492 name-quarters removed;
+`docs/results/P123-magic-floor.md`).
 
 **Legs on date d** (point in time: the newest `factor_series` quarter knowable by d, period end
 + `LAG_DAYS` 120 through `Fundamentals.available`; mktcap from the last bar on or before d):
@@ -311,6 +316,8 @@ class MagicFormula(Framework):
 
     name = NAME
     VERSION = VERSION
+    role = "exclusion"  # S103: adopted 2026-11-13, blocks buys only
+    gate = "passed"  # board replay t 2.92 (S94)
 
     def evaluate(self, sym: str, inputs) -> FrameworkResult:
         inputs = inputs_for(inputs, NAME)
@@ -389,5 +396,6 @@ def _notes(panel: Sequence[tuple[date, list[dict]]], data: Any,
         f"pool {min(sizes, default=0)}–{max(sizes, default=0)} names a quarter; ROC is "
         "Stockbit's roce (EBIT ÷ total assets − current liabilities), not EBIT ÷ (NWC + net "
         "fixed assets): no ppe_net in the store",
-        "gate is the placebo on top vs bottom quintile next-quarter return; context only, "
-        "not inside the quality floor until adopted (S103)"]
+        "gate is the placebo on top vs bottom quintile next-quarter return; adopted in S103 "
+        "as a buy floor: a bottom-fifth name gets no new money, a held one is never sold "
+        "for it"]

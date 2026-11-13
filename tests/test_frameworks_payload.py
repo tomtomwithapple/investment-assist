@@ -63,9 +63,9 @@ def strip(p):
     return q
 
 
-def test_schema_version_is_1_6_0():
-    assert uv.SCHEMA_VERSION == "1.6.0"
-    assert payload()["schema_version"] == "1.6.0"
+def test_schema_version_is_1_7_0():
+    assert uv.SCHEMA_VERSION == "1.7.0"
+    assert payload()["schema_version"] == "1.7.0"
 
 
 def test_with_nothing_registered_no_row_has_frameworks(registry):
@@ -122,3 +122,64 @@ def test_row_with_frameworks_round_trips_through_the_journal(registry, tmp_path)
     assert {r["kind"] for r in j.read()} == {"undervalued", "undervalued_row"}  # no new kind
     model = j.model(fp)
     assert "assist/candidates/frameworks/base.py" in model["rules"]
+
+
+class Floor(fw.Framework):
+    """An adopted exclusion (S103): `bottom` for the names in inputs["bottom"], n/a for
+    inputs["na"], else `top`."""
+
+    name = "floor_toy"
+    VERSION = "0.1.0"
+    role = "exclusion"
+    gate = "passed"
+
+    def evaluate(self, sym, inputs):
+        if sym in inputs.get("na", ()):
+            return self.missing(sym, None, "financial: out")
+        sig = "bottom" if sym in inputs.get("bottom", ()) else "top"
+        return self.result(sym, KNOWN, 0.0 if sig == "bottom" else 100.0, sig,
+                           {"position": 9.0 if sig == "bottom" else 1.0, "n_universe": 10.0})
+
+
+def _adds(p):
+    return {r["symbol"] for s in p["styles"] for r in s["rows"] if r["action"] == "add"}
+
+
+def test_an_adopted_exclusion_blocks_the_buy_of_a_bottom_name_and_says_why(registry):
+    bare = payload({})
+    victim = sorted(_adds(bare) - {"BMRI"})[0]  # BMRI is held in `payload`: it would show hold
+    fw.register(Floor())
+    p = payload({"bottom": [victim]})
+    assert _adds(p) == _adds(bare) - {victim}
+    rows = [r for s in p["styles"] for r in s["rows"] if r["symbol"] == victim]
+    assert rows and all(r["action"] == "watch" and r["size"] is None for r in rows)
+    why = "floor_toy bottom fifth (position 9 of 10): no new money"
+    assert all(r["buy_blocked"] == why for r in rows)
+    assert {"symbol": victim, "reason": why} in p["sizing"]["excluded"]
+    (res,) = rows[0]["frameworks"]
+    assert (res["framework"], res["role"], res["gate"], res["signal"]) == (
+        "floor_toy", "exclusion", "passed", "bottom")
+
+
+def test_an_exclusion_never_trims_a_held_name(registry):
+    bare = payload({})
+    victim = sorted(_adds(bare))[0]
+    fw.register(Floor())
+    p = payload({"bottom": [victim]}, holdings={"BMRI": 20e6, victim: 5e6})
+    assert not any(t["symbol"] == victim for t in p["sizing"]["trims"])
+    assert {r["action"] for s in p["styles"] for r in s["rows"] if r["symbol"] == victim} == {
+        "hold"}
+
+
+def test_an_exclusion_n_a_never_blocks_and_is_flagged(registry):
+    bare = payload({})
+    fw.register(Floor())
+    names = sorted(_adds(bare))
+    p = payload({"na": names})
+    assert _adds(p) == _adds(bare)
+    for s in p["styles"]:
+        for r in s["rows"]:
+            assert "buy_blocked" not in r
+            if r["symbol"] in names:
+                (res,) = r["frameworks"]
+                assert (res["signal"], res["flags"]) == ("n/a", ["financial: out"])

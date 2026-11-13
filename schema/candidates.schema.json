@@ -351,7 +351,12 @@
         "frameworks": {
           "type": "array",
           "items": {"$ref": "#/$defs/framework_result"},
-          "description": "P110 (schema 1.5.0): the registered frameworks' results for this name, context only: they change no size, rank or verdict. Absent when no framework is registered."
+          "description": "P110 (schema 1.5.0): the registered frameworks' results for this name. Context results change no size, rank or verdict; an adopted exclusion (role exclusion, gate passed; S103, 1.7.0) is listed here and its block is `buy_blocked`. Absent when no framework is registered."
+        },
+        "buy_blocked": {
+          "type": "string",
+          "minLength": 1,
+          "description": "P123 (S103, schema 1.7.0): why an adopted exclusion framework blocks new money for this name (e.g. the Magic Formula's bottom fifth). Blocks buys only: the row is never trimmed or sold for it. Absent when nothing blocks."
         },
         "average_down": {
           "description": "The average-down verdict of a held name (schema 1.1.0); null when not held.",

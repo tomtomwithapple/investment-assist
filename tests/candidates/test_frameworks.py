@@ -165,7 +165,7 @@ def test_registered_today():
         ("gp_a", "context", "untested"),  # S99
         ("graham", "context", "untested"),  # S97
         ("lynch", "context", "untested"),  # S100
-        ("magic_formula", "context", "untested"),  # S98
+        ("magic_formula", "exclusion", "passed"),  # S98, adopted in S103 (blocks buys only)
         ("piotroski_f", "context", "untested")]  # S95
 
 
