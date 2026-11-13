@@ -5,8 +5,8 @@ user's 2026-11-13 wording):
 
 - header: the title only, no disclaimer;
 - **1 World mood**: the state, the warning signs that fired out of those counted
-  (`out/layers/regime.json`), the dollar (strengthening, steady, weakening) with its meaning,
-  whether orders are split;
+  (`out/layers/regime.json`), the dollar (strengthening, steady, weakening) and its 13-week
+  move, the order split only when nervous;
 - **2 Indonesia mood**: the home regime's warning points and the checks that gave them;
 - **3 US stocks to buy**, **4 Indonesian stocks to buy**: that market's buy steps from the
   guide ("Buy: SBN Rp 15.90m", then "(1.8% of 30% target)"), else the leg's share of its
@@ -94,11 +94,10 @@ def _world(regime: Mapping | None, guide_payload: Mapping | None,
     elif state == "risk_off" and r.get("drivers"):
         out += wrap("Why: " + "; ".join(_drop_points(r["drivers"])) + ".", rest="")
     if dollar in plain.DOLLAR:
-        meaning = plain.meaning("dollar", dollar) or ""
-        out += wrap(f"{plain.label('dollar', dollar)}: {meaning[:1].lower()}{meaning[1:]}",
+        # the fact only, not what it means (user 2026-11-13)
+        fact = (plain.meaning("dollar", dollar) or "").split(":")[0].rstrip(".")
+        out += wrap(f"{plain.label('dollar', dollar)}: {fact[:1].lower()}{fact[1:]}.",
                     rest="")
-    if state in ("risk_on", "neutral"):
-        out.append("Orders go in one go.")
     elif state == "risk_off":
         out += wrap("Every order is split into parts; new buys need a higher return.", rest="")
     return out

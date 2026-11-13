@@ -149,7 +149,9 @@ REGIME = {"state": "neutral", "dollar": "up", "rule": {"state_at": 2},
 def test_moods_in_words_without_the_regime_file():
     t = flat(text())
     assert "# 1. World mood: normal" in t and "Dollar strengthening: the US dollar gained" in t
-    assert "Orders go in one go." in t and "# 2. Indonesia mood: calm" in t
+    assert "Dollar strengthening: the US dollar gained more than 2% in 13 weeks." in t
+    assert "rupiah" not in t.split("# 2.")[0] and "Orders go in one go" not in t
+    assert "# 2. Indonesia mood: calm" in t
     off = [{**STANCES[0], "home_regime": {"state": "risk_off", "points": 2,
                                           "drivers": ["JCI -13.8% vs 20d high (2)"]}}]
     t = flat(text(stances=off))
