@@ -1906,7 +1906,7 @@ gaps are muted until they change; the brief file name is dropped, no link.
   part says which regime changed, why (a cleared one says what cleared: the previous record's
   drivers against today's values) and one line on what it means for Monday (laddered or not).
   The `regime` and `holdings` markers stay readable so a day already sent is not resent.
-- [ ] **T4 Known gaps muted** (R4-known-gaps). `config/alerts.yaml` `accepted:` problem keys
+- [x] **T4 Known gaps muted** (R4-known-gaps). `config/alerts.yaml` `accepted:` problem keys
   (satudatascape missing, openkrx missing, jquantster `investor_types` empty) that health skips
   until the key's text changes; each idx-method job failure carries a next step ("cleared by
   the next run" when a later run of the same job succeeded, else "run ./run.sh session").
@@ -2071,6 +2071,9 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | S91 Flip counter and docs (F16-phase-p) | done | 2026-11-13 | `588fa50` (branch `f16-phase-p`) | 1 flips module, 2 brief, 2 view_paper, 1 ops edited (2402 total) | `flips.py` (not hashed: a score, outside `RULE_GLOBS`): acted verdict (sell / take_profit / hold) flips per held name per quarter from journal `holding` records, real vs method-or-data causes, names over 1, S87 baseline 0.56 → 0.26; on `PaperReport.flips`, `/paper`, the brief; CLAUDE.md "one source of verdicts", README phase P section. Live: 67 name-quarters, 0 flips (first records) |
 | S104 Phase Q fan-in (F17-phase-q) | done | 2026-11-13 | this commit | none (2402 total) | Live run on main, exit 0, 1396 s: model `sha256:5926367c74ac…`, journal 1154 records; first `out/holdings/IDN.json` (67 holdings: 30 hold, 26 take-profit, 11 hard thesis sells, not acted as `ACT_ON_VERDICTS` is off); duplicate S99/S100 checklist lines removed. S102 and S103 stay open (blocked / user's call) |
 | P121 Dividend cut recovered (P121-div-recovered) | done | 2026-11-13 | this commit (branch `p121-special-div`) | 2 dividend_value (2405 total) | `dividend_value.assess`: a cut at year k counts only if the latest 12 months are also below (1 − `cut_tol`) × the year before the dip; no new CONFIG key. Live: KKGI's cut clears, the other ten hard fails stand. Replay t 2.60 → 3.00 (p 0.003, control t 0.06), passed |
+| T1, T2, T5 Monday message (R1, R2, R5) | done | 2026-11-13 | `3c3ab50` (branch `phase-r`) | 16 messages, 1 notify; 6 notify, 2 e2e, 1 us_stocks message tests removed, 5 rewritten | `messages.weekly` from `out/guide.json` only; `notify.send(heads=True)`; today's message 2,908 → 1,016 characters, longest line 59 |
+| T3 One 07:00 message (R3-one-morning) | done | 2026-11-13 | branch `phase-r` | 3 messages, 5 ops | `pipeline.morning_check` (kind `morning`), `regime_read` / `regime_commit`, `alerts.prepare` / `commit`; a day the old `regime` / `holdings` markers cover is not resent |
+| T4 Known gaps muted (R4-known-gaps) | done | 2026-11-13 | this commit (branch `phase-r`) | 3 alerts (2420 total) | `config/alerts.yaml` `accepted` keys (satudatascape, openkrx missing; jquantster investor_types); idx-method failures end with a next step (session → `./run.sh session`, else "usually cleared by the next run") |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`
