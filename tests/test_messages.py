@@ -1,4 +1,5 @@
-"""PLAN phase R (T1, T2, T5): the Monday Telegram message built from the guide only."""
+"""PLAN phase R (T1, T2, T5, T6): the Monday Telegram message, built from the guide only, in
+the user's six sections."""
 
 from __future__ import annotations
 
@@ -21,10 +22,15 @@ def sell(n, sym, idr, tags, question="fit", dates=DATES, why="Portfolio fit: x."
             "tranches": tr(idr, dates), "why": why, "market": "IDN", "asset": "stocks"}
 
 
-def bucket(n, label, idr, why) -> dict:
+def bucket(n, label, idr, why, market="IDN", asset="bonds") -> dict:
     return {"n": n, "side": "buy", "kind": "bucket", "symbol": None, "idr": idr, "tags": [],
             "question": None, "label": label, "strength": "medium", "tranches": tr(idr),
-            "why": why, "market": "IDN", "asset": "bonds"}
+            "why": why, "market": market, "asset": asset}
+
+
+LEGS = [{"market": "IDN", "asset": "stocks", "current_pct": 96.9, "target_pct": 45.7},
+        {"market": "IDN", "asset": "bonds", "current_pct": 1.8, "target_pct": 30.5},
+        {"market": "USA", "asset": "stocks", "current_pct": 0.0, "target_pct": 23.8}]
 
 
 def guide(steps=None, **kw) -> dict:
@@ -33,7 +39,7 @@ def guide(steps=None, **kw) -> dict:
     buys = [s for s in steps if s["side"] == "buy"]
     g = {"as_of": "2026-11-13", "regime": "neutral", "headline": "Markets are normal",
          "headline_note": "No strong mood either way; orders go in one go.", "split": 3,
-         "held_for_data": [], "steps": steps,
+         "held_for_data": [], "steps": steps, "legs": LEGS, "portfolio_value_idr": 100e6,
          "totals": {"sells": len(sells), "sell_idr": sum(s["idr"] for s in sells),
                     "buys": len(buys), "buy_idr": sum(s["idr"] for s in buys)}}
     g.update(kw)
@@ -54,7 +60,7 @@ STEPS = [
            "product once: retail SBN, an FR series or a bond fund."),
     bucket(9, "Buy a US broad-market index fund", 13.19e6,
            "US stocks are 0.0% of your portfolio against a 24% target. No US stock passes "
-           "a screen, so use a broad index fund."),
+           "a screen, so use a broad index fund.", "USA", "stocks"),
 ]
 
 STANCES = [{"subject": "IDN", "asset": "stocks", "regime": "neutral", "dollar": "up",
@@ -63,14 +69,17 @@ STANCES = [{"subject": "IDN", "asset": "stocks", "regime": "neutral", "dollar": 
 UNDERVALUED = [{"market": "IDN", "styles": [
     {"style": "dividend_value", "passed": True, "rows": [
         {"symbol": s, "rank": i + 1, "held": s != "NEWX", "size": None, "margin_pt": 1.0,
-         "style": "dividend_value"}
+         "held_idr": 1e6 if s != "NEWX" else 0.0,
+         "style": "dividend_value",
+         "entry": {"status": "buy_zone" if s in ("BMRI", "ELSA") else "avoid"}}
         for i, s in enumerate(["BMRI", "ELSA", "CPIN", "BBRI", "BFIN", "NEWX"])]},
     {"style": "garp", "passed": False, "rows": []}]},
     {"market": "USA", "styles": [{"style": "garp", "passed": False, "rows": []}]}]
 
 
-def holding(sym, acts) -> dict:
-    return {"symbol": sym, "acted": {"thesis": {"acts": acts}}}
+def holding(sym, acts, held=1e6, action="sell_all") -> dict:
+    return {"symbol": sym, "held_idr": held,
+            "acted": {"action": action if acts else "hold", "thesis": {"acts": acts}}}
 
 
 HOLDINGS = {"config": {"hysteresis": {"act_on_verdicts": False}},
@@ -90,72 +99,115 @@ def text(**kw) -> str:
 def test_buys_come_first_and_are_never_cut():
     many = [sell(i, f"S{i:03d}", 0.1e6, ["rebalance"]) for i in range(1, 60)]
     t = text(guide_payload=guide(many + STEPS[-2:]))
-    assert "SBN (Indonesian government bonds) Rp 15.9m" in t
-    assert "US broad-market index fund Rp 13.2m" in t
-    assert t.index("# Buy") < t.index("# Sell")
+    assert "Buy: SBN Rp 15.90m" in t and "Buy: US index fund Rp 13.19m" in t
+    assert t.index("# Other buys") < t.index("# 5. US stocks to sell")
 
 
 def test_totals_put_buy_first_and_dates_once():
     t = text()
-    assert "# This week: buy Rp 29.1m, sell Rp 12.2m" in t
+    assert "# Buy Rp 41.1m, sell Rp 13.2m" in t
     assert "In 3 parts: 17 Nov, 27 Nov, 7 Dec, at market" in t
     assert "Smaller orders go in fewer parts." in t  # GEMS goes in one
     assert t.count("27 Nov") == 1
 
 
-def test_sells_grouped_by_reason_top_three_by_amount():
-    t = text()
-    assert "Same industry and size held twice (4, Rp 7.2m)" in t
-    assert "KLBF 2.4m, TOWR 1.6m, BBRI 1.6m, +1 more" in t
-    assert "ADMF" not in t.split("# Sell")[1].split("# ")[0]
-    assert "Price above its fair value (1, Rp 2.4m)" in t and "PWON 2.4m" in t
-    assert "Over the 5% cap (1, Rp 1.8m)" in t
-    assert "Share of the cut to the target (1, Rp 0.7m)" in t
-    # largest group first
-    assert t.index("Same industry") < t.index("Price above") < t.index("Over the 5%")
+def test_sells_one_name_a_line_largest_first_no_reason():
+    t = text(holdings=None)
+    body = t.split("# 6. Indonesian stocks to sell (7, Rp 12.2m)")[1]
+    assert body.split() == ["PWON", "all", "KLBF", "all", "BMRI", "1.8m", "TOWR", "all",
+                            "BBRI", "all", "ADMF", "all", "GEMS", "0.7m"]
+    for reason in ("Same industry", "fair value", "5% cap", "Share of the cut"):
+        assert reason not in t
 
 
 def flat(t: str) -> str:
     return " ".join(t.split())
 
 
-def test_buy_reason_is_the_first_sentence_of_why():
-    t = flat(text())
-    assert "bonds are 1.8% of your portfolio against a 30% target" in t
+def test_buy_line_amount_then_share_of_target():
+    t = text()
+    assert "Buy: SBN Rp 15.90m\n(1.8% of 30% target)" in t
+    assert "Buy: US index fund Rp 13.19m\n(US stocks 0% of 24% target)" in t
     assert "Pick the product once" not in t
 
 
 def test_one_disclaimer_no_file_name_no_jargon():
     t = text()
-    assert t.count("not investment advice") == 1
+    assert "investment advice" not in t  # user 2026-11-13: no disclaimer
     for gone in (".md", "[medium]", "rebalance to benchmark", "margin", "dividend_value",
                  "Undervalued", "to average down", "Orders are split"):
         assert gone not in t, gone
 
 
-def test_market_line_in_words():
+REGIME = {"state": "neutral", "dollar": "up", "rule": {"state_at": 2},
+          "inputs": [{"counted": True, "direction": "neutral", "label": "VIX 17.5"},
+                     {"counted": True, "direction": "risk_off", "label": "10Y real yield 2.78%"},
+                     {"counted": False, "direction": "risk_off", "label": "STLFSI4 2.1"}],
+          "home": {"state": "neutral", "points": 1, "rule": {"state_at": 2},
+                   "inputs": [{"counted": True, "points": 1, "label": "JCI -7.5% vs 20d high"},
+                              {"counted": True, "points": 0, "label": "USD/IDR +0.5%"}]}}
+
+
+def test_moods_in_words_without_the_regime_file():
     t = flat(text())
-    assert "Markets: normal; dollar rising; Indonesia calm." in t
+    assert "# 1. World mood: normal" in t and "Dollar strengthening: the US dollar gained" in t
+    assert "Orders go in one go." in t and "# 2. Indonesia mood: calm" in t
     off = [{**STANCES[0], "home_regime": {"state": "risk_off", "points": 2,
                                           "drivers": ["JCI -13.8% vs 20d high (2)"]}}]
     t = flat(text(stances=off))
-    assert "Indonesia nervous (JCI -13.8% vs 20d high)" in t
+    assert "# 2. Indonesia mood: nervous Why: JCI -13.8% vs 20d high." in t
+    assert "orders are split into parts" in t
 
 
-def test_best_value_names_held_and_new():
+def test_moods_name_the_warning_signs_that_fired():
+    t = flat(text(regime=REGIME))
+    assert "Warning signs: 1 of 2 (2 make it nervous): 10Y real yield 2.78%." in t
+    assert "STLFSI4" not in t  # not counted
+    assert ("Warning points: 1 from 2 checks (2 make it nervous): JCI -7.5% vs 20d high."
+            in t)
+
+
+def test_six_sections_in_the_users_order():
     t = text()
-    assert "# Best value now (dividend screen)" in t
-    assert "BMRI ELSA CPIN BBRI BFIN, all held" in t
+    heads = [ln for ln in t.splitlines() if ln.startswith("# ")]
+    order = ["# 1. World mood", "# 2. Indonesia mood", "# Buy Rp", "# 3. US stocks to buy",
+             "# 4. Indonesian stocks to buy", "# Other buys", "# 5. US stocks to sell",
+             "# 6. Indonesian stocks to sell"]
+    assert [next(h for h in heads if h.startswith(o)) for o in order] == heads[1:]
+    us_buy = t.split("# 3.")[1].split("# 4.")[0]
+    assert "Buy: US index fund Rp 13.19m" in us_buy
+    assert "No US stock passes a value screen this week." in us_buy
+    idn_buy = flat(t.split("# 4.")[1].split("# Other")[0])
+    assert "(Indonesian stocks 96.9% of 46% target)" in idn_buy
+    assert "SBN" in t.split("# Other buys")[1].split("# 5.")[0]
+    assert "None: no US stocks held." in t.split("# 5.")[1].split("# 6.")[0]
+
+
+def test_us_sells_have_their_own_section():
+    us = {**sell(20, "AAPL", 3e6, ["rebalance"]), "market": "USA"}
+    t = text(guide_payload=guide([*STEPS, us]))
+    assert "# 5. US stocks to sell (1, Rp 3.0m)" in t
+    assert "AAPL" not in t.split("# 6.")[1]
+
+
+def test_best_value_names_are_buy_lines_to_target_or_full():
+    t = text()
+    idn_buy = t.split("# 4.")[1].split("# Other")[0]
+    # 5% of Rp 100m = 5m; held at 1m → 4m to target; BMRI and BBRI are sold this week
+    assert "Buy: ELSA Rp 4.00m (to target)" in idn_buy
+    assert "Buy: CPIN Rp 4.00m (to target)" in idn_buy and "BFIN" in idn_buy
+    assert "BMRI" not in idn_buy and "BBRI" not in idn_buy
     rows = UNDERVALUED[0]["styles"][0]["rows"]
     swapped = [{**UNDERVALUED[0], "styles": [{**UNDERVALUED[0]["styles"][0],
                                                "rows": [rows[5], *rows[:4]]}]}]
-    assert "NEWX BMRI ELSA CPIN BBRI, NEWX not held" in text(undervalued=swapped)
+    assert "Buy: NEWX Rp 5.00m (full)" in text(undervalued=swapped)
     none = [{"market": "IDN", "styles": [{"style": "garp", "passed": False, "rows": []}]}]
-    assert "No stock screen passes its test this week." in text(undervalued=none)
+    assert "No Indonesian stock passes a value screen this week." in flat(text(undervalued=none))
+    assert "# Buy Rp 41.1m, sell Rp 13.2m" in t  # value buys and thesis sells count
 
 
 def test_nothing_to_do_and_held_for_data():
-    t = text(guide_payload=guide([]))
+    t = text(guide_payload=guide([]), holdings=None, undervalued=())
     assert "Nothing to do this week: every leg is at its target." in t
     t = text(guide_payload=guide([], held_for_data=["IDN bars stale"]))
     assert "No orders this week: some inputs are broken" in t and "IDN bars stale" in t
@@ -163,21 +215,21 @@ def test_nothing_to_do_and_held_for_data():
 
 def test_no_guide_says_so():
     t = text(guide_payload=None)
-    assert "No steps this run" in t and t.count("not investment advice") == 1
+    assert "No steps this run" in t and "investment advice" not in t
 
 
 # ---------------- T2: the thesis line ----------------
 
 
-def test_thesis_fails_listed_while_not_acted_on():
-    t = text()
-    assert "# Business no longer passes (2)" in t
-    assert "ADMF ASII" in t and "not acted on yet" in t
-    on = {**HOLDINGS, "config": {"hysteresis": {"act_on_verdicts": True}}}
-    assert "not acted on yet" not in text(holdings=on)
-    assert "Business no longer passes" not in text(holdings=None)
-    clean = {**HOLDINGS, "holdings": [holding("BMRI", False)]}
-    assert "Business no longer passes" not in text(holdings=clean)
+def test_thesis_fails_are_sell_lines_trim_or_all():
+    h = {**HOLDINGS, "holdings": [holding("ADMF", True), holding("ASII", True, 3e6),
+                                  holding("LPPF", True, 2e6, "trim_to_half"),
+                                  holding("BMRI", False)]}
+    t = text(holdings=h)
+    body = t.split("# 6. Indonesian stocks to sell (9, Rp 16.2m)")[1]
+    assert "ASII all" in body and "LPPF trim 1.0m" in body
+    assert body.count("ADMF") == 1  # already a step: listed once
+    assert "Business no longer passes" not in t and "not acted on" not in t
 
 
 # ---------------- T5: phone format ----------------
@@ -194,7 +246,7 @@ def test_every_line_fits_a_phone():
 def test_heads_marked_for_bold():
     t = text().splitlines()
     assert t[0] == "# investment-assist, Mon 16 Nov 2026"
-    assert t[1] == "Paper only. Heuristic, not investment advice."
+    assert t[1] == ""
 
 
 # ---------------- T3: one 07:00 message ----------------
@@ -224,7 +276,7 @@ def test_regime_lines_world_turns_nervous_with_why():
     t = flat("\n".join(lines))
     assert "World: normal → nervous." in t
     assert "Why: VIX 31; HY spread 5.1%." in t
-    assert "Dollar: rising → steady." in t
+    assert "Dollar: strengthening → steady." in t
     assert "Monday: orders split in 3, new buys need a higher return." in t
     assert all(len(x) <= messages.WIDTH for x in lines)
 
@@ -238,7 +290,7 @@ def test_morning_message_one_disclaimer_and_sections():
                          act_on=False)
     lines = t.splitlines()
     assert lines[0] == "# investment-assist morning, Mon 16 Nov 2026"
-    assert t.count("not investment advice") == 1
+    assert "investment advice" not in t
     assert "# Holdings" in lines and "# Data health" in lines
     assert "• baseline set: 67 held names" in t and "• openkrx: missing" in t
     assert "not acted on yet" in t

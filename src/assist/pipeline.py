@@ -1023,10 +1023,19 @@ def _journal_idn_overrides(j: journal.Journal, layers: Layers, stances: Mapping,
 
 def message(*, day: date, guide_payload: Mapping | None = None,
             undervalued: Sequence[Mapping] = (), stances: Sequence[Mapping] = (),
-            holdings: Mapping | None = None) -> str:
+            holdings: Mapping | None = None, regime: Mapping | None = None) -> str:
     """The Monday Telegram text (phase R): `messages.weekly`, built from the guide only."""
     return messages.weekly(day=day, guide_payload=guide_payload, stances=stances,
-                           undervalued=undervalued, holdings=holdings)
+                           undervalued=undervalued, holdings=holdings, regime=regime)
+
+
+def load_regime(out_dir: Path) -> dict | None:
+    """`out/layers/regime.json` (the world and home moods with their inputs), None when missing
+    or unreadable: the message then falls back to the stances' regime words."""
+    try:
+        return json.loads((Path(out_dir) / "layers" / "regime.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
 
 
 # ---------------- undervalued (F5) ----------------
@@ -1318,7 +1327,8 @@ def run(day: date, *, paths: Paths | None = None, sources: Sources | None = None
 
     if send:
         msg = message(day=day, undervalued=res.undervalued, stances=res.stances,
-                      guide_payload=res.guide, holdings=holdings_mod.load(paths.out, "IDN"))
+                      guide_payload=res.guide, holdings=holdings_mod.load(paths.out, "IDN"),
+                      regime=load_regime(paths.out))
         res.notify = notify.send(msg, kind="brief", day=day, state_dir=paths.notify,
                                  **{"pre": False, "heads": True, **dict(notify_kw or {})})
     return res
@@ -1534,5 +1544,7 @@ def morning_check(day: date, *, paths: Paths | None = None, source: Any = None,
         r.notify = m.notify if r.changed else None
         a.notify = m.notify
         alerts.commit(a, paths.notify)
+    else:
+        alerts.save_health(a, paths.notify)
     regime_commit(r, paths)
     return m

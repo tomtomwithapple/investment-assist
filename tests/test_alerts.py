@@ -248,8 +248,7 @@ def test_health_block_lists_data_problems_doctor_and_idx_method_jobs(out, state,
     assert chk.health
 
 
-def test_a_persistent_problem_is_not_repeated_until_it_changes_or_a_week_passes(
-        out, state, telegram):
+def test_only_new_problems_are_sent(out, state, telegram):
     write(out, payload())
     check(out, state, telegram, statuses=[_stale()])  # baseline + health
     assert check(out, state, telegram, day=DAY + timedelta(days=1),
@@ -259,23 +258,21 @@ def test_a_persistent_problem_is_not_repeated_until_it_changes_or_a_week_passes(
     later.probes[0].age_days = 8
     assert check(out, state, telegram, day=DAY + timedelta(days=2), statuses=[later]).text \
         is None
-    # a new problem: the block goes out again, with every current problem
+    # a new problem: only it goes out, not the known one (user 2026-11-13)
     job = alerts.Problem("idx-method:backfill:killed", "idx-method backfill: killed at its cap")
     chk = check(out, state, telegram, day=DAY + timedelta(days=3), statuses=[later], jobs=[job])
-    assert "idxscape: stale" in chk.text and "killed at its cap" in chk.text
-    # then a week of the same set: a reminder
-    assert check(out, state, telegram, day=DAY + timedelta(days=9), statuses=[later],
+    assert "killed at its cap" in chk.text and "idxscape: stale" not in chk.text
+    # no weekly reminder of the same set
+    assert check(out, state, telegram, day=DAY + timedelta(days=10), statuses=[later],
                  jobs=[job]).text is None
-    rem = check(out, state, telegram, day=DAY + timedelta(days=10), statuses=[later], jobs=[job])
-    assert "reminder" in rem.text and "since 2026-11-20" in rem.text
 
 
-def test_cleared_problems_send_one_all_clear(out, state, telegram):
+def test_cleared_problems_are_silent_and_new_again_when_back(out, state, telegram):
     write(out, payload())
     check(out, state, telegram, statuses=[_stale()])
-    chk = check(out, state, telegram, day=DAY + timedelta(days=1), statuses=[])
-    assert "Data health: all clear again" in chk.text
-    assert check(out, state, telegram, day=DAY + timedelta(days=2)).text is None
+    assert check(out, state, telegram, day=DAY + timedelta(days=1), statuses=[]).text is None
+    chk = check(out, state, telegram, day=DAY + timedelta(days=2), statuses=[_stale()])
+    assert "idxscape: stale" in chk.text
 
 
 def test_held_for_data_in_the_guide_is_a_problem(out, state):

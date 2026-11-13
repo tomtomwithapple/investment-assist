@@ -14,10 +14,10 @@ REGIME = {
                  "Indonesian stocks, bonds and the rupiah; every order is split into parts."),
 }
 DOLLAR = {
-    "up": ("Dollar rising", "The US dollar gained more than 2% in 13 weeks: pressure on the "
+    "up": ("Dollar strengthening", "The US dollar gained more than 2% in 13 weeks: pressure on the "
            "rupiah, and unhedged US holdings gain in rupiah."),
     "flat": ("Dollar steady", "The US dollar moved less than 2% in 13 weeks."),
-    "down": ("Dollar falling", "The US dollar lost more than 2% in 13 weeks: usually helps "
+    "down": ("Dollar weakening", "The US dollar lost more than 2% in 13 weeks: usually helps "
              "Indonesian assets and the rupiah."),
 }
 STANCE = {

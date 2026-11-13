@@ -1,17 +1,26 @@
 """Telegram message text (PLAN phase R): what a phone shows, in plain words.
 
-**Monday message** (`weekly`, T1, T2, T5). The guide (`out/guide.json`) is the only source of
-its numbers, so the message cannot disagree with the home page:
+**Monday message** (`weekly`, T1, T2, T5, T6). In the user's six sections (T6, with the
+user's 2026-11-13 wording):
 
-- header: title and one disclaimer line;
-- markets in words: the world mood, the dollar, Indonesia's own mood (with why, when nervous);
-- **This week**: buy total first, then sell; the tranche dates once;
-- **Buy**: every buy step, never cut, with the first sentence of its `why`;
-- **Sell**: grouped by reason (`SELL_GROUPS`, from the step's tags and question), largest group
-  first, each with its count, total and top `TOP_PER_GROUP` names by amount;
-- **Business no longer passes** (T2): the held names whose acted thesis sells
-  (`out/holdings/IDN.json`), "not acted on yet" while `ACT_ON_VERDICTS` is off;
-- **Best value now**: the IDN screens that pass their test, top 5, held or not.
+- header: the title only, no disclaimer;
+- **1 World mood**: the state, the warning signs that fired out of those counted
+  (`out/layers/regime.json`), the dollar (strengthening, steady, weakening) with its meaning,
+  whether orders are split;
+- **2 Indonesia mood**: the home regime's warning points and the checks that gave them;
+- **Buy Rp x, sell Rp y**: the totals of the lines below; the tranche dates once;
+- **3 US stocks to buy**, **4 Indonesian stocks to buy**: that market's buy steps from the
+  guide ("Buy: SBN Rp 15.90m", then "(1.8% of 30% target)"), else the leg's share of its
+  target; then the passing screens' top 5 (`out/candidates`) as buy lines up to the 5%
+  per-name cap, "to target" when held, "full" when new; names sold this week left out;
+- **Other buys**: bonds and every other buy step, so no buy is dropped;
+- **5 US stocks to sell**, **6 Indonesian stocks to sell**: one name a line, largest first,
+  no reasons ("KLBF 2.4m", "PWON all", "XXXX trim 1.0m"): the guide's sell steps plus the held
+  names whose business no longer passes (T2, `out/holdings/IDN.json`), listed even while
+  `ACT_ON_VERDICTS` is off, so the home page may not show them yet.
+
+The buy and sell steps come from the guide (`out/guide.json`); the value buys and the thesis
+sells are added here, so the totals may exceed the guide's.
 
 Lines are plain text at most `WIDTH` characters; a line starting with `# ` is a heading, which
 `notify.send(..., heads=True)` turns bold (T5). Pure: no I/O.
@@ -28,22 +37,11 @@ from datetime import date
 from assist import plain
 from assist.layers import undervalued as _undervalued
 
-__all__ = ["DISCLAIMER_LINE", "SELL_GROUPS", "TOP_PER_GROUP", "WIDTH", "morning", "regime_lines",
+__all__ = ["WIDTH", "morning", "regime_lines",
            "weekly", "wrap"]
 
 WIDTH = 60  # a phone shows about this many characters a line
-TOP_PER_GROUP = 3  # user 2026-11-13
-DISCLAIMER_LINE = "Paper only. Heuristic, not investment advice."
-SELL_GROUPS = (  # (key, plain label), matched in this order
-    ("thesis", "Business no longer passes"),
-    ("cap", "Over the 5% cap"),
-    ("valuation", "Price above its fair value"),
-    ("redundant", "Same industry and size held twice"),
-    ("rebalance", "Share of the cut to the target"),
-    ("other", "Other"),
-)
 WORLD = {"risk_on": "calm", "neutral": "normal", "risk_off": "nervous"}
-DOLLAR = {"up": "dollar rising", "flat": "dollar steady", "down": "dollar falling"}
 HOME = {"neutral": "calm", "risk_off": "nervous"}  # the home regime has no risk_on
 
 
@@ -57,7 +55,7 @@ def wrap(text: str, first: str = "", rest: str = "  ") -> list[str]:
 
 
 def _m(idr: float) -> str:
-    return f"{idr / 1e6:,.1f}m"
+    return f"{idr / 1e6:,.1f}m" if idr >= 0.05e6 else f"{idr / 1e6:.2f}m"
 
 
 def _day(d: str | date) -> str:
@@ -71,40 +69,63 @@ def _first_sentence(s: str | None) -> str:
     return s[: m.start()] if m else s
 
 
-def _group(step: Mapping) -> str:
-    tags = set(step.get("tags") or ())
-    q = step.get("question")
-    if q == "thesis":
-        return "thesis"
-    if "down to the 5% cap" in tags:
-        return "cap"
-    if q == "valuation":
-        return "valuation"
-    if "redundant" in tags:
-        return "redundant"
-    if "rebalance" in tags:
-        return "rebalance"
-    return "other"
-
-
 # ---------------- sections ----------------
 
 
-def _markets(guide_payload: Mapping | None, stances: Sequence[Mapping]) -> list[str]:
+def _signs(fired: Sequence[str], of: int, at: int | None) -> list[str]:
+    """'Warning signs: 1 of 5 (2 make it nervous): 10Y real yield 2.78%.'"""
+    head = f"Warning signs: {len(fired)} of {of}" + (f" ({at} make it nervous)" if at else "")
+    return wrap(head + (": " + "; ".join(fired) if fired else "") + ".", rest="")
+
+
+def _world(regime: Mapping | None, guide_payload: Mapping | None,
+           stances: Sequence[Mapping]) -> list[str]:
+    """1 World mood: its state, the warning signs that fired, the dollar, the order split."""
     idn = next((s for s in stances if s.get("subject") == "IDN"), None) or {}
-    world = (guide_payload or {}).get("regime") or idn.get("regime")
-    parts = [WORLD.get(world, str(world or "unknown").replace("_", " "))]
-    if idn.get("dollar") in DOLLAR:
-        parts.append(DOLLAR[idn["dollar"]])
-    home = idn.get("home_regime") or {}
-    if home.get("state") == "risk_off":
-        why = "; ".join(re.sub(r"\s*\(\d+\)$", "", d) for d in home.get("drivers") or ())
-        parts.append("Indonesia nervous" + (f" ({why})" if why else ""))
-    elif home.get("state"):
-        parts.append("Indonesia calm")
-    out = wrap("Markets: " + "; ".join(parts) + ".", rest="")
-    if home.get("state") == "risk_off":
-        out += wrap("Indonesian buys and sells are spread out.", rest="")
+    r = regime or {}
+    state = r.get("state") or (guide_payload or {}).get("regime") or idn.get("regime")
+    dollar = r.get("dollar") or idn.get("dollar")
+    out = ["", f"# 1. World mood: {WORLD.get(state, str(state or 'unknown').replace('_', ' '))}"]
+    counted = [i for i in r.get("inputs") or () if i.get("counted")]
+    if counted:
+        fired = [i["label"] for i in counted if i.get("direction") == "risk_off"]
+        calm = [i["label"] for i in counted if i.get("direction") == "risk_on"]
+        out += _signs(fired, len(counted), (r.get("rule") or {}).get("state_at"))
+        if calm:
+            out += wrap("Calm signs: " + "; ".join(calm) + ".", rest="")
+    elif state == "risk_off" and r.get("drivers"):
+        out += wrap("Why: " + "; ".join(_drop_points(r["drivers"])) + ".", rest="")
+    if dollar in plain.DOLLAR:
+        meaning = plain.meaning("dollar", dollar) or ""
+        out += wrap(f"{plain.label('dollar', dollar)}: {meaning[:1].lower()}{meaning[1:]}",
+                    rest="")
+    if state in ("risk_on", "neutral"):
+        out.append("Orders go in one go.")
+    elif state == "risk_off":
+        out += wrap("Every order is split into parts; new buys need a higher return.", rest="")
+    return out
+
+
+def _home(regime: Mapping | None, stances: Sequence[Mapping]) -> list[str]:
+    """2 Indonesia mood: its state and the warning points behind it."""
+    idn = next((s for s in stances if s.get("subject") == "IDN"), None) or {}
+    h = (regime or {}).get("home") or idn.get("home_regime") or {}
+    state = h.get("state")
+    out = ["", f"# 2. Indonesia mood: {HOME.get(state, str(state or 'unknown'))}"]
+    counted = [i for i in h.get("inputs") or () if i.get("counted")]
+    at = (h.get("rule") or {}).get("state_at")
+    if counted:
+        fired = [i["label"] + (f" ({i['points']} pts)" if i.get("points", 0) > 1 else "")
+                 for i in counted if i.get("points")]
+        out += wrap(f"Warning points: {h.get('points', 0)} from {len(counted)} checks"
+                    + (f" ({at} make it nervous)" if at else "")
+                    + (": " + "; ".join(fired) if fired else "") + ".", rest="")
+    elif h.get("drivers"):
+        out += wrap("Why: " + "; ".join(_drop_points(h["drivers"])) + ".", rest="")
+    if state == "risk_off":
+        out += wrap("Indonesian stock and bond orders are split into parts.", rest="")
+    elif state is None:
+        out.append("Not measured this run.")
     return out
 
 
@@ -123,102 +144,194 @@ def _dates(steps: Sequence[Mapping]) -> list[str]:
     return out
 
 
-def _buys(steps: Sequence[Mapping]) -> list[str]:
+def _pct(x: float) -> str:
+    return f"{x:.1f}".removesuffix(".0")
+
+
+def _buys(steps: Sequence[Mapping], g: Mapping) -> list[str]:
+    """'Buy: SBN Rp 15.90m' and, under it, the leg's share against its target (user
+    2026-11-13); a named stock gets the first sentence of its `why` instead."""
     out = []
     for s in steps:
-        name = re.sub(r"^Buy\s+", "", s["label"])
-        name = name[:1].upper() + name[1:]
-        out += wrap(f"{name} Rp {_m(s['idr'])}:", first="• ")
-        why = _first_sentence(s.get("why"))
-        if why:
-            out += wrap(why, first="  ")
+        name = re.sub(r"\s*\(.*\)$", "", re.sub(r"^Buy\s+(an?\s+)?", "", s["label"]))
+        name = re.sub(r"\bbroad-market\s+", "", name)
+        out += wrap(f"Buy: {name} Rp {s['idr'] / 1e6:,.2f}m", rest="  ")
+        leg = next((x for x in g.get("legs") or ()
+                    if (x.get("market"), x.get("asset")) == (s.get("market"), s.get("asset"))),
+                   None)
+        if s.get("kind") == "bucket" and leg and leg.get("current_pct") is not None:
+            who = "" if s.get("asset") == "bonds" else f"{plain.leg(s['market'], s['asset'])} "
+            out += wrap(f"({who}{_pct(leg['current_pct'])}% of "
+                        f"{leg['target_pct']:.0f}% target)", rest="  ")
+        elif _first_sentence(s.get("why")):
+            out += wrap(f"({_first_sentence(s.get('why'))})", rest="  ")
     return out
 
 
 def _sells(steps: Sequence[Mapping]) -> list[str]:
-    groups: dict[str, list[Mapping]] = {}
-    for s in steps:
-        groups.setdefault(_group(s), []).append(s)
-    label = dict(SELL_GROUPS)
-    order = sorted(groups, key=lambda k: (-sum(s["idr"] for s in groups[k]), k))
+    """One name a line, largest first: 'KLBF 2.4m', or 'PWON all' when the whole position goes
+    (user 2026-11-13: no reasons)."""
     out = []
-    for k in order:
-        g = sorted(groups[k], key=lambda s: (-s["idr"], s.get("symbol") or ""))
-        out += wrap(f"{label[k]} ({len(g)}, Rp {_m(sum(s['idr'] for s in g))}):", first="• ")
-        names = [f"{s.get('symbol') or s['label']} {_m(s['idr'])}" for s in g[:TOP_PER_GROUP]]
-        if len(g) > TOP_PER_GROUP:
-            names.append(f"+{len(g) - TOP_PER_GROUP} more")
-        out += wrap(", ".join(names), first="  ")
+    for s in sorted(steps, key=lambda s: (-s["idr"], s.get("symbol") or "")):
+        tags = s.get("tags") or ()
+        amount = ("all" if "all of it" in tags else f"trim {_m(s['idr'])}" if "trim" in tags
+                  else _m(s["idr"]))
+        name = s.get("symbol") or re.sub(r"^Sell\s+", "", s.get("label", ""))
+        out += wrap(f"{name} {amount}", rest="  ")
     return out
 
 
-def _thesis(holdings: Mapping | None) -> list[str]:
-    if not holdings:
-        return []
-    fails = sorted(h["symbol"] for h in holdings.get("holdings") or ()
-                   if ((h.get("acted") or {}).get("thesis") or {}).get("acts"))
-    if not fails:
-        return []
-    on = ((holdings.get("config") or {}).get("hysteresis") or {}).get("act_on_verdicts")
-    note = ("Sold in the steps above." if on
-            else "Paper: not acted on yet (the switch is off).")
-    return ["", f"# Business no longer passes ({len(fails)})",
-            *wrap(" ".join(fails), rest=""), *wrap(note, rest="")]
+def _thesis_sells(holdings: Mapping | None, sells: Sequence[Mapping]) -> list[dict]:
+    """The held names whose business no longer passes (T2), as sell lines (user 2026-11-13:
+    "in Sell, with trim or all"): `sell_all` sells the whole holding, `trim_to_half` half. A
+    name this week's steps already sell is upgraded to "all" when its verdict sells it all.
+    Listed whether or not `ACT_ON_VERDICTS` is on, so the guide may not have them yet."""
+    out = []
+    by_symbol = {s.get("symbol"): s for s in sells}
+    for h in (holdings or {}).get("holdings") or ():
+        acted = h.get("acted") or {}
+        if not (acted.get("thesis") or {}).get("acts"):
+            continue
+        whole = acted.get("action") != "trim_to_half"
+        if h["symbol"] in by_symbol:
+            if whole:
+                step = by_symbol[h["symbol"]]
+                step["tags"] = [*(step.get("tags") or ()), "all of it"]
+                step["idr"] = max(step["idr"], float(h.get("held_idr") or 0))
+            continue
+        idr = float(h.get("held_idr") or 0) * (1 if whole else 0.5)
+        out.append({"symbol": h["symbol"], "idr": idr, "side": "sell", "market": "IDN",
+                    "asset": "stocks", "tags": ["all of it"] if whole else ["trim"]})
+    return out
 
 
-def _best(payloads: Sequence[Mapping]) -> list[str]:
-    p = next((x for x in payloads if x.get("market") == "IDN"), None)
+def _value(payloads: Sequence[Mapping], market: str, sold: Sequence[str],
+           portfolio_idr: float | None) -> tuple[list[str], float] | None:
+    """The passing screens' top 5 for `market` as buy lines (user 2026-11-13: "Best value in
+    Buy, with target or full"): a held name up to the per-name cap ("to target"), a new name
+    a full position at the cap ("full"). Names this week's steps sell, and names already at
+    the cap, are left out. Returns (lines, total), or None when no screen passes."""
+    p = next((x for x in payloads if x.get("market") == market), None)
     if p is None:
-        return []
-    passing = [plain.label("style", s["style"]) for s in p.get("styles") or () if s["passed"]]
-    rows = _undervalued.top(p, 5)
+        return None
+    passing = [s for s in p.get("styles") or () if s["passed"]]
+    rows: list[Mapping] = []
+    for r in _undervalued.top(p, 10):  # a name two screens pass is listed once
+        if len(rows) < 5 and r["symbol"] not in {x["symbol"] for x in rows}:
+            rows.append(r)
     if not passing or not rows:
-        return ["", "# Best value now", "No stock screen passes its test this week."]
-    names = " ".join(r["symbol"] for r in rows)
-    new = [r["symbol"] for r in rows if not r.get("held")]
-    held = (", all held" if not new else ", none held" if len(new) == len(rows)
-            else f", {' '.join(new)} not held")
-    return ["", f"# Best value now ({' and '.join(passing)})", *wrap(names + held, rest="")]
+        return None
+    cap_pct = (((p.get("config") or {}).get("caps") or {}).get("name_pct")) or 5.0
+    cap = portfolio_idr * cap_pct / 100 if portfolio_idr else None
+    out, total = [], 0.0
+    for r in rows:
+        if r["symbol"] in sold:
+            continue
+        held = float(r.get("held_idr") or 0) if r.get("held") else 0.0
+        kind = "to target" if r.get("held") else "full"
+        if cap is None:
+            out += wrap(f"Buy: {r['symbol']} ({kind})", rest="  ")
+            continue
+        idr = cap - held
+        if idr <= 0:
+            continue
+        total += idr
+        out += wrap(f"Buy: {r['symbol']} Rp {idr / 1e6:,.2f}m ({kind})", rest="  ")
+    return out, total
+
+
+def _leg(g: Mapping, market: str) -> Mapping | None:
+    return next((x for x in g.get("legs") or ()
+                 if (x.get("market"), x.get("asset")) == (market, "stocks")), None)
+
+
+def _leg_note(g: Mapping, market: str) -> list[str]:
+    """Why a stock leg has no buy: its share against its target."""
+    leg = _leg(g, market)
+    if leg is None or leg.get("current_pct") is None or leg.get("target_pct") is None:
+        return []
+    return wrap(f"({plain.leg(market, 'stocks')} {_pct(leg['current_pct'])}% of "
+                f"{leg['target_pct']:.0f}% target)", rest="")
+
+
+def _is(s: Mapping, market: str, asset: str = "stocks") -> bool:
+    return (s.get("market"), s.get("asset")) == (market, asset)
 
 
 # ---------------- the message ----------------
 
 
 def weekly(*, day: date, guide_payload: Mapping | None, stances: Sequence[Mapping] = (),
-           undervalued: Sequence[Mapping] = (), holdings: Mapping | None = None) -> str:
-    """The Monday message (module docstring), lines of at most `WIDTH` characters."""
-    lines = [f"# investment-assist, {day:%a} {day.day} {day:%b %Y}", DISCLAIMER_LINE, "",
-             *_markets(guide_payload, stances)]
+           undervalued: Sequence[Mapping] = (), holdings: Mapping | None = None,
+           regime: Mapping | None = None) -> str:
+    """The Monday message in the user's six sections (T6), lines of at most `WIDTH`."""
+    lines = [f"# investment-assist, {day:%a} {day.day} {day:%b %Y}",
+             *_world(regime, guide_payload, stances), *_home(regime, stances)]
     g = guide_payload
+    steps = list((g or {}).get("steps") or ())
+    buys = [s for s in steps if s["side"] == "buy"]
+    sells = [dict(s) for s in steps if s["side"] == "sell"]
+    orders = g is not None and not g.get("held_for_data")
+    if orders:
+        sells += _thesis_sells(holdings, sells)
+    sold = {s.get("symbol") for s in sells if s.get("symbol")}
+    value = {m: _value(undervalued, m, sold, (g or {}).get("portfolio_value_idr")) if orders
+             else None for m in ("USA", "IDN")}
+    buy_idr = sum(s["idr"] for s in buys) + sum(v[1] for v in value.values() if v)
+    sell_idr = sum(s["idr"] for s in sells)
     if g is None:
         lines += ["", "No steps this run: the guide is missing. Open the home page."]
     elif g.get("held_for_data"):
         lines += ["", *wrap("No orders this week: some inputs are broken, so last week's "
                             "holdings stand.", rest="")]
         lines += [x for h in g["held_for_data"] for x in wrap(h, first="• ")]
-    elif not g.get("steps"):
+    elif not (buy_idr or sells):
         lines += ["", "Nothing to do this week: every leg is at its target."]
     else:
-        steps = g["steps"]
-        buys = [s for s in steps if s["side"] == "buy"]
-        sells = [s for s in steps if s["side"] == "sell"]
-        t = g["totals"]
-        head = ", ".join(x for x in (f"buy Rp {_m(t['buy_idr'])}" if buys else "",
-                                      f"sell Rp {_m(t['sell_idr'])}" if sells else "") if x)
-        lines += ["", f"# This week: {head}", *_dates(steps)]
-        if buys:
-            lines += ["", "# Buy", *_buys(buys)]
-        if sells:
-            lines += ["", f"# Sell ({len(sells)}, Rp {_m(t['sell_idr'])})", *_sells(sells)]
-    lines += _thesis(holdings)
-    lines += _best(undervalued)
+        head = ", ".join(x for x in (f"buy Rp {_m(buy_idr)}" if buy_idr else "",
+                                      f"sell Rp {_m(sell_idr)}" if sells else "") if x)
+        lines += ["", f"# {head[:1].upper()}{head[1:]}", *_dates(steps)]
+
+    for n, market in ((3, "USA"), (4, "IDN")):
+        mine = [s for s in buys if _is(s, market)]
+        if not orders:
+            continue
+        lines += ["", f"# {n}. {plain.MARKET[market]} stocks to buy"]
+        if mine:
+            lines += _buys(mine, g or {})
+        elif orders and g is not None:
+            lines += _leg_note(g, market)
+        v = value[market]
+        if v and v[0]:
+            lines += v[0]
+        elif orders:
+            lines += wrap(f"No {plain.MARKET[market]} stock passes a value screen this week.",
+                          rest="")
+    other = [s for s in buys if not (_is(s, "USA") or _is(s, "IDN"))]
+    if other:
+        lines += ["", "# Other buys", *_buys(other, g or {})]
+
+    for n, market in ((5, "USA"), (6, "IDN")):
+        mine = [s for s in sells if _is(s, market)]
+        if not mine and not orders:
+            continue
+        body = _sells(mine)
+        if not mine:
+            leg = (_leg(g, market) if g else None) or {}
+            body = [f"None: no {plain.MARKET[market]} stocks held."
+                    if leg.get("current_pct") == 0 else "None this week."]
+        total = f" ({len(mine)}, Rp {_m(sum(s['idr'] for s in mine))})" if mine else ""
+        lines += ["", f"# {n}. {plain.MARKET[market]} stocks to sell{total}", *body]
+    rest = [s for s in sells if not (_is(s, "USA") or _is(s, "IDN"))]
+    if rest:
+        lines += ["", "# Other sells", *_sells(rest)]
     return "\n".join(lines)
 
 
 # ---------------- the 07:00 message (T3) ----------------
 
 
-DOLLAR_WORD = {"up": "rising", "flat": "steady", "down": "falling"}
+DOLLAR_WORD = {"up": "strengthening", "flat": "steady", "down": "weakening"}  # user 2026-11-13
 
 
 def _drop_points(drivers: Sequence[str]) -> list[str]:
@@ -277,8 +390,8 @@ def _health_lines(health: Sequence[str]) -> list[str]:
 
 def morning(day: date, *, regime: Sequence[str], holdings: Sequence[str],
             health: Sequence[str], act_on: bool | None) -> str:
-    """The one 07:00 message: mood changes, holding changes, data health; one disclaimer."""
-    lines = [f"# investment-assist morning, {day:%a} {day.day} {day:%b %Y}", DISCLAIMER_LINE]
+    """The one 07:00 message: mood changes, holding changes, data health; no disclaimer."""
+    lines = [f"# investment-assist morning, {day:%a} {day.day} {day:%b %Y}"]
     if regime:
         lines += ["", *regime]
     if holdings:
