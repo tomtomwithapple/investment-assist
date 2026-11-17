@@ -26,7 +26,8 @@ merged; S91 (flip counter, `src/assist/flips.py`, on `/paper` and in the brief) 
    in the screener; 48 USD reporters' flows vs IDR assets in `fundamentals`.
 3. S22 (still open from phase F).
 4. **Phase S planned 2026-11-17** (stock picks by money flow, S105–S113; IDN only, context until
-   its placebo passes and the user adopts it; 8 choices open for the user, defaults stand). Next:
+   its placebo passes and the user adopts it; methodology = the frameworks document's §8 with
+   flow as confirmation: Wyckoff's bandarmology overlay on foreign flow, CAN SLIM's S and I; 8 choices open for the user, defaults stand). Next:
    S105, the live inventory of the per-name flow data in idxscape, kseistat and idx-method.
 
 **Last updated:** 2026-11-13 (**P121-div-recovered**: the dividend cut gate no longer counts a dip the latest 12
@@ -1973,6 +1974,27 @@ are not on the planning machine, so S105 checks every figure live first):
 idxscape `broker_summary` is per broker for the whole market, with no buy / sell split and no
 stock, so it cannot rank names.
 
+**Methodology (user 2026-11-17, from `investment-frameworks-implementation.md`).** The
+document's own stack (§8) puts flow fifth, as *confirmation* after the liquidity filter, the
+exclusion screens, the value rank and the quality rank, and before the valuation check. Phases
+F, P and Q already built those stages, so phase S adds only the flow stage, in that place:
+
+| Document | Applied in phase S | How |
+|---|---|---|
+| §8 combined pipeline | **Yes: the frame.** Flow confirms names the value and quality stages passed | Role (a) below is the default |
+| §6.1 Wyckoff step 5, bandarmology overlay | **Yes: the main leg.** "Position grows while price is flat" | Foreign investors stand in for the composite operator (idxscape `stock_summary`); top brokers replace them once `broker_top` has a year |
+| §6.1 step 4, effort vs result | **Yes: a flag.** High traded value on a narrow price range | From daily bars; context on the row, not a rank |
+| §3.3 CAN SLIM, letter I | **Yes: a leg.** Institutional ownership rising | kseistat monthly, per stock (the document's own note sends IDX to flow data for I) |
+| §3.3 CAN SLIM, letter S | **Yes: a leg.** Up-day over down-day traded value, 50 days | From daily bars |
+| §6.2 Kyle's lambda | Proxy only | Needs signed intraday trades, in no store; the daily `amihud` already derived here is shown as the thin-market flag |
+| §6.1 steps 1–3, Wyckoff events and phases A–E | Not now | About 20 event thresholds against 20 independent windows would be fitted to noise; revisit with `broker_top` |
+| §6.3 PIN, VPIN and the broker-level analog | Not now | Need trade-level data or broker buy and sell per stock; revisit with `broker_top` |
+| §3.3 the rest of CAN SLIM, §7.3 Soros | No | Price stops conflict with phase P's verdicts (phase Q choice 8); Soros is a research heuristic |
+| §0.2, §0.3 | Yes | Every leg returns S93's `FrameworkResult`; point in time, missing data flagged, delisted names in the replay |
+
+Insider buying is not in the document; it stays as an extra leg because the data has 5 years of
+history, and is dropped first if S105 finds the filings unusable.
+
 **Rules.**
 
 1. `money_flow` is one more style in `out/candidates/IDN.json`, with its own verdict, t, p and
@@ -1995,10 +2017,13 @@ stock, so it cannot rank names.
 
 **Leg definitions (defaults, choices 1–4 below).**
 
-- *Foreign accumulation.* Net foreign value over 20 and 60 trading days ÷ traded value over the
-  same days (−1 … +1), and the share of days with a net buy. A window where non-regular value
-  is over half the total is flagged and left out of the rank.
-- *Ownership shift.* Change over 1 and 3 months in the share held by foreign institutions and
+- *Accumulation while flat* (§6.1 step 5). Net foreign value over 20 and 60 trading days ÷
+  traded value over the same days (−1 … +1), and the share of days with a net buy, counted
+  only while the close stays inside a band (default ±10% over the 60 days: bought, not yet
+  marked up). A window where non-regular value is over half the total is flagged and left out
+  of the rank.
+- *Supply and demand* (§3.3 S). Traded value on up days ÷ on down days over 50 days.
+- *Ownership shift* (§3.3 I). Change over 1 and 3 months in the share held by foreign institutions and
   by local institutions (MF, PF, IS) taken together, against local individuals.
 - *Insider buying.* Net shares bought on the market by insiders and major holders over 90 days
   ÷ listed shares; transfers, pledges and corporate actions left out.
@@ -2011,7 +2036,8 @@ stock, so it cannot rank names.
    names a dividend or value screen already passes, and a strong outflow ladders the entry),
    (b) its own list with paper sizes inside the IDN stocks leg, or (c) context only.
 2. Whose money counts: foreign and institutional (default), or foreign only.
-3. Windows: 20 and 60 days, KSEI 1 and 3 months, insiders 90 days.
+3. Windows: 20 and 60 days in a ±10% price band, up / down value 50 days, KSEI 1 and 3 months,
+   insiders 90 days.
 4. Holding period and review: hold 3 months, review monthly (fits the flip target of at most 1
    per quarter); 1 month is the alternative and costs more.
 5. Cut: top fifth (default) or top tenth of the pool.
@@ -2031,7 +2057,8 @@ stock, so it cannot rank names.
   over `insider_history`; doctor probes; read-only, fixtures only in tests. Test first: a
   suspended day, a code with no foreign trade, a KSEI month without a `loads` row.
 - [ ] **S107 Flow factors** (P128-flow-factors). `candidates/flow.py`, pure and point in time
-  (rule 4): the three legs per name and date, the non-regular flag, the cross-check flag where
+  (rule 4): the four legs per name and date as `FrameworkResult`s, the effort-vs-result and
+  thin-market (`amihud`) flags, the non-regular flag, the cross-check flag where
   the two foreign-flow sources disagree in sign over the window. Hashed by `RULE_GLOBS`. Test
   first on hand tables: a crossing day, a listing inside the window, a split (value, not
   shares, so no adjustment), a filing dated after its trade.
