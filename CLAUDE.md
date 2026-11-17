@@ -33,12 +33,16 @@ a disclaimer and source attribution.
   openkrx is read as DuckDB over its `data/parquet` (its Postgres holds only ops tables; read
   contract in its `docs/HANDOFF.md`, slice R1, still pending 2026-11-07). worldbankscape is read from its
   `out/*.json` contract. sec-edgar is read over HTTP (`usfin serve`, `?format=csv`) because
-  `serve` holds the DuckDB lock. dbnomics' lock is mutual (a reader blocks `dbn refresh`), so
+  `serve` holds the DuckDB lock and runs sec-edgar's own write jobs (a read during one is `locked`;
+  `sources/base.retry_locked` waits and retries, P125). dbnomics' lock is mutual (a reader blocks `dbn refresh`), so
   prefer its API (`dbn serve`, 127.0.0.1:8770, `?format=csv`) or open-query-close; its tables,
   ids and units are in `../dbnomics/docs/HANDOFF.md`. bisfetcher's tables are locked by the
   `contract` block in its `PLAN.md`.
 - A fetcher that adds or renames a table another layer reads should note it in its own plan, so
   the matching adapter in investment-assist can be updated.
+- Health checks: read `config/alerts.yaml` `accepted` first and list those as known gaps, not
+  problems; jquantster on J-Quants Free has `investor_types` empty and bars ~85 days old (12-week
+  delay), which is normal. Rerun a finished weekly with `assist run --no-send` (no second Telegram).
 
 ### Flow, from data to output
 

@@ -10,6 +10,12 @@ is a bug and propagates. The openers build on the doctor's (S0), so both see a s
 - SQLite: `sqlite_ro` (`file:...?mode=ro`, `immutable=1` for a WAL file with no writer).
 - Postgres: `postgres_ro` through DuckDB's postgres extension (never auto-installed).
 - HTTP CSV: `http_csv`, localhost only (sec-edgar `usfin serve`, dbnomics `dbn serve`).
+
+A `locked` store is tried again (P125, `retry_locked`): `usfin serve` runs sec-edgar's own write
+jobs in its process (the EDGAR feed every 15 minutes 06:00-22:45 ET, the 23:30 ET reconcile, each
+chaining Form 4 and companyfacts drains), and while one writes its HTTP reads outlast the 5 s
+timeout and its file refuses an ATTACH; a dbnomics refresh does the same. Live 2026-11-17 three
+`assist run`s lost the USA list or read the regime as neutral this way.
 """
 
 from __future__ import annotations
@@ -17,7 +23,8 @@ from __future__ import annotations
 import csv
 import io
 import sqlite3
-from collections.abc import Iterator, Sequence
+import time
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
@@ -50,6 +57,7 @@ __all__ = [
     "open_query_close",
     "postgres_ro",
     "read_rows",
+    "retry_locked",
     "sqlite_ro",
 ]
 
@@ -102,6 +110,45 @@ def read_rows(source: Source, *args, **kwargs) -> tuple[list[Row], list[str]]:
         return [], [e.stale_input]
 
 
+# ---------------- locked: try again ----------------
+
+# Seconds to wait before each retry of a locked store (P125). Long enough to outlast one EDGAR
+# feed job (~1-2 min); 3.5 min in all.
+LOCKED_WAITS: tuple[float, ...] = (30.0, 60.0, 120.0)
+RETRY_TIMEOUT = 30.0  # an HTTP retry waits this long for the answer, not HTTP_TIMEOUT
+GIVE_UP_SECONDS = 600.0  # a source still locked after every wait fails at once this long
+_sleep: Callable[[float], None] = time.sleep
+_clock: Callable[[], float] = time.monotonic
+_gave_up: dict[str, float] = {}  # source -> when it last exhausted its waits
+
+
+def retry_locked[T](source: str, attempt: Callable[[int], T]) -> T:
+    """`attempt(0)`, and on a `locked` SourceUnavailable `attempt(1)`, ... after each wait in
+    `LOCKED_WAITS`. Any other reason raises at once. A source that is still locked after the
+    last wait is not waited for again within `GIVE_UP_SECONDS`, so one long job costs one wait
+    cycle per process, not one per read."""
+    since = _gave_up.get(source)
+    waits = LOCKED_WAITS if since is None or _clock() - since > GIVE_UP_SECONDS else ()
+    for i in range(len(waits) + 1):
+        if i:
+            _sleep(waits[i - 1])
+        try:
+            out = attempt(i)
+        except SourceUnavailable as e:
+            if e.reason != "locked":
+                raise
+            if i == len(waits):
+                _gave_up[source] = _clock()
+                if waits:
+                    e.detail += f" (still locked after {len(waits)} retries)"
+                    e.args = (f"{e.source} {e.reason}: {e.detail}",)
+                raise
+            continue
+        _gave_up.pop(source, None)
+        return out
+    raise AssertionError("unreachable")
+
+
 # ---------------- DuckDB ----------------
 
 
@@ -124,10 +171,14 @@ def _require_file(path: Path | str, source: str) -> str:
 @contextmanager
 def duckdb_ro(path: Path | str, source: str) -> Iterator[duckdb.DuckDBPyConnection]:
     path = _require_file(path, source)
-    try:
-        con = duckdb.connect(path, read_only=True)
-    except duckdb.Error as e:
-        raise _from_duckdb(e, source) from e
+
+    def connect(_: int) -> duckdb.DuckDBPyConnection:
+        try:
+            return duckdb.connect(path, read_only=True)
+        except duckdb.Error as e:
+            raise _from_duckdb(e, source) from e
+
+    con = retry_locked(source, connect)
     try:
         yield con
     finally:
@@ -138,10 +189,14 @@ def attach_ro(con: duckdb.DuckDBPyConnection, path: Path | str, alias: str, sour
     """ATTACH a DuckDB file READ_ONLY as `alias` into a shared connection."""
     path = _require_file(path, source)
     quoted = path.replace("'", "''")
-    try:
-        con.execute(f"attach '{quoted}' as \"{alias}\" (read_only)")
-    except duckdb.Error as e:
-        raise _from_duckdb(e, source) from e
+
+    def attach(_: int) -> None:
+        try:
+            con.execute(f"attach '{quoted}' as \"{alias}\" (read_only)")
+        except duckdb.Error as e:
+            raise _from_duckdb(e, source) from e
+
+    retry_locked(source, attach)
 
 
 def open_query_close(
@@ -204,8 +259,19 @@ def http_csv(
     `timeout` from a server that accepted the request → locked, like a 503 (busy, e.g. dbnomics
     refresh holding the lock): the server is up and holds its store while it works, so a file
     fallback would meet that lock (P63). Other 5xx → error. A 4xx is a wrong path or id, so it
-    raises."""
+    raises. A locked answer is tried again (`retry_locked`), each retry waiting at least
+    `RETRY_TIMEOUT` for the answer."""
     check_local_url(url)
+    return retry_locked(
+        source,
+        lambda i: _http_csv_once(client, url, source, params,
+                                 timeout if i == 0 else max(timeout, RETRY_TIMEOUT)),
+    )
+
+
+def _http_csv_once(
+    client: httpx.Client, url: str, source: str, params: dict | None, timeout: float
+) -> list[dict[str, str]]:
     try:
         r = client.get(url, params={**(params or {}), "format": "csv"}, timeout=timeout)
     except httpx.TimeoutException as e:

@@ -54,3 +54,14 @@ def no_repo_dotenv(monkeypatch, tmp_path_factory):
     from assist import notify
 
     monkeypatch.setattr(notify, "DOTENV", tmp_path_factory.getbasetemp() / "no-such.env")
+
+
+@pytest.fixture(autouse=True)
+def no_locked_waits(monkeypatch):
+    """A locked store fails at once in a test (P125's retries are tested in
+    tests/sources/test_locked_retry.py, which sets its own waits)."""
+    from assist.sources import base
+
+    monkeypatch.setattr(base, "LOCKED_WAITS", ())
+    monkeypatch.setattr(base, "_gave_up", {})
+    monkeypatch.setattr(base, "_sleep", lambda s: None)
