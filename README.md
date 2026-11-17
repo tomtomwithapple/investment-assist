@@ -213,8 +213,10 @@ sources present, 1 stale (jquantster), 2 missing (satudatascape, openkrx).
 - **No IDN 10Y for 2025-01 → 2026-09.** The OECD proxy ends 2024-12 and IGSYC starts 2026-10,
   so both IDN rules' histories stop short of their gates (bonds "not yet"); asked of dbnomics
   (IMF IFS) and idxscape (DJPPR SUN auctions).
-- **jquantster is on the J-Quants free plan.** TSE investor types are empty and daily bars end
-  2026-08-14 (stale around 2026-11-22).
+- **jquantster is on the J-Quants free plan.** TSE investor types are empty (accepted in
+  `config/alerts.yaml`) and daily bars lag 12 weeks (2026-08-24 on the 2026-11-16 sync). Its
+  weekday 16:45 sync keeps them about 85 days old, under the 100-day probe; they go stale only
+  if that sync stops for about two weeks.
 - **openkrx has no `data/parquet` on this Mac.** There is no KR or TW index valuation.
 - **There are no USD/IDR forwards.** Hedged IDR edges use policy-rate carry instead.
 - **idx-method's stock history is short and not adjusted.** It holds about 5 years of closes,
