@@ -520,6 +520,24 @@ def _flows(args: argparse.Namespace) -> int:
     return 0
 
 
+def _flow_inventory(args: argparse.Namespace) -> int:
+    """S105: per-name money-flow data in idxscape, kseistat and idx-method, read-only."""
+    from assist import flow_inventory as fi
+
+    inv = fi.build(fi.Stores.from_config())
+    default = pipeline.Paths.default().out.parent / "docs" / "results" / "P126-flow-inventory.md"
+    out = Path(args.out) if args.out else default
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(fi.markdown(inv, _today(args)), encoding="utf-8")
+    if args.json:
+        text = json.dumps(inv, indent=2, sort_keys=True) + "\n"
+        Path(args.json).write_text(text, encoding="utf-8")
+    for leg, v in inv["legs"].items():
+        print(f"{leg}: {v['verdict']} ({v['why']})")
+    print(out)
+    return 0
+
+
 def _pt(x: float | None) -> str:
     return "n/a" if x is None else f"{100 * x:+.1f}pt"
 
@@ -656,6 +674,12 @@ def main(argv: list[str] | None = None) -> int:
     fl.add_argument("--household", help="owner names file (default config/household.local.yaml)")
     fl.add_argument("--months", type=int, default=12, help="latest months with data (default 12)")
     fl.set_defaults(func=_flows)
+
+    fi = sub.add_parser("flow-inventory", help="per-name money-flow data in the sibling stores "
+                        "→ docs/results/P126-flow-inventory.md (read-only)")
+    fi.add_argument("--out", help="report path (default docs/results/P126-flow-inventory.md)")
+    fi.add_argument("--json", help="also write the raw inventory as JSON to this path")
+    fi.set_defaults(func=_flow_inventory)
 
     args = parser.parse_args(argv)
     if args.siblings_root:

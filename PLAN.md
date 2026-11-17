@@ -25,6 +25,11 @@ merged; S91 (flip counter, `src/assist/flips.py`, on `/paper` and in the brief) 
 2. **S102** Beneish blocked on idx-method (its PLAN `ed2e72c`); also tell idx-method: BTPS CAR 0
    in the screener; 48 USD reporters' flows vs IDR assets in `fundamentals`.
 3. S22 (still open from phase F).
+4. **Phase S planned 2026-11-17** (stock picks by money flow, S105–S113; IDN only, context until
+   its placebo passes and the user adopts it; methodology = the frameworks document's §8 with
+   flow as confirmation: Wyckoff's bandarmology overlay on foreign flow, CAN SLIM's S and I; 8 choices open for the user, defaults stand). Next:
+   S105: the tool is built (`assist flow-inventory`); run it on the Mac to get the live figures.
+   User 2026-11-17: the flow screen is its own list (choice 1 b).
 
 **Last updated:** 2026-11-13 (**P121-div-recovered**: the dividend cut gate no longer counts a dip the latest 12
 months are back from (within `cut_tol` 10%); found reviewing the fan-in run's 11 hard thesis
@@ -116,6 +121,7 @@ averages, so a pull during trading (15:20 on 2026-11-10) split 33 industries int
 | M. Average down on a held name (cost basis in layer 5, gated rule, dip placebo) | S67–S71 | 5 / 5 |
 | N. Guided UI (this week's steps with amount, date, entry price, TP and SL; plain words) | S72–S80 | 9 / 9 |
 | O. The investing principle as rules (keep the screen's names, no redundant industry and size, rebalance respects it) | S81–S84 | 4 / 4 |
+| S. Stock picks by money flow (per-name foreign flow, ownership shift, insider buying; gated) | S105–S113 | 0 / 9 |
 
 ### Open data gaps (fetcher side)
 
@@ -1939,6 +1945,159 @@ Order: T1 → T2 → T5 → T3 → T4. Then one test send to the user's chat (`-
   data health block lists only problems new since the last check: no re-list, no weekly
   reminder, no all-clear; a cleared problem is forgotten quietly, so it is new again if it
   returns. No hashed module touched.
+
+### Phase S — stock picks by money flow (planned 2026-11-17)
+
+**Why.** Money flow is read only at market level today (layer 3: IDX foreign flow 20d, KSEI
+foreign share, non-resident SBN), and the layer-4 screens rank names on dividends, value and
+quality only. No name is ever picked, or held back, because of who is buying it. The sibling
+stores already hold flow per name, so a fifth IDN screen, `money_flow`, can rank names on it.
+Under the rules of phases P and Q it starts as context: it must beat its placebo and be adopted
+by the user before it sizes a buy, and it never sells a held name.
+
+**Scope: IDN only.** No store holds flow per name elsewhere: jquantster's `investor_types` is
+empty on the free plan (and market-wide anyway), sec-edgar's TIC is per country, openkrx has no
+investor flows on this Mac.
+
+**What the siblings hold per name** (from their schemas and plans; nothing was run, the stores
+are not on the planning machine, so S105 checks every figure live first):
+
+| Leg | Store | What | History | Caveat |
+|---|---|---|---|---|
+| Foreign flow | idxscape `stock_summary` (`foreign_buy_shares`, `foreign_sell_shares`, `net_foreign_shares`, `net_foreign_value_est_idr`, `value_idr`, `non_regular_value_idr`) | Daily foreign buy and sell per code, from IDX | 2021-10 → today, nightly | The IDR value is an estimate (shares × a price); negotiated-market crossings are in the totals |
+| Foreign flow, cross-check | idx-method `bars.net_foreign` (`cache/history/`) | Daily net foreign value per name, from Stockbit | 2021-11 → today | Second source of the same thing: a check, not a second leg |
+| Ownership shift | kseistat `data/ksei.duckdb` `holdings`, view `v_stock_composition` | Monthly holdings per stock by origin (local / foreign) and investor type (ID, CP, IB, IS, MF, PF, SC, FD, OT) | Per loaded month-end file | The view exists (its schema is in `tests/fixtures/kseistat/schema.sql`); the adapter reads only the two market views so far |
+| Insider and major holders | idx-method `insider_history` | Filings of insider and >5% holder trades | 2021-08 → today | `raw` JSON, fields not yet parsed here; includes transfers and pledges that are not buys |
+| Shareholder register | idx-method `data/composition.json`, `factors.n_holders` | Monthly share held by 37 holder types | Rolling ~5 months, archived since 2026-07 | Too short to test; context only |
+| Broker concentration | idx-method `api_raw` `broker_top` | Top brokers per session | A few days (asked daily in S101) | Not testable for about a year (Wyckoff, phase Q choice 8) |
+| Stockbit Foreign Flow and Bandarmology screeners | idx-method `screener_member` | Dated membership | 2026-11-12 → today | Watchlist only (phase P rule 1) |
+
+idxscape `broker_summary` is per broker for the whole market, with no buy / sell split and no
+stock, so it cannot rank names.
+
+**Methodology (user 2026-11-17, from `investment-frameworks-implementation.md`).** The
+document's own stack (§8) puts flow fifth, as *confirmation* after the liquidity filter, the
+exclusion screens, the value rank and the quality rank, and before the valuation check. Phases
+F, P and Q already built those stages, so phase S adds only the flow stage, in that place:
+
+| Document | Applied in phase S | How |
+|---|---|---|
+| §8 combined pipeline | **Partly.** Its liquidity and exclusion stages gate the pool; flow then ranks its own list instead of confirming the value rank | The user chose role (b) on 2026-11-17 |
+| §6.1 Wyckoff step 5, bandarmology overlay | **Yes: the main leg.** "Position grows while price is flat" | Foreign investors stand in for the composite operator (idxscape `stock_summary`); top brokers replace them once `broker_top` has a year |
+| §6.1 step 4, effort vs result | **Yes: a flag.** High traded value on a narrow price range | From daily bars; context on the row, not a rank |
+| §3.3 CAN SLIM, letter I | **Yes: a leg.** Institutional ownership rising | kseistat monthly, per stock (the document's own note sends IDX to flow data for I) |
+| §3.3 CAN SLIM, letter S | **Yes: a leg.** Up-day over down-day traded value, 50 days | From daily bars |
+| §6.2 Kyle's lambda | Proxy only | Needs signed intraday trades, in no store; the daily `amihud` already derived here is shown as the thin-market flag |
+| §6.1 steps 1–3, Wyckoff events and phases A–E | Not now | About 20 event thresholds against 20 independent windows would be fitted to noise; revisit with `broker_top` |
+| §6.3 PIN, VPIN and the broker-level analog | Not now | Need trade-level data or broker buy and sell per stock; revisit with `broker_top` |
+| §3.3 the rest of CAN SLIM, §7.3 Soros | No | Price stops conflict with phase P's verdicts (phase Q choice 8); Soros is a research heuristic |
+| §0.2, §0.3 | Yes | Every leg returns S93's `FrameworkResult`; point in time, missing data flagged, delisted names in the replay |
+
+Insider buying is not in the document; it stays as an extra leg because the data has 5 years of
+history, and is dropped first if S105 finds the filings unusable.
+
+**Rules.**
+
+1. `money_flow` is one more style in `out/candidates/IDN.json`, with its own verdict, t, p and
+   pool like the other screens; it is never a second verdict source (phase P rule 1).
+2. It names buys only. Outflow from a held name is shown on its holding record as context; the
+   thesis stays the only sell trigger (phase P rule 2).
+3. Each leg is replayed alone before any composite; a composite uses only legs that passed, with
+   Holm across the legs. No weights are fitted.
+4. Point in time: a day's flow is known the next trading day; a KSEI month on its
+   `loads.loaded_at` date (month end + a fixed lag where that row is missing); a filing on its
+   filing date.
+5. The eligible pool is the existing one: the liquidity gates (`med_value_60d`,
+   `days_traded_60`), no special board, no hard thesis fail. Flow is scaled by the name's own
+   traded value so large caps do not win on size.
+6. Returns are net of the P21 cost model at the rebalance frequency: a monthly list pays up to
+   12 round trips a year, which a 3-month hold does not.
+7. Pass criterion as phase Q choice 4: the placebo (t >= 2, control clean) on non-overlapping
+   windows; S92's picks report vs the JCI and the equal-weighted pool beside it. From 2021-10
+   there are about 60 month ends: 20 independent 3-month windows, 60 of 1 month.
+
+**Leg definitions (defaults, choices 1–4 below).**
+
+- *Accumulation while flat* (§6.1 step 5). Net foreign value over 20 and 60 trading days ÷
+  traded value over the same days (−1 … +1), and the share of days with a net buy, counted
+  only while the close stays inside a band (default ±10% over the 60 days: bought, not yet
+  marked up). A window where non-regular value is over half the total is flagged and left out
+  of the rank.
+- *Supply and demand* (§3.3 S). Traded value on up days ÷ on down days over 50 days.
+- *Ownership shift* (§3.3 I). Change over 1 and 3 months in the share held by foreign institutions and
+  by local institutions (MF, PF, IS) taken together, against local individuals.
+- *Insider buying.* Net shares bought on the market by insiders and major holders over 90 days
+  ÷ listed shares; transfers, pledges and corporate actions left out.
+- *Pick.* The top fifth of the eligible pool on a passed leg (or the composite rank), at most
+  one name per industry and size group (phase O), held 3 months, reviewed monthly.
+
+**Choices for the user** (the default stands until changed):
+
+1. Role once it passes: **(b) its own list**, with paper sizes inside the IDN stocks leg
+   (**decided by the user 2026-11-17**). Not chosen: (a) confirmation among names a dividend or
+   value screen already passes (the document's §8 order), (c) context only. The list still
+   draws from the eligible pool of rule 5 (no hard thesis fail) and shares the caps of choice 6;
+   a name on both a value list and the flow list is one position, not two.
+2. Whose money counts: foreign and institutional (default), or foreign only.
+3. Windows: 20 and 60 days in a ±10% price band, up / down value 50 days, KSEI 1 and 3 months,
+   insiders 90 days.
+4. Holding period and review: hold 3 months, review monthly (fits the flip target of at most 1
+   per quarter); 1 month is the alternative and costs more.
+5. Cut: top fifth (default) or top tenth of the pool.
+6. Cap: the list shares the existing 5% per name and one name per industry and size group.
+7. Telegram: flow picks appear in the Monday message only after adoption (default).
+8. Fetcher asks: send all three in S111 (default), `broker_top` raised from low priority.
+
+- [ ] **S105 Flow inventory** (P126-flow-inventory). **Tool built 2026-11-17, live run
+  pending:** `assist flow-inventory` (`src/assist/flow_inventory.py`, 9 tests, not hashed)
+  writes `docs/results/P126-flow-inventory.md` with a verdict per leg (usable / too short /
+  check first / no data) against fixed minimums: 750 trading days, 36 KSEI months, 1,000
+  insider market trades with a readable share change, 80% sign agreement between the two
+  foreign-flow sources. It was built in a cloud session with no stores, so the only live figure
+  is the register from idx-method's committed `data/composition.json`: 944 names, one report
+  date (2026-10-30), window 2026-03-31 → 2026-10-30, so no history to test, as expected. **To
+  finish: run `uv run assist flow-inventory` on the Mac and commit the report; tick this slice
+  then.** The original scope: live, read-only, on the Mac: first date,
+  days and codes of `stock_summary` and its foreign columns; agreement of
+  `net_foreign_value_est_idr` with idx-method `bars.net_foreign` on their overlap (sign share,
+  rank correlation, the worst names); kseistat's per-stock table, its months and investor
+  types; the fields of `insider_history.raw` and the share of rows that are market trades;
+  months archived in `composition.json`; days of `broker_top`. Numbers to
+  `docs/results/P126-flow-inventory.md`; a leg whose data fails here is dropped before S107.
+- [ ] **S106 Flow adapters** (P127-flow-sources). `IdxscapeSource.stock_flows(start, end)` (all
+  names in one query), `KseistatSource.stock_composition()`, `sources/idxmethod_insider.py`
+  over `insider_history`; doctor probes; read-only, fixtures only in tests. Test first: a
+  suspended day, a code with no foreign trade, a KSEI month without a `loads` row.
+- [ ] **S107 Flow factors** (P128-flow-factors). `candidates/flow.py`, pure and point in time
+  (rule 4): the four legs per name and date as `FrameworkResult`s, the effort-vs-result and
+  thin-market (`amihud`) flags, the non-regular flag, the cross-check flag where
+  the two foreign-flow sources disagree in sign over the window. Hashed by `RULE_GLOBS`. Test
+  first on hand tables: a crossing day, a listing inside the window, a split (value, not
+  shares, so no adjustment), a filing dated after its trade.
+- [ ] **S108 Replay and gate** (P129-flow-replay). `candidates/flow_replay.py`: each leg alone,
+  then the composite of passed legs, on month ends 2021-12 → today; forward 1 and 3 months, net
+  of costs; `eval/placebo.py` with `stride` = horizon, Holm across legs; S92's report; delisted
+  coverage printed. `assist flow` → `out/flow/IDN.json`. The verdicts decide S109's content.
+- [ ] **S109 Screen and payload** (P130-flow-screen). The `money_flow` style in
+  `layers/undervalued.py` (rule 1), a `flow` context block on S86's holding record (rule 2),
+  candidates schema bump, journalled. Sizes stay zero while the role is context. A model
+  change: one new journal segment.
+- [ ] **S110 Pages** (P131-flow-ui). `/flows` gains a per-name table (top 20 inflow and outflow
+  over 20 days, each leg's value, held or not, `.json` twin); `/candidates/IDN` shows the leg
+  columns and the gate state; the brief gets one "Money flow" block. Plain words. No hashed
+  module.
+- [ ] **S111 Fetcher asks** (P132-flow-asks). Docs only, in each fetcher's plan: kseistat, a
+  note that the parent now reads `v_stock_composition` per stock; idx-method, `broker_top` kept daily at
+  normal priority and the parse of `insider_history.raw` into columns (date, symbol, holder,
+  action, shares, price); idxscape, a note that the parent now reads the `foreign_*` columns of
+  `stock_summary` per code.
+- [ ] **S112 Adoption** (P133-flow-adopt). After S108: the user picks the role (choice 1) for
+  each passed leg; a failed leg stays context and is shown as failed. Reruns the
+  dividend_value replay to show it still passes. A model change.
+- [ ] **S113 Phase S fan-in** (F18-phase-s). Merge, live `assist run --no-send`, Progress,
+  STATUS, README.
+
+Order: S105 → S106 → S107 → S108 → {S109 → S110}; S111 any time; all → S112 → S113.
 
 ## Open questions
 
