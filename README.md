@@ -54,6 +54,7 @@ uv run assist paper                   # paper track vs the IDR 48/32/20 benchmar
 uv run assist frameworks              # baseline board: each screen's replay picks vs JCI and pool → out/frameworks/IDN.json (for /frameworks; a few minutes; not part of run)
 uv run assist journal                 # decisions per model fingerprint, hash-chain check
 uv run assist flows                   # household transfers from financer → out/flows/<YYYY-MM>.json (for /flows)
+uv run assist flow-inventory          # per-name money-flow data in idxscape, kseistat, idx-method → docs/results/P126-flow-inventory.md (S105; read-only, seconds)
 ```
 
 Run from a git worktree with `--siblings-root /path/to/Projects` (or `ASSIST_SIBLINGS_ROOT`),
