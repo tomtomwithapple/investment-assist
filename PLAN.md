@@ -29,7 +29,7 @@ merged; S91 (flip counter, `src/assist/flips.py`, on `/paper` and in the brief) 
    its placebo passes and the user adopts it; methodology = the frameworks document's §8 with
    flow as confirmation: Wyckoff's bandarmology overlay on foreign flow, CAN SLIM's S and I; 8 choices open for the user, defaults stand).
    User 2026-11-17: the flow screen is its own list (choice 1 b). Branch `phase-s`. S105 done
-   2026-11-18: all four legs usable (P126-flow-inventory). Next: S106 adapters.
+   2026-11-18: all four legs usable (P126-flow-inventory); S106 adapters done. Next: S107 factors.
 
 **Last updated:** 2026-11-13 (**P121-div-recovered**: the dividend cut gate no longer counts a dip the latest 12
 months are back from (within `cut_tol` 10%); found reviewing the fan-in run's 11 hard thesis
@@ -2070,10 +2070,18 @@ history, and is dropped first if S105 finds the filings unusable.
   types; the fields of `insider_history.raw` and the share of rows that are market trades;
   months archived in `composition.json`; days of `broker_top`. Numbers to
   `docs/results/P126-flow-inventory.md`; a leg whose data fails here is dropped before S107.
-- [ ] **S106 Flow adapters** (P127-flow-sources). `IdxscapeSource.stock_flows(start, end)` (all
-  names in one query), `KseistatSource.stock_composition()`, `sources/idxmethod_insider.py`
-  over `insider_history`; doctor probes; read-only, fixtures only in tests. Test first: a
-  suspended day, a code with no foreign trade, a KSEI month without a `loads` row.
+- [x] **S106 Flow adapters** (P127-flow-sources). **Done 2026-11-18.**
+  `IdxscapeSource.stock_flows(start, end, codes)`: one streamed query, per code a `FlowSeries`
+  of `array` columns (previous, close, high, low, value, non-regular, net foreign, listed,
+  recorded); IDX's `previous` is adjusted for corporate actions (BBCA 2021-10-13: 36,600 →
+  7,325), so close / previous is the day's adjusted return. `KseistatSource.stock_composition()`:
+  per code and month foreign institutions, foreign individuals, local funds (MF, PF, IS), local
+  individuals, holdings, raw `loaded`. `sources/idxmethod_insider.py`: market buys and sells
+  with the signed share change, deduplicated across IDX and KSEI, the rest counted in
+  `dropped`. Doctor probe `insider_history` (optional, 14 days). Live: 982 codes, 1,102,357
+  name-days in 1.5 s (peak RSS ~400 MB); 36,380 KSEI code-months; 72,426 insider trades
+  (dropped: 2,653 duplicates, 2,651 not market trades, 45 sign disagrees, 3 no change).
+  Test first: a suspended day, a code with no foreign trade, a KSEI month without a `loads` row.
 - [ ] **S107 Flow factors** (P128-flow-factors). `candidates/flow.py`, pure and point in time
   (rule 4): the four legs per name and date as `FrameworkResult`s, the effort-vs-result and
   thin-market (`amihud`) flags, the non-regular flag, the cross-check flag where
@@ -2276,6 +2284,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | P125 Locked reads retried (P125-locked-retry) | done | 2026-11-17 | this commit (branch `p125-locked-retry`) | 9 locked_retry; conftest `no_locked_waits` (2444 total) | `sources/base.retry_locked`: a `locked` read (HTTP 503 or read timeout, a held DuckDB lock on connect or ATTACH) is tried again after 30, 60 and 120 s, each HTTP retry waiting 30 s for the answer; a source still locked is not waited for again for 10 min; missing and error fail at once. Cause, live 2026-11-17: `usfin serve` runs sec-edgar's own jobs in its process (feed every 15 min 06:00-22:45 ET, reconcile 23:30 ET, each chaining companyfacts / Form 4 drains); during one the FRED routes outlast 5 s and the XBRL ATTACH is refused, so three runs lost the USA list (facts locked) or read the regime as neutral (31 FRED reads timed out); one dbnomics read timed out under memory pressure. Clean `run --no-send` after it: risk_off, dollar up; USA 580 dividend / 371 GARP judged, hurdle 14.95%, no stale input; no retry needed live yet. Model `e5ab77bd…` unchanged (sources/ is not fingerprinted); the journal holds five 2026-11-17 records, the 1st and 5th clean |
 | P134 Live Stockbit portfolio in layer 5 (P134-live-portfolio) | done | 2026-11-18 | `b989d98`, `e33738f` (branches `live-portfolio`, `p126b-sources`; committed as P126/P126b, renumbered: phase S holds P126–P133) | 8 idxmethod_portfolio (2460 total) | `sources/idxmethod_portfolio.LivePortfolioSource` wraps financer for layer 5 and the holdings record: idx-method's `portfolio/<account>/latest.json` (its new `./run.sh portfolio --account NAME`, read-only after the Stockbit PIN login, schema 1) replaces financer's statement of the same `stockbit` account when at least as new (doc_type `live`, `Statement.source` idx-method), an older one is ignored; cash counts unless financer has a loaded `*_rdn` statement of the same owner (then `broker_cash_idr`). Layer 5 notes "live from Stockbit on <date>" and lists idx-method in `sources`. Doctor probe `portfolio priskila (live Stockbit)`, optional, 8 days. Live 2026-11-18: priskila Rp 50.0M (56 positions Rp 40.1M, cash Rp 9.9M), was Rp 36.5M from the 30 Oct confirmations; household Rp 68.9M. Run `--no-send` 2026-11-18 on it (model `sha256:15bf32e1…`, new segment): priskila 9 sell all, 2 sell half; P134b names idx-method in `portfolio.json` sources. Scheduled in idx-method: launchd `com.tommy.stockbiter.portfolio`, Mon 06:30, before the 07:00 weekly |
 | S105 Flow inventory (P126-flow-inventory) | done | 2026-11-18 | this commit (branch `phase-s`) | none (docs only) | `assist flow-inventory` live, 6 s: all four legs usable. idxscape `stock_summary` 1,232 days 2021-10-01 → 2026-11-17, 982 codes, non-regular 20.1% of value; sign agreement with idx-method `bars.net_foreign` 99.7% (a relay of IDX, so a check, not a second source); bars 1,222 days; KSEI 37 months 2023-10 → 2026-10 (36 backfilled 2026-10-12, so rule 4 reads min(`loaded_at`, month end + 10 days)); insider 75,127 market trades 2021-08 → 2026-11; register, `broker_top`, screeners context only |
+| S106 Flow adapters (P127-flow-sources) | done | 2026-11-18 | this commit (branch `phase-s`) | 15 flow sources (2477 total) | live: idxscape 982 codes, 1,102,357 name-days, 1.5 s; kseistat 36,380 code-months (37 months); insider 72,426 market trades, dropped 2,653 duplicates, 2,651 not market trades, 45 sign disagrees, 3 no change; doctor probe `insider_history` added |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`

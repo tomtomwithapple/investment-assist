@@ -26,15 +26,26 @@ overlay (`idxscape.queries.macro_overlay`), so both repos show the same numbers.
 
 The default `rows()` is every default series whose tables exist. A series asked for by id whose
 table is absent (migration not applied) is `missing`, as is a store with none of the tables.
+
+**Per name** (phase S, S106): `stock_flows(start, end, codes)` gives every code's daily
+`stock_summary` as a `FlowSeries` of compact `array` columns (1.1M name-days would be ~600 MB as
+tuples, ~85 MB this way), oldest first, streamed in chunks. `previous` is IDX's own previous
+close, which IDX adjusts for splits and other corporate actions (BBCA 2021-10-13: 36,600 →
+previous 7,325), so `close / previous − 1` is the day's adjusted return. A day with no trade
+has `high` and `low` NaN and `value` 0; a NULL `non_regular_value_idr` reads 0.
+`net_foreign_value_est_idr` is idxscape's estimate (net shares × close). `recorded` is the WIB
+date ordinal of `trading_day.recorded_at`, 0 when unknown.
 """
 
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator, Sequence
+from array import array
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
+from typing import NamedTuple
 
 import duckdb
 
@@ -51,6 +62,7 @@ __all__ = [
     "SBN_NON_RESIDENT",
     "SBN_TOTAL",
     "SOURCE",
+    "FlowSeries",
     "IdxscapeSource",
     "index_series",
     "sbn_series",
@@ -128,6 +140,40 @@ def _window(col: str, start: date | None, end: date | None) -> tuple[list[str], 
 
 def _float(v) -> float | None:
     return None if v is None else float(v)
+
+
+FLOW_COLUMNS = ("previous", "close", "high", "low", "value", "non_regular", "net_foreign",
+                "listed")
+_FLOW_SQL = (
+    "select s.code, s.trade_date, s.previous, s.close, s.high, s.low, s.value_idr,"
+    " coalesce(s.non_regular_value_idr, 0), s.net_foreign_value_est_idr, s.listed_shares, {rec}"
+    " from stock_summary s{join} where {where} order by s.code, s.trade_date"
+)
+_CHUNK = 100_000
+_NAN = float("nan")
+
+
+class FlowSeries(NamedTuple):
+    """One code's daily trading and foreign flow, oldest first, as compact columns."""
+
+    code: str
+    days: array  # 'i': date ordinals
+    previous: array  # 'd': IDX's previous close, adjusted for corporate actions
+    close: array
+    high: array  # NaN on a day with no trade
+    low: array
+    value: array  # IDR traded, regular + non-regular
+    non_regular: array  # IDR traded on the negotiated market (crossings)
+    net_foreign: array  # IDR, estimate (net foreign shares × close)
+    listed: array  # listed shares
+    recorded: array  # 'i': WIB date ordinal the day was recorded, 0 when unknown
+
+    def date(self, i: int) -> date:
+        return date.fromordinal(self.days[i])
+
+
+def _new_series(code: str) -> FlowSeries:
+    return FlowSeries(code, array("i"), *(array("d") for _ in FLOW_COLUMNS), array("i"))
 
 
 class IdxscapeSource:
@@ -233,6 +279,47 @@ class IdxscapeSource:
             f" where {' and '.join(['broker_code = ?', *where])} order by trade_date",
             [sid.removeprefix(BROKER_VALUE), *params],
         )
+
+    def stock_flows(
+        self,
+        start: date | None = None,
+        end: date | None = None,
+        codes: Iterable[str] | None = None,
+    ) -> dict[str, FlowSeries]:
+        """Every code's daily `stock_summary` in [start, end] as a `FlowSeries`, by code."""
+        with self._connect() as (con, tables):
+            self._need(tables, "stock_summary")
+            where, params = _window("s.trade_date", start, end)
+            if codes is not None:
+                wanted = sorted(set(codes))
+                if not wanted:
+                    return {}
+                where.append(f"s.code in ({', '.join('?' * len(wanted))})")
+                params += wanted
+            has_td = "trading_day" in tables
+            sql = _FLOW_SQL.format(
+                rec="cast(t.recorded_at as date)" if has_td else "null::date",
+                join=" left join trading_day t using (trade_date)" if has_td else "",
+                where=" and ".join(where) or "true",
+            )
+            out: dict[str, FlowSeries] = {}
+            cur = con.execute(sql, params)
+            s: FlowSeries | None = None
+            while chunk := cur.fetchmany(_CHUNK):
+                for code, day, prev, close, high, low, value, nonreg, net, listed, rec in chunk:
+                    if s is None or s.code != code:
+                        s = out[code] = _new_series(code)
+                    s.days.append(day.toordinal())
+                    s.previous.append(prev)
+                    s.close.append(close)
+                    s.high.append(_NAN if high is None else high)
+                    s.low.append(_NAN if low is None else low)
+                    s.value.append(value)
+                    s.non_regular.append(nonreg)
+                    s.net_foreign.append(net)
+                    s.listed.append(listed)
+                    s.recorded.append(rec.toordinal() if rec else 0)
+            return out
 
     def brokers(self, start: date | None = None, end: date | None = None) -> list[Row]:
         """Every broker's daily value traded as `BROKER_VALUE_IDR.<code>` rows."""

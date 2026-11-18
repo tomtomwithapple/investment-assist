@@ -17,6 +17,13 @@ month-end file.
 None when the month has no `loads` row. The default `rows()` is every market series. kseistat
 swaps a new file into place on load, so a read never blocks it; a store without the views is
 `missing`.
+
+**Per stock** (phase S, S106): `stock_composition(start, end)` sums `holdings` per code and
+month into the groups phase S's ownership leg reads (`StockHolders`, shares): foreign
+institutions (every foreign type but `ID`), foreign individuals, local funds (`MF`, `PF`, `IS`)
+and local individuals (`ID`); local `CP`, `IB`, `SC`, `FD` and `OT` count only in `holdings`.
+`loaded` is the raw `loads.loaded_at` date (None without a row); when a month became known is
+the caller's rule (S105: 36 of 37 months were backfilled on one day).
 """
 
 from __future__ import annotations
@@ -26,6 +33,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
+from typing import NamedTuple
 
 import duckdb
 
@@ -37,6 +45,7 @@ __all__ = [
     "FOREIGN_PCT_SUM",
     "SOURCE",
     "KseistatSource",
+    "StockHolders",
     "market_series",
     "type_series",
 ]
@@ -95,6 +104,35 @@ def _window(col: str, start: date | None, end: date | None) -> tuple[list[str], 
 
 def _float(v) -> float | None:
     return None if v is None else float(v)
+
+
+LOCAL_FUNDS = ("MF", "PF", "IS")
+
+
+class StockHolders(NamedTuple):
+    """One code's KSEI holdings on one month end, by holder group (shares)."""
+
+    date: date
+    code: str
+    sec_num: int | None
+    holdings: int
+    foreign_inst: int
+    foreign_ind: int
+    local_funds: int
+    local_ind: int
+    loaded: date | None
+
+
+_FUNDS = ", ".join(f"'{t}'" for t in LOCAL_FUNDS)
+_STOCK_SQL = (
+    "select h.date, h.code, any_value(h.sec_num), coalesce(sum(h.shares), 0),"
+    " coalesce(sum(h.shares) filter (where origin = 'foreign' and investor_type <> 'ID'), 0),"
+    " coalesce(sum(h.shares) filter (where origin = 'foreign' and investor_type = 'ID'), 0),"
+    f" coalesce(sum(h.shares) filter (where origin = 'local' and investor_type in ({_FUNDS})), 0),"
+    " coalesce(sum(h.shares) filter (where origin = 'local' and investor_type = 'ID'), 0),"
+    " {loaded} from holdings h{join} where {where} group by h.date, h.code"
+    " order by h.code, h.date"
+)
 
 
 class KseistatSource:
@@ -159,6 +197,23 @@ class KseistatSource:
                    " where v.origin = ? and v.investor_type = ?")
             params = [origin, investor_type, *params]
         return sql + "".join(f" and {w}" for w in where) + " order by v.date", params
+
+    def stock_composition(
+        self, start: date | None = None, end: date | None = None
+    ) -> list[StockHolders]:
+        """Every code's holder groups per loaded month in [start, end], by code then date."""
+        with duckdb_ro(self.path, self.name) as con:
+            names = {n for (n,) in con.execute("select table_name from duckdb_tables()").fetchall()}
+            if "holdings" not in names:
+                raise SourceUnavailable(self.name, "missing", "no holdings table")
+            has_loads = "loads" in names
+            where, params = _window("h.date", start, end)
+            sql = _STOCK_SQL.format(
+                loaded="cast(any_value(l.loaded_at) as date)" if has_loads else "null::date",
+                join=" left join loads l using (date)" if has_loads else "",
+                where=" and ".join(where) or "true",
+            )
+            return [StockHolders(*r) for r in con.execute(sql, params).fetchall()]
 
     def types(self, start: date | None = None, end: date | None = None) -> list[Row]:
         """Every origin × investor type × measure from `v_type_composition`."""
