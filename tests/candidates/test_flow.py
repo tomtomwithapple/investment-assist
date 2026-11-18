@@ -75,8 +75,18 @@ def test_accumulation_not_counted_once_the_price_left_the_band():
     close = [1000.0] * 50 + [1150.0] * 30  # +15% inside the last 60 days: marked up
     r = flow.accumulation(series(n=n, close=close, net=[1e9] * n), after(series(n=n)))
     assert r.score is None and r.signal == "n/a"
-    assert any("band" in f for f in r.flags)
+    assert any("outside" in f for f in r.flags)
     assert r.components["nf_60d"] == pytest.approx(1 / 10)  # still shown
+
+
+def test_a_shakeout_that_recovers_is_still_flat():
+    # user 2026-11-18 (choice 3): flat is the net 60-day move, so a dip and recovery counts
+    n = 80
+    close = [1000.0] * 40 + [830.0] * 20 + [1050.0] * 20
+    r = flow.accumulation(series(n=n, close=close, net=[1e9] * n), after(series(n=n)))
+    assert r.score is not None
+    assert r.components["move_60d"] == pytest.approx(0.05)
+    assert r.components["range_60d"] == pytest.approx(0.17)
 
 
 def test_a_split_does_not_leave_the_band():
@@ -285,5 +295,6 @@ def test_config_is_hand_set_and_named():
     cfg = flow.config()
     assert cfg["version"] == flow.VERSION
     assert cfg["accumulation_days"] == [20, 60] and cfg["flat_band"] == 0.10
+    assert cfg["flat"] == "net move"
     assert cfg["ksei_lag_days"] == 10 and cfg["insider_lag_days"] == 10
     assert cfg["insider_block_pct"] == 5.0 and cfg["reclass_pt"] == 10.0

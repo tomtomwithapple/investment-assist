@@ -26,7 +26,7 @@ kseistat (37 months to 2026-10-30) and idx-method `insider_history` (to 2026-11-
    two trading days later (KETR, GEMA LINTAS BENUA: 3,951,500 shares on 10-29 from IDX and 11-02
    from KSEI). The adapter now merges the other source's record within 7 days.
 
-## The accumulation band (choice 3, open)
+## The accumulation band (choice 3, decided 2026-11-18: net 60-day move within ±10%)
 
 Names of the liquidity pool passing each definition of "flat", per month end 2021-10 → 2026-10
 (59 month ends, pool median 144, min 121). Counts only: no forward return was computed.
@@ -38,3 +38,6 @@ Names of the liquidity pool passing each definition of "flat", per month end 202
 | every close within ±20% | 64 | 27 | 6 |
 | net 60-day move within ±10% | 57 | 31 | 7 |
 | net 60-day move within ±15% | 79 | 47 | 0 |
+
+The user chose the net 60-day move within ±10% (2026-11-18): the planned number on the net move,
+which also keeps a shakeout that recovers (Wyckoff's spring) as flat.

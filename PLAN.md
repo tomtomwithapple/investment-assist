@@ -29,7 +29,7 @@ merged; S91 (flip counter, `src/assist/flips.py`, on `/paper` and in the brief) 
    its placebo passes and the user adopts it; methodology = the frameworks document's §8 with
    flow as confirmation: Wyckoff's bandarmology overlay on foreign flow, CAN SLIM's S and I; 8 choices open for the user, defaults stand).
    User 2026-11-17: the flow screen is its own list (choice 1 b). Branch `phase-s`. S105 done
-   2026-11-18: all four legs usable (P126-flow-inventory); S106 adapters and S107 factors done. Next: the accumulation band (choice 3), then S108.
+   2026-11-18: all four legs usable (P126-flow-inventory); S106 adapters and S107 factors done; choice 3 decided (net 60-day move ±10%). Next: S108 replay.
 
 **Last updated:** 2026-11-13 (**P121-div-recovered**: the dividend cut gate no longer counts a dip the latest 12
 months are back from (within `cut_tol` 10%); found reviewing the fan-in run's 11 hard thesis
@@ -2041,7 +2041,9 @@ history, and is dropped first if S105 finds the filings unusable.
    a name on both a value list and the flow list is one position, not two.
 2. Whose money counts: foreign and institutional (default), or foreign only.
 3. Windows: 20 and 60 days in a ±10% price band, up / down value 50 days, KSEI 1 and 3 months,
-   insiders 90 days.
+   insiders 90 days. **Band decided by the user 2026-11-18: the net 60-day move within ±10%**,
+   not every close inside the band (that kept a median 18 of ~144 pool names a month, too few to
+   test in all 59 month ends; the net move keeps 57, P128).
 4. Holding period and review: hold 3 months, review monthly (fits the flip target of at most 1
    per quarter); 1 month is the alternative and costs more.
 5. Cut: top fifth (default) or top tenth of the pool.
@@ -2098,10 +2100,11 @@ history, and is dropped first if S105 finds the filings unusable.
   50.1%; 5,397 such filings in the history), counted in `blocks_90d`; (3) the S105 cross-check is
   not a flag (99.7% sign agreement: Stockbit relays IDX). Also fixed in S106's adapter: KSEI
   dates a trade at settlement, two trading days after IDX, so the same trade from the other
-  source within 7 days is one trade. **Open (choice 3):** the planned band, every close of the
-  60 days within ±10%, leaves a median 18 of the ~144 pool names a month (59 of 59 month ends
-  under the 40-name minimum), so the accumulation leg cannot be tested as planned; counts per
-  alternative in P128 (`docs/results/P128-flow-factors.md`). Live today: pool 149;
+  source within 7 days is one trade. **Choice 3 decided by the user 2026-11-18:** the
+  planned band, every close of the 60 days within ±10%, left a median 18 of the ~144 pool names
+  a month (59 of 59 month ends under the 40-name minimum), so flat is now the **net 60-day move
+  within ±10%** (median 57 names, 7 months short); counts per alternative in P128
+  (`docs/results/P128-flow-factors.md`), names only, no returns looked at. Live today: pool 149;
   supply/demand and ownership rank all 149, insider 66. Test first on hand tables: a crossing
   day, a listing inside the window, a split, a filing dated after its trade.
 - [ ] **S108 Replay and gate** (P129-flow-replay). `candidates/flow_replay.py`: each leg alone,

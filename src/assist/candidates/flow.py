@@ -15,10 +15,12 @@ weights are fitted, rule 3):
 - `accumulation` (the frameworks document §6.1 step 5, Wyckoff's bandarmology overlay, with
   foreign investors standing in for the operator): net foreign IDR ÷ traded IDR over 20 and 60
   days (−1 … +1), and the share of net-buy days among the 60 days with a foreign net. Counted only
-  while every close of the 60 days stays within `flat_band` of the window's first close, on the
-  path chained from IDX's adjusted `previous` (so a split is no move): bought, not yet marked
-  up. A window with more than `non_regular_max` of its value on the negotiated market is flagged
-  and left out. Flow is IDR value, so a split needs no adjustment.
+  while the price is flat: its net move over the 60 days within `flat_band`, on the path chained
+  from IDX's adjusted `previous` (so a split is no move): bought, not yet marked up. Net move,
+  not every close inside the band, by the user's choice 3 (2026-11-18): the planned every-close
+  band kept a median 18 of ~144 pool names a month, too few to test in all 59 month ends; the
+  net move keeps 57 (P128), and a shakeout that recovers still counts, as in Wyckoff. A window
+  with more than `non_regular_max` of its value on the negotiated market is flagged and left out.
 - `supply_demand` (§3.3, CAN SLIM's S): traded IDR on up days ÷ up + down days over 50 days,
   up and down by close vs IDX's adjusted previous; unchanged days do not count.
 - `ownership` (§3.3, CAN SLIM's I): the share of foreign institutions and local funds (MF, PF,
@@ -63,7 +65,8 @@ __all__ = ["CONFIG", "HEADLINE", "LEGS", "VERSION", "accumulation", "config", "e
 VERSION = "0.1.0"
 CONFIG = {
     "accumulation_days": (20, 60),
-    "flat_band": 0.10,  # every close of the window within ±10% of its first
+    "flat": "net move",  # choice 3, user 2026-11-18: the 60-day net move, not every close
+    "flat_band": 0.10,  # within ±10%
     "non_regular_max": 0.5,  # more of the window's value on the negotiated market: left out
     "supply_demand_days": 50,
     "ownership_months": (1, 3),
@@ -175,7 +178,7 @@ def accumulation(s: FlowSeries, d: date) -> FrameworkResult:
     short, long_ = CONFIG["accumulation_days"]
     end = window_end(s, d)
     comps: dict[str, float | None] = {k: None for k in (
-        "nf_20d", "nf_60d", "buy_days_60d", "move_60d", "non_regular_60d")}
+        "nf_20d", "nf_60d", "buy_days_60d", "move_60d", "range_60d", "non_regular_60d")}
     if end is None or end + 1 < long_:
         return _result("accumulation", s.code, d, comps,
                        [f"short history: {0 if end is None else end + 1} days, needs {long_}"])
@@ -187,7 +190,8 @@ def accumulation(s: FlowSeries, d: date) -> FrameworkResult:
     nets = [x for x in s.net_foreign[lo:end + 1] if x != 0]
     comps["buy_days_60d"] = sum(1 for x in nets if x > 0) / len(nets) if nets else None
     path = _path(s, lo, end)
-    comps["move_60d"] = max(abs(p - 1.0) for p in path)
+    comps["move_60d"] = path[-1] - 1.0
+    comps["range_60d"] = max(abs(p - 1.0) for p in path)
     value = sum(s.value[lo:end + 1])
     comps["non_regular_60d"] = sum(s.non_regular[lo:end + 1]) / value if value > 0 else None
     liq = liquidity(s, end)
@@ -198,9 +202,10 @@ def accumulation(s: FlowSeries, d: date) -> FrameworkResult:
     if not eligible(liq):
         flags.append("thin market: below the screens' liquidity gate")
     counted = True
-    if comps["move_60d"] > CONFIG["flat_band"] + 1e-12:
+    if abs(comps["move_60d"]) > CONFIG["flat_band"] + 1e-12:
         counted = False
-        flags.append(f"price left the ±{CONFIG['flat_band']:.0%} band in 60 days: not counted")
+        flags.append(f"price moved {comps['move_60d']:+.0%} in 60 days, outside"
+                     f" ±{CONFIG['flat_band']:.0%}: not counted")
     if (comps["non_regular_60d"] or 0) > CONFIG["non_regular_max"]:
         counted = False
         flags.append("non-regular market over half the 60-day value: left out")
