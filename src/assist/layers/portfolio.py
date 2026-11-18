@@ -19,6 +19,10 @@ splits the buckets per owner. An account valued partly at trade prices gets a `n
 ("valued at last trade price: N lines"), shown in the brief and the stance page, not in
 `stale_inputs`.
 
+An account read live from Stockbit through idx-method (`sources.idxmethod_portfolio`, doc_type
+`live`) replaces financer's statement of that account; it gets a `notes` line ("live from
+Stockbit on <date>") and idx-method joins `sources`.
+
 Every account sits at an Indonesian broker or bank today, so all mapped lines are IDN. An account
 whose latest statement is more than `STALE_DAYS` older than the newest one, and still holds
 something, is named in `stale_inputs`: its numbers may no longer be current.
@@ -34,7 +38,7 @@ from datetime import date
 
 from assist.layers.types import Weights
 from assist.sources.base import Source, SourceUnavailable
-from assist.sources.financer import SOURCE, FinancerSource, Statement
+from assist.sources.financer import SOURCE, Statement
 
 __all__ = ["STALE_DAYS", "Portfolio", "StatementCheck", "build_portfolio", "classify",
            "current_weights"]
@@ -89,6 +93,7 @@ class Portfolio:
     broker_cash_idr: float = field(default=0.0)
     by_owner: dict[str, dict[tuple[str, str], float]] = field(default_factory=dict)
     notes: tuple[str, ...] = ()
+    sources: tuple[str, ...] = (SOURCE,)
 
     @property
     def total_idr(self) -> float:
@@ -105,7 +110,7 @@ class Portfolio:
             as_of=self.as_of or date.min,
             weights=weights,
             unmapped=tuple(f"{label} (Rp{v:,.0f})" for label, v in self.unmapped),
-            sources=(SOURCE,),
+            sources=self.sources,
             stale_inputs=self.stale_inputs,
             total_idr=total,
             notes=self.notes,
@@ -157,6 +162,9 @@ def build_portfolio(statements: Iterable[Statement], stale_days: int = STALE_DAY
         f"{SOURCE} {s.issuer} ({s.owner}): valued at last trade price: "
         f"{len(s.priced_at_trade)} lines"
         for s in statements if s.priced_at_trade
+    ) + tuple(
+        f"{s.source} {s.issuer} ({s.owner}): live from Stockbit on {s.as_of.isoformat()}"
+        for s in statements if s.source != SOURCE
     )
     return Portfolio(
         as_of=newest,
@@ -167,13 +175,16 @@ def build_portfolio(statements: Iterable[Statement], stale_days: int = STALE_DAY
         broker_cash_idr=sum(s.broker_cash_idr or 0.0 for s in statements),
         by_owner={o: dict(b) for o, b in owners.items() if b},
         notes=notes,
+        sources=tuple(dict.fromkeys([SOURCE] + [s.source for s in statements])),
     )
 
 
 def current_weights(source: Source | None = None) -> tuple[Weights | None, list[str]]:
     """Layer 5 for the stance: (weights, stale_inputs). A missing or locked store gives
     (None, ["financer (missing)"]), never an exception."""
-    source = source or FinancerSource.from_config()
+    if source is None:
+        from assist.sources.idxmethod_portfolio import LivePortfolioSource
+        source = LivePortfolioSource.from_config()
     try:
         p = build_portfolio(source.statements())
     except SourceUnavailable as e:

@@ -329,12 +329,12 @@ class Sources:
 
     @classmethod
     def default(cls) -> Sources:
-        from assist.sources.financer import FinancerSource
+        from assist.sources.idxmethod_portfolio import LivePortfolioSource
         from assist.sources.usfin import FredSource
         from assist.sources.worldbankscape import WorldbankscapeSource
 
         return cls(worldbankscape=WorldbankscapeSource.from_config(), fred=FredSource(),
-                   financer=FinancerSource.from_config(), idn=IdnSources.default(),
+                   financer=LivePortfolioSource.from_config(), idn=IdnSources.default(),
                    foreign=ForeignSources.default(), doctor=live_doctor, paper=live_paper,
                    undervalued=undervalued.gather_live,
                    undervalued_us=undervalued.gather_live_usa, peers=peer_cmp.gather_live,

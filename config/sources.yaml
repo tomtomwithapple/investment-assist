@@ -192,6 +192,13 @@ sources:
         sql: select max(date) from screener_member
         max_age_days: 3
         optional: true
+      - name: portfolio priskila (live Stockbit)
+        # layer 5: `./run.sh portfolio --account priskila` there (sources/idxmethod_portfolio.py);
+        # older than financer's statement of the account, it is ignored and financer stands
+        json: portfolio/priskila/latest.json
+        field: as_of
+        max_age_days: 8
+        optional: true
 
   openkrx:
     repo: openkrx

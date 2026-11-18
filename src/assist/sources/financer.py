@@ -191,7 +191,8 @@ class Statement(NamedTuple):
     account has no statement); `trade_docs` how many trade documents were applied;
     `priced_at_trade` the symbols valued at a trade price; `unheld` the lines sold below zero
     (never in `holdings`); `statement_holdings_idr` the statement's own lines before rolling
-    (None when nothing was rolled)."""
+    (None when nothing was rolled). `source` is where the statement came from: financer, or
+    idx-method for a live Stockbit read (doc_type `live`)."""
 
     issuer: str
     account: str
@@ -207,6 +208,7 @@ class Statement(NamedTuple):
     priced_at_trade: tuple[str, ...] = ()
     unheld: tuple[Holding, ...] = ()
     statement_holdings_idr: float | None = None
+    source: str = SOURCE  # idx-method for a live Stockbit account (sources.idxmethod_portfolio)
 
     @property
     def holdings_idr(self) -> float:
