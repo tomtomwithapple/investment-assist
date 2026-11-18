@@ -474,7 +474,7 @@ def portfolio_payload(day: date, fingerprint: str, portfolio: Portfolio | None,
         "mandate": mandate_summary(stances),
     })
     own = list(pf.stale_inputs) if pf is not None else []
-    return _tail(p, [*stale, *own], ["financer"])
+    return _tail(p, [*stale, *own], list(pf.sources) if pf is not None else ["financer"])
 
 
 # ---------------- write ----------------
