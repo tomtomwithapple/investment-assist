@@ -3,6 +3,5 @@
 # problem (another status, another probe failing) changes its key, so it is sent again.
 # Keys are printed by `assist regime --check --no-send` (alerts.Problem.key).
 accepted:
-  - "doctor:satudatascape:missing:"   # no store on this Mac yet
   - "doctor:openkrx:missing:"         # read contract R1 still pending
   - "doctor:jquantster:stale:investor_types"   # TSE investor flows table empty
