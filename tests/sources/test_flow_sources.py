@@ -231,6 +231,32 @@ def test_insider_counts_what_it_left_out(tmp_path):
                            "no share change": 1, "unreadable": 1}
 
 
+def test_insider_settlement_record_is_the_same_trade(tmp_path):
+    rows = [
+        ("a", "2026-10-29", "KETR", _raw("GEMA", "ACTION_TYPE_BUY", "SOURCE_TYPE_IDX",
+                                        "+3,951,500", price="477")),
+        # KSEI dates it at settlement, two trading days later: the same trade
+        ("b", "2026-11-02", "KETR", _raw("GEMA", "ACTION_TYPE_BUY", "SOURCE_TYPE_KSEI",
+                                        "+3,951,500", price="480")),
+        # the same size again from the same source three days on: a second trade
+        ("c", "2026-11-05", "KETR", _raw("GEMA", "ACTION_TYPE_BUY", "SOURCE_TYPE_IDX",
+                                        "+3,951,500")),
+        # KSEI two days after c: c's settlement record (a already has its own)
+        ("d", "2026-11-07", "KETR", _raw("GEMA", "ACTION_TYPE_BUY", "SOURCE_TYPE_KSEI",
+                                        "+3,951,500")),
+        # KSEI again eight days after c: too far to be anyone's settlement record
+        ("e", "2026-11-13", "KETR", _raw("GEMA", "ACTION_TYPE_BUY", "SOURCE_TYPE_KSEI",
+                                        "+3,951,500")),
+    ]
+    ins = IdxMethodInsider(_stockbiter(tmp_path, rows)).trades()
+    assert [(t.date, t.sources) for t in ins.trades] == [
+        (date(2026, 10, 29), ("IDX", "KSEI")),
+        (date(2026, 11, 5), ("IDX", "KSEI")),
+        (date(2026, 11, 13), ("KSEI",)),
+    ]
+    assert ins.trades[0].price == 477.0 and ins.dropped == {"duplicate": 2}
+
+
 def test_insider_window(tmp_path):
     ins = IdxMethodInsider(_stockbiter(tmp_path)).trades(start=date(2026, 3, 26))
     assert [t.symbol for t in ins.trades] == ["AAAA"] and ins.trades[0].action == "sell"

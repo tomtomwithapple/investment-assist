@@ -29,7 +29,7 @@ merged; S91 (flip counter, `src/assist/flips.py`, on `/paper` and in the brief) 
    its placebo passes and the user adopts it; methodology = the frameworks document's §8 with
    flow as confirmation: Wyckoff's bandarmology overlay on foreign flow, CAN SLIM's S and I; 8 choices open for the user, defaults stand).
    User 2026-11-17: the flow screen is its own list (choice 1 b). Branch `phase-s`. S105 done
-   2026-11-18: all four legs usable (P126-flow-inventory); S106 adapters done. Next: S107 factors.
+   2026-11-18: all four legs usable (P126-flow-inventory); S106 adapters and S107 factors done. Next: the accumulation band (choice 3), then S108.
 
 **Last updated:** 2026-11-13 (**P121-div-recovered**: the dividend cut gate no longer counts a dip the latest 12
 months are back from (within `cut_tol` 10%); found reviewing the fan-in run's 11 hard thesis
@@ -2082,12 +2082,28 @@ history, and is dropped first if S105 finds the filings unusable.
   name-days in 1.5 s (peak RSS ~400 MB); 36,380 KSEI code-months; 72,426 insider trades
   (dropped: 2,653 duplicates, 2,651 not market trades, 45 sign disagrees, 3 no change).
   Test first: a suspended day, a code with no foreign trade, a KSEI month without a `loads` row.
-- [ ] **S107 Flow factors** (P128-flow-factors). `candidates/flow.py`, pure and point in time
-  (rule 4): the four legs per name and date as `FrameworkResult`s, the effort-vs-result and
-  thin-market (`amihud`) flags, the non-regular flag, the cross-check flag where
-  the two foreign-flow sources disagree in sign over the window. Hashed by `RULE_GLOBS`. Test
-  first on hand tables: a crossing day, a listing inside the window, a split (value, not
-  shares, so no adjustment), a filing dated after its trade.
+- [x] **S107 Flow factors** (P128-flow-factors). **Done 2026-11-18.** `candidates/flow.py`,
+  pure and point in time: per name and date four `FrameworkResult`s (`flow_accumulation`,
+  `flow_supply_demand`, `flow_ownership`, `flow_insider`; role context, gate untested), each
+  ranked by `rank` on the equal-weight z blend of its components (`screens.blend`); `liquidity`
+  and `eligible` repeat the screens' gates on `factors.derive`'s definitions; flags
+  `effort without result`, `thin market`, non-regular over half (left out of the rank). A day's
+  flow is read from the next day; prices chain on IDX's adjusted `previous`, so a split is no
+  move. Hashed by `RULE_GLOBS`. Three changes from the leg definitions above, made on the live
+  data before any replay (no returns seen): (1) **ownership** is the institutions' share of all
+  KSEI holdings, not of institutions + local individuals: BYAN's controlling holder moved 10.75bn
+  shares from his own name into a company in 2026-10, which moved the planned ratio 32pt with
+  nobody buying; a local-individual move over 10pt a month is flagged; (2) **insider** leaves
+  out a single filing of 5% of listed shares or more as a corporate deal (KETR 56.5%, SGER
+  50.1%; 5,397 such filings in the history), counted in `blocks_90d`; (3) the S105 cross-check is
+  not a flag (99.7% sign agreement: Stockbit relays IDX). Also fixed in S106's adapter: KSEI
+  dates a trade at settlement, two trading days after IDX, so the same trade from the other
+  source within 7 days is one trade. **Open (choice 3):** the planned band, every close of the
+  60 days within ±10%, leaves a median 18 of the ~144 pool names a month (59 of 59 month ends
+  under the 40-name minimum), so the accumulation leg cannot be tested as planned; counts per
+  alternative in P128 (`docs/results/P128-flow-factors.md`). Live today: pool 149;
+  supply/demand and ownership rank all 149, insider 66. Test first on hand tables: a crossing
+  day, a listing inside the window, a split, a filing dated after its trade.
 - [ ] **S108 Replay and gate** (P129-flow-replay). `candidates/flow_replay.py`: each leg alone,
   then the composite of passed legs, on month ends 2021-12 → today; forward 1 and 3 months, net
   of costs; `eval/placebo.py` with `stride` = horizon, Holm across legs; S92's report; delisted
@@ -2285,6 +2301,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | P134 Live Stockbit portfolio in layer 5 (P134-live-portfolio) | done | 2026-11-18 | `b989d98`, `e33738f` (branches `live-portfolio`, `p126b-sources`; committed as P126/P126b, renumbered: phase S holds P126–P133) | 8 idxmethod_portfolio (2460 total) | `sources/idxmethod_portfolio.LivePortfolioSource` wraps financer for layer 5 and the holdings record: idx-method's `portfolio/<account>/latest.json` (its new `./run.sh portfolio --account NAME`, read-only after the Stockbit PIN login, schema 1) replaces financer's statement of the same `stockbit` account when at least as new (doc_type `live`, `Statement.source` idx-method), an older one is ignored; cash counts unless financer has a loaded `*_rdn` statement of the same owner (then `broker_cash_idr`). Layer 5 notes "live from Stockbit on <date>" and lists idx-method in `sources`. Doctor probe `portfolio priskila (live Stockbit)`, optional, 8 days. Live 2026-11-18: priskila Rp 50.0M (56 positions Rp 40.1M, cash Rp 9.9M), was Rp 36.5M from the 30 Oct confirmations; household Rp 68.9M. Run `--no-send` 2026-11-18 on it (model `sha256:15bf32e1…`, new segment): priskila 9 sell all, 2 sell half; P134b names idx-method in `portfolio.json` sources. Scheduled in idx-method: launchd `com.tommy.stockbiter.portfolio`, Mon 06:30, before the 07:00 weekly |
 | S105 Flow inventory (P126-flow-inventory) | done | 2026-11-18 | this commit (branch `phase-s`) | none (docs only) | `assist flow-inventory` live, 6 s: all four legs usable. idxscape `stock_summary` 1,232 days 2021-10-01 → 2026-11-17, 982 codes, non-regular 20.1% of value; sign agreement with idx-method `bars.net_foreign` 99.7% (a relay of IDX, so a check, not a second source); bars 1,222 days; KSEI 37 months 2023-10 → 2026-10 (36 backfilled 2026-10-12, so rule 4 reads min(`loaded_at`, month end + 10 days)); insider 75,127 market trades 2021-08 → 2026-11; register, `broker_top`, screeners context only |
 | S106 Flow adapters (P127-flow-sources) | done | 2026-11-18 | this commit (branch `phase-s`) | 15 flow sources (2477 total) | live: idxscape 982 codes, 1,102,357 name-days, 1.5 s; kseistat 36,380 code-months (37 months); insider 72,426 market trades, dropped 2,653 duplicates, 2,651 not market trades, 45 sign disagrees, 3 no change; doctor probe `insider_history` added |
+| S107 Flow factors (P128-flow-factors) | done | 2026-11-18 | this commit (branch `phase-s`) | 24 flow, 1 flow sources (2502 total) | four legs as `FrameworkResult`s, pure and point in time; live today pool 149, supply/demand and ownership rank 149, insider 66, accumulation 0 (the ±10% every-close band keeps a median 18 pool names a month, under 40 in all 59 months: choice 3 open); ownership on the whole register (BYAN reclassification), insider 5% block rule (KETR, SGER), KSEI settlement duplicates merged |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`
