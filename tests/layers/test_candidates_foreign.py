@@ -296,6 +296,12 @@ def test_old_value_is_used_and_named_stale():
     assert "dbnomics usa.rate.long (stale, last 2026-01-01)" in res.stale_inputs
 
 
+def test_rba_10y_yield_allows_a_weekly_publication_lag():
+    ref = market("AUS").yield_10y[0]
+    assert ref.series_id == "FCMYGBAG10D"
+    assert ref.max_age_days == 21
+
+
 def test_live_specs_without_valuation_name_the_gap():
     res = foreign_candidates(AS_OF, us_world())
     assert [v.market.subject for v in res.valuations] == ["USA"]

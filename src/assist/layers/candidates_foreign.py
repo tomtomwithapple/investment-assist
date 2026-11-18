@@ -133,7 +133,7 @@ class Market:
 # ---------------- where the inputs live (as of 2026-10-23) ----------------
 
 DAILY = 10  # max age for daily series, days
-WEEKLY_DAILY = 21  # daily series refreshed weekly (singstat)
+WEEKLY_DAILY = 21  # daily series refreshed or published weekly (singstat, RBA F2)
 MONTHLY = 100  # monthly series dated at the start of their month
 
 
@@ -191,7 +191,7 @@ MARKETS: tuple[Market, ...] = (
     ),
     Market(
         "AUS", "S&P/ASX 200", "XJO", "AUD",
-        yield_10y=(Ref("ausdata", ausdata.AGS_10Y, PCT, 0, DAILY), _dbn("aus.rate.long")),
+        yield_10y=(Ref("ausdata", ausdata.AGS_10Y, PCT, 0, WEEKLY_DAILY), _dbn("aus.rate.long")),
         inflation=(_cpi("aus"), Ref("ausdata", ausdata.CPI_YY_M, PCT, 45, 110)),
         crp=(_crp("aus"),),
         short_rate=(_cbpol("AU"), Ref("ausdata", ausdata.CASH_RATE, PCT, 0, DAILY)),

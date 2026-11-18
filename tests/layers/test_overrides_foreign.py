@@ -335,6 +335,20 @@ def test_hedge_carry_is_bi_rate_against_the_local_short_rate():
 # ---------------- point in time, staleness ----------------
 
 
+def test_rba_curve_published_weekly_is_stale_only_after_three_weeks():
+    def aus_with_curve(age: int) -> list[Row]:
+        rows = [r for r in world()["ausdata"]._rows if r.series_id != aus.CURVE_10Y_2Y]
+        return rows + daily(aus.CURVE_10Y_2Y, "ausdata", fill=0.4,
+                            last=AS_OF - timedelta(days=age))
+
+    fresh = run(ausdata=aus_with_curve(15)).market("AUS")
+    assert fresh.component("curve") is not None
+    assert not any(aus.CURVE_10Y_2Y in x for x in fresh.stale_inputs)
+    stale = run(ausdata=aus_with_curve(22)).market("AUS")
+    assert stale.component("curve") is not None  # still used
+    assert any(aus.CURVE_10Y_2Y in x for x in stale.stale_inputs)
+
+
 def test_mas_data_older_than_a_week_is_flagged():
     old = AS_OF - timedelta(days=16)
     sgrows = [r for r in world()["singstat"]._rows if not r.series_id.startswith("mas:")]

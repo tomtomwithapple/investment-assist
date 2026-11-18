@@ -170,6 +170,7 @@ class Market:
 # ---------------- where the inputs live (as of 2026-10-23) ----------------
 
 DAILY, MAS_DAILY, MONTHLY = 10, 7, 90
+WEEKLY_DAILY = 21  # daily series published weekly about a week behind (RBA F2 yields)
 
 
 def _dbn(sid: str, lag: int = 45, max_age: int = MONTHLY) -> Ref:
@@ -265,7 +266,7 @@ MARKETS: tuple[Market, ...] = (
                  (Ref("ausdata", ausdata.CPI_YY_M, 60, 100), _dbn("aus.cpi.yoy"),
                   Ref("ausdata", AU_CPI_Q, 30, 130)), 0.3),
             _policy("RBA cash rate", Ref("ausdata", ausdata.CASH_RATE, 1, DAILY), _cbpol("AU")),
-            Spec("curve", "AGS 10Y−2Y", CHANGE, (Ref("ausdata", ausdata.CURVE_10Y_2Y, 1, DAILY),),
+            Spec("curve", "AGS 10Y−2Y", CHANGE, (Ref("ausdata", ausdata.CURVE_10Y_2Y, 1, WEEKLY_DAILY),),
                  0.15),
         ),
         fx=FxSpec(Ref("ausdata", ausdata.AUD_IDR, 1, DAILY)),
