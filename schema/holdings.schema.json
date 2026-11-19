@@ -172,11 +172,21 @@
             "take_profit": {"type": ["number", "null"]},
             "state": {"enum": ["armed", "fired"], "description": "fired: take-profit trimmed, no new trim or add until the price is rearm_below."},
             "rearm_below": {"type": ["number", "null"]},
-            "baseline": {"type": "boolean", "description": "first record already at or above fair: stop adding, no trim (user 2026-11-13)"}
+            "baseline": {"type": "boolean", "description": "first record already at or above fair: stop adding, no trim (user 2026-11-13)"},
+            "trim": {
+              "description": "P135: the take-profit trim still open: half the shares held at the crossing, in whole lots, sold down to keep_shares. null when none is open; absent on records written before P135.",
+              "anyOf": [
+                {"type": "null"},
+                {"type": "object", "additionalProperties": false,
+                 "required": ["shares_at_fire", "keep_shares"],
+                 "properties": {"shares_at_fire": {"type": "number", "minimum": 0},
+                                "keep_shares": {"type": "number", "minimum": 0}}}
+              ]
+            }
           }
         },
         "action": {"enum": ["hold", "sell_all", "trim_to_half", "stop_adding"]},
-        "cause": {"enum": ["first", "rule_version", "new_filing", "price_cross", null]},
+        "cause": {"enum": ["first", "rule_version", "new_filing", "price_cross", "holdings_change", null]},
         "changed": {"type": "array", "items": {"enum": ["thesis", "valuation"]}}
       }
     },
@@ -205,6 +215,7 @@
       "properties": {
         "symbol": {"type": "string"},
         "held_idr": {"type": "number", "minimum": 0},
+        "held_shares": {"type": ["number", "null"], "minimum": 0, "description": "P135: shares held over every account (layer 5's lines); null when unknown."},
         "judged_on": {"$ref": "#/$defs/nullable_date", "description": "When this verdict was judged; earlier than as_of when it is stale."},
         "model_fingerprint": {"type": "string", "description": "The model that judged this verdict."},
         "stale": {"type": "boolean"},

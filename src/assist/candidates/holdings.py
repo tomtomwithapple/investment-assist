@@ -31,7 +31,9 @@ beside the previous one; `acted` (S87, 1.2.0) is the verdict after phase P rule 
 after two reports in a row, take-profit re-armed 10% below fair), with its own `cause` and
 `changed`. `valuation` is at the required return `acted` holds between reports, so a regime
 toggle alone moves no fair price; `acted.valuation.required_live_pt` is today's. `sold` lists
-the names the model sold on their thesis and no longer held (re-entry needs a margin). The bank
+the names the model sold on their thesis and no longer held (re-entry needs a margin).
+`held_shares` (P135, 1.4.0) is the shares held over every account; with it a take-profit trim
+stays open (`acted.valuation.trim`) until the shares are down to the half kept. The bank
 Piotroski floor (S88) comes in through `passes_quality` (gate "bank F-score", soft); a bank's n/a
 F is a `note`, not a fail. `context` carries phase Q's framework results from
 `judged[sym]["context"]` (S96: bank residual income on held banks): context only, never compared
@@ -62,11 +64,13 @@ from assist.candidates.screens import bank_f_status, passes_gates, passes_qualit
 from assist.layers.types import DISCLAIMER, SCHEMA_DIR
 
 __all__ = ["CAUSES", "HARD", "SCHEMA", "SCHEMA_VERSION", "answers", "build", "config", "fit",
-           "judge_all", "judge_inputs", "load", "thesis", "validator", "valuation", "write"]
+           "judge_all", "judge_inputs", "load", "selling", "thesis", "validator", "valuation",
+           "write"]
 
 VERSION = "0.1.0"
 SCHEMA = SCHEMA_DIR / "holdings.schema.json"
-SCHEMA_VERSION = "1.3.0"  # 1.1 watchlists (S89); 1.2 acted, sold (S87); 1.3 baseline
+SCHEMA_VERSION = "1.4.0"  # 1.1 watchlists (S89); 1.2 acted, sold (S87); 1.3 baseline;
+# 1.4 held_shares, acted.valuation.trim, acted cause holdings_change (P135)
 OUT_DIR = "holdings"
 HARD = ("cut", "negative CFO", "negative equity")  # phase P rule 4: these act at once
 CAUSES = ("first", "rule_version", "data_fix", "new_filing", "price_cross", "holdings_change")
@@ -256,11 +260,29 @@ def _baseline(previous: Mapping | None, day: date) -> tuple[dict[str, dict], dic
     return base, {"as_of": previous["as_of"], "held": sorted(base)}
 
 
-def _acted(prev: Mapping | None, r: Mapping, j: Mapping | None, required: float | None) -> dict:
-    """S87: the hysteresis verdict for record `r` (raw answers) against the previous record."""
+def _acted(prev: Mapping | None, r: Mapping, j: Mapping | None, required: float | None,
+           prev_shares: float | None = None) -> dict:
+    """S87: the hysteresis verdict for record `r` (raw answers) against the previous record;
+    P135: with the shares held now and on the previous record (an open trim)."""
     return hysteresis.act((prev or {}).get("acted"), r["thesis"], r["inputs"],
                           price=r["valuation"]["price"],
-                          dv=(j or {}).get("dividend_value"), required_live=required)
+                          dv=(j or {}).get("dividend_value"), required_live=required,
+                          shares=r.get("held_shares"), prev_shares=prev_shares)
+
+
+def _prev_shares(previous: Mapping | None, day: date) -> dict[str, float | None]:
+    """sym → shares held on the previous run's record (P135, for a record written before the
+    trim was kept): its `held_shares`, else its IDR held over its price. Empty for a rerun."""
+    if not previous or previous.get("as_of") >= day.isoformat():
+        return {}
+    out: dict[str, float | None] = {}
+    for r in previous.get("holdings") or []:
+        n = r.get("held_shares")
+        price = (r.get("valuation") or {}).get("price")
+        if n is None and price and r.get("held_idr"):
+            n = float(round(r["held_idr"] / price))
+        out[r["symbol"]] = n
+    return out
 
 
 def _required(candidates: Mapping, j: Mapping | None) -> float | None:
@@ -290,8 +312,36 @@ def answers(candidates: Mapping, j: Mapping | None, sym: str, fit_name: Mapping 
                        "last_dividend_ex": (j or {}).get("last_dividend_ex")}}
 
 
-def _unknown(sym: str, held_idr: float, fp: str, previous: Mapping | None) -> dict:
-    r = {"symbol": sym, "held_idr": held_idr, "judged_on": None, "model_fingerprint": fp,
+def selling(judged: Mapping[str, Mapping], holdings: Mapping[str, float], *, day: date,
+            previous: Mapping | None = None, stale: bool = False) -> set[str]:
+    """The held names `build` will call `sell_all` (P135), known before the candidates payload
+    so a name the thesis sells is never the keeper of a duplicate group. The same acted thesis
+    as `build`: re-judged only on a new report or dividend record; a stale run keeps the
+    previous verdict. Empty while `hysteresis.ACT_ON_VERDICTS` is off (nothing is sold then)."""
+    if not hysteresis.ACT_ON_VERDICTS:
+        return set()
+    base, _ = _baseline(previous, day)
+    out = set()
+    for sym, v in holdings.items():
+        if not v or v <= 0:
+            continue
+        acted = (base.get(sym) or {}).get("acted")
+        if stale:
+            if (acted or {}).get("action") == "sell_all":
+                out.add(sym)
+            continue
+        j = judged.get(sym)
+        inputs = {"report_period": (j or {}).get("report_period"),
+                  "last_dividend_ex": (j or {}).get("last_dividend_ex")}
+        if hysteresis.thesis_now(acted, thesis(j), inputs).get("acts"):
+            out.add(sym)
+    return out
+
+
+def _unknown(sym: str, held_idr: float, fp: str, previous: Mapping | None,
+             shares: float | None = None) -> dict:
+    r = {"symbol": sym, "held_idr": held_idr, "held_shares": shares, "judged_on": None,
+         "model_fingerprint": fp,
          "stale": True, "cause": None, "changed": [], "thesis": thesis(None) | {
              "note": "inputs broken this run and no earlier verdict"},
          "valuation": valuation(None, None, None), "fit": fit(None, False),
@@ -301,11 +351,15 @@ def _unknown(sym: str, held_idr: float, fp: str, previous: Mapping | None) -> di
 
 
 def build(candidates: Mapping, judged: Mapping[str, Mapping], *, day: date, fingerprint: str,
-          holdings: Mapping[str, float], previous: Mapping | None = None) -> dict:
+          holdings: Mapping[str, float], previous: Mapping | None = None,
+          shares: Mapping[str, float] | None = None) -> dict:
     """Pure: the run's candidates payload (one market), `judge_inputs` per symbol, layer 5's
-    IDR held per symbol and the previous `out/holdings` payload → this run's payload."""
+    IDR held per symbol, the shares held per symbol (P135; None: unknown) and the previous
+    `out/holdings` payload → this run's payload."""
     held = {s: float(v) for s, v in holdings.items() if v and v > 0}
+    count = {s: float(v) for s, v in (shares or {}).items() if v is not None}
     base, prev_run = _baseline(previous, day)
+    before = _prev_shares(previous, day)
     problems = list(dict.fromkeys(candidates.get("data_problems") or []))
     stale = bool(problems)
     lists = (candidates.get("watchlist") or {}).get("members") or {}
@@ -318,17 +372,19 @@ def build(candidates: Mapping, judged: Mapping[str, Mapping], *, day: date, fing
     for sym in sorted(held):
         prev = base.get(sym)
         if stale:
-            r = (_unknown(sym, held[sym], fingerprint, prev) if prev is None else
-                 {"symbol": sym, "held_idr": held[sym], **prev, "stale": True, "cause": None,
-                  "changed": [], "context": {}, "previous": prev})
+            r = (_unknown(sym, held[sym], fingerprint, prev, count.get(sym)) if prev is None
+                 else {"symbol": sym, "held_idr": held[sym], "held_shares": count.get(sym),
+                       **prev, "stale": True, "cause": None, "changed": [], "context": {},
+                       "previous": prev})
             out.append(r | {"watchlists": list(lists.get(sym) or [])})
             continue
         j = judged.get(sym)
-        r = {"symbol": sym, "held_idr": held[sym], "judged_on": day.isoformat(),
+        r = {"symbol": sym, "held_idr": held[sym], "held_shares": count.get(sym),
+             "judged_on": day.isoformat(),
              "model_fingerprint": fingerprint, "stale": False,
              **answers(candidates, j, sym, names.get(sym), sym in capped),
              "context": dict((j or {}).get("context") or {}), "previous": prev}
-        r["acted"] = _acted(prev, r, j, _required(candidates, j))
+        r["acted"] = _acted(prev, r, j, _required(candidates, j), before.get(sym))
         # the fair price at the required return held between reports (S87, option a)
         r["valuation"] = valuation(j, r["valuation"]["price"],
                                    r["acted"]["valuation"]["required_pt"])

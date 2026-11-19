@@ -14,7 +14,10 @@ scratchpad (zsh aborts on an unmatched glob).
    doctor now shows present is outdated: propose removing it.
 2. **Sources:** `uv run assist doctor` (present / missing / locked / stale per probe).
 3. **Jobs:** `launchctl list | grep -iE "tommy|investment|kseistat|jquant|ausdata|bps|usfin"`; a
-   non-zero second column is a failed last run.
+   non-zero second column is a failed last run. Read each failed job's log (`StandardOutPath` in
+   its plist): idxscape nightly's `problem:` lines can name a table the doctor doesn't probe
+   (e.g. `sun_benchmark_quote`, the IDN 10Y), and `[Errno 8]` DNS errors mean the Mac was in
+   DarkWake on battery (`pmset -g log`), not a source outage.
 4. **Servers:** `curl -s -m5 -o /dev/null -w "%{http_code}"` on 127.0.0.1:8660 (sec-edgar `usfin
    serve`) and :8770 (dbnomics `dbn serve`); :8790/:8791 (`assist status`) are only up when started.
 5. **Last runs:** tail `launchd/weekly.log` and `launchd/regime.log`. A `start` line with no

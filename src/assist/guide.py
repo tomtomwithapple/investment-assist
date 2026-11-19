@@ -16,7 +16,8 @@ For each leg of the benchmark (`stance.BENCHMARK_PCT`: IDN stocks, IDN bonds, US
 - **Acted verdict** (S87): each record's `acted` block (phase P rule 4's hysteresis). With
   `act` off (`hysteresis.ACT_ON_VERDICTS`, the default) amounts stay as above and a full trim
   the acted verdict would hold says so (tag `hysteresis: would hold`). With it on: a thesis sell
-  (`sell_all`) sells in full, a take-profit (`trim_to_half`) sells half, a full trim whose acted
+  (`sell_all`) sells in full, a take-profit (`trim_to_half`) sells half (P135: an open trim
+  sells what is left of its half, counted on the record's `held_shares`), a full trim whose acted
   thesis holds is dropped (named in `notes`), a fired take-profit or a thesis sell blocks a buy,
   and a name in the record's `sold` list is bought again only with
   `hysteresis.REENTRY_MARGIN_PT`.
@@ -234,14 +235,27 @@ def _thesis_why(r: Mapping) -> str:
     return f"The business fails the {t.get('gate')} test (hard fail), so the model sells it."
 
 
-def _tp_why(r: Mapping) -> str:
+def _tp_why(r: Mapping, left: int | None = None, half: int | None = None) -> str:
     v = r.get("valuation") or {}
     fair = r["acted"]["valuation"].get("fair_price") or v.get("fair_price")
     price = v.get("price")
     at = (f" {price:,.0f} reached its fair price {fair:,.0f}" if price and fair
           else " it reached its fair price")
+    rest = (f" {left:,} of the {half:,} shares of the half are left to sell."
+            if left is not None and half and left < half else "")
     return (f"Price, not the business:{at}. Stop adding and sell half; no further trim until "
-            f"the price is {hysteresis.REARM_BELOW_FAIR_PCT:.0f}% below fair.")
+            f"the price is {hysteresis.REARM_BELOW_FAIR_PCT:.0f}% below fair.{rest}")
+
+
+def _trim_shares(r: Mapping, qty: float) -> tuple[int, int | None]:
+    """(shares to sell now, the half's shares) for a take-profit: what is left of an open trim
+    (P135: `acted.valuation.trim`, counted on the record's `held_shares`), else half of `qty`."""
+    t = ((r.get("acted") or {}).get("valuation") or {}).get("trim")
+    if not t:
+        return int(qty / 2 // LOT) * LOT, None
+    held = r.get("held_shares") if r.get("held_shares") is not None else qty
+    half = int(t["shares_at_fire"] - t["keep_shares"])
+    return int(max(0.0, held - t["keep_shares"]) // LOT) * LOT, half
 
 
 def _acted_sells(held: Mapping[str, Mapping], records: Mapping[str, Mapping],
@@ -254,14 +268,14 @@ def _acted_sells(held: Mapping[str, Mapping], records: Mapping[str, Mapping],
         if action not in ("sell_all", "trim_to_half") or not price or not qty:
             continue
         full = action == "sell_all"
-        shares = int(qty) if full else int(qty / 2 // LOT) * LOT
+        shares, half = (int(qty), None) if full else _trim_shares(r, qty)
         if shares <= 0:
             continue
         out.append(_step("sell", "name", market, "stocks", symbol=sym, what=sym,
                          tranches=_sell_tranches(shares, shares * price, price, dates),
                          strength="medium", detail=detail,
                          question="thesis" if full else "valuation",
-                         why=_thesis_why(r) if full else _tp_why(r),
+                         why=_thesis_why(r) if full else _tp_why(r, shares, half),
                          tags=["all of it"] if full else ["half", "take-profit"]))
     return out
 

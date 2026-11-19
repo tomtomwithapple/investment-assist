@@ -77,9 +77,9 @@ def cands(names=(), trims=(), held=(), problems=(), price=None, tilt=None):
             "data_problems": list(problems)}
 
 
-def build(c, j, *, day=DAY, fp=FP, previous=None, holdings=None):
+def build(c, j, *, day=DAY, fp=FP, previous=None, holdings=None, shares=None):
     held = holdings or {n["symbol"]: 4e6 for n in c["average_down"]["names"]}
-    p = hd.build(c, j, day=day, fingerprint=fp, holdings=held, previous=previous)
+    p = hd.build(c, j, day=day, fingerprint=fp, holdings=held, previous=previous, shares=shares)
     errors = list(hd.validator().iter_errors(json.loads(json.dumps(p))))
     assert not errors, [e.message for e in errors]
     return p
@@ -363,3 +363,81 @@ def test_the_acted_block_survives_a_stale_run_and_the_config_names_the_numbers()
     p = _again(first, {}, c=cands(held=["BBNI"], problems=["bad"]))
     assert rec(p, "BBNI")["acted"] == rec(first, "BBNI")["acted"]
     assert p["config"]["hysteresis"]["rearm_below_fair_pct"] == 10.0
+
+
+# ---------------- P135: a take-profit trim stays open until it is done ----------------
+
+
+def _crossing(shares_then=1000.0):
+    """11-16 below fair, 11-17 above fair: the take-profit fires (BBRI's 11-17 trim)."""
+    below = build(cands(held=["BBRI"], price={"BBRI": 3000.0}), {"BBRI": judged("BBRI",
+                  price=3000.0)}, day=D("2026-11-16"), shares={"BBRI": shares_then})
+    return build(cands(held=["BBRI"], price={"BBRI": 4000.0}),
+                 {"BBRI": judged("BBRI", price=4000.0)}, day=D("2026-11-17"), previous=below,
+                 shares={"BBRI": shares_then})
+
+
+def _next(prev, day, shares, **kw):
+    return build(cands(held=["BBRI"], price={"BBRI": 4000.0}),
+                 {"BBRI": judged("BBRI", price=4000.0)}, day=D(day), previous=prev,
+                 shares={"BBRI": shares} if shares is not None else None, **kw)
+
+
+def test_a_rerun_the_next_day_keeps_the_unsold_trim():
+    fired = _crossing()
+    r = rec(fired, "BBRI")
+    assert r["acted"]["action"] == "trim_to_half" and r["held_shares"] == 1000.0
+    assert r["acted"]["valuation"]["trim"] == {"shares_at_fire": 1000.0, "keep_shares": 500.0}
+    rerun = rec(_next(fired, "2026-11-18", 1000.0, fp=FP2), "BBRI")  # the 11-18 rerun
+    assert rerun["acted"]["action"] == "trim_to_half"
+    done = rec(_next(_next(fired, "2026-11-18", 1000.0), "2026-11-23", 500.0), "BBRI")
+    assert done["acted"]["action"] == "stop_adding"
+    assert done["acted"]["cause"] == "holdings_change"
+    assert done["acted"]["valuation"]["trim"] is None
+
+
+def test_a_record_from_before_p135_carries_its_trim_from_the_shares_it_held():
+    fired = json.loads(json.dumps(_crossing()))
+    r = rec(fired, "BBRI")
+    del r["acted"]["valuation"]["trim"]  # as written by hysteresis 0.2.0
+    del r["held_shares"]
+    r["held_idr"] = 4e6  # 1,000 shares at 4,000
+    unsold = rec(_next(fired, "2026-11-19", 1000.0), "BBRI")
+    assert unsold["acted"]["action"] == "trim_to_half"
+    assert unsold["acted"]["valuation"]["trim"] == {"shares_at_fire": 1000.0,
+                                                    "keep_shares": 500.0}
+    sold = rec(_next(fired, "2026-11-19", 500.0), "BBRI")  # the half was sold in between
+    assert sold["acted"]["action"] == "stop_adding"
+
+
+def test_without_share_counts_the_record_trims_for_one_run_only():
+    fired = _crossing(shares_then=None)
+    assert rec(fired, "BBRI")["held_shares"] is None
+    assert rec(fired, "BBRI")["acted"]["action"] == "trim_to_half"
+    assert rec(_next(fired, "2026-11-18", None), "BBRI")["acted"]["action"] == "stop_adding"
+
+
+# ---------------- P135: who the thesis sells, before the candidates payload ----------------
+
+
+def test_selling_names_the_held_names_whose_acted_thesis_sells_in_full():
+    cut = judged(dividends=divs(2021, 2025, 200.0) + divs(2026, 2026, 100.0))  # hard
+    soft = judged("BJBR", car=10.0)  # first soft fail: holds
+    j = {"BBNI": cut, "BJBR": soft, "BMRI": judged("BMRI")}
+    held = {"BBNI": 4e6, "BJBR": 4e6, "BMRI": 4e6}
+    assert hd.selling(j, held, day=DAY) == {"BBNI"}
+    # what build calls sell_all, the same names
+    p = build(cands(held=sorted(held)), j)
+    assert {r["symbol"] for r in p["holdings"] if r["acted"]["action"] == "sell_all"} == {
+        "BBNI"}
+    assert hd.selling(j, {"BMRI": 4e6}, day=DAY) == set()  # not held: not sold
+
+
+def test_selling_keeps_the_previous_verdict_on_a_stale_run_and_off_sells_nothing(monkeypatch):
+    cut = judged(dividends=divs(2021, 2025, 200.0) + divs(2026, 2026, 100.0))
+    first = build(cands(held=["BBNI"]), {"BBNI": cut}, day=D("2026-11-09"))
+    assert hd.selling({}, {"BBNI": 4e6}, day=DAY, previous=first, stale=True) == {"BBNI"}
+    # a report-less day keeps the acted sell even if today's raw thesis passes
+    assert hd.selling({"BBNI": judged()}, {"BBNI": 4e6}, day=DAY, previous=first) == {"BBNI"}
+    monkeypatch.setattr(hd.hysteresis, "ACT_ON_VERDICTS", False)
+    assert hd.selling({"BBNI": cut}, {"BBNI": 4e6}, day=DAY) == set()

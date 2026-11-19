@@ -144,6 +144,70 @@ def test_a_first_record_above_fair_is_a_baseline_not_a_trim():
     assert acts[0]["cause"] == "first"
 
 
+# ---------------- a take-profit trim stays open until it is done (P135) ----------------
+
+FAIR = 200 / ((R - 8.0) / 100)
+
+
+def test_a_trim_stays_open_until_half_the_shares_are_sold():
+    """The 11-17 BBRI trim was lost: a rerun the next day read `fired` and called it stop adding
+    before anything was sold. The trim now stays until the shares drop to the half kept."""
+    armed = act(None, price=3000.0, shares=1000)
+    fired = act(armed, price=FAIR + 10, shares=1000)
+    assert fired["action"] == "trim_to_half"
+    assert fired["valuation"]["trim"] == {"shares_at_fire": 1000, "keep_shares": 500}
+    rerun = act(fired, price=FAIR + 20, shares=1000)  # nothing sold yet
+    assert rerun["action"] == "trim_to_half" and rerun["cause"] is None
+    assert rerun["valuation"]["trim"] == fired["valuation"]["trim"]
+    part = act(rerun, price=FAIR + 20, shares=700)  # 300 of the 500 sold
+    assert part["action"] == "trim_to_half" and part["changed"] == []
+    done = act(part, price=FAIR + 20, shares=500)
+    assert done["action"] == "stop_adding" and done["valuation"]["trim"] is None
+    assert done["cause"] == "holdings_change" and done["changed"] == ["valuation"]
+    after = act(done, price=FAIR + 20, shares=500)
+    assert after["action"] == "stop_adding" and after["cause"] is None
+
+
+def test_the_half_is_in_whole_lots_and_under_two_lots_nothing_is_carried():
+    a = act(act(None, price=3000.0, shares=1500), price=FAIR + 10, shares=1500)
+    assert a["valuation"]["trim"] == {"shares_at_fire": 1500, "keep_shares": 800}
+    one_lot = act(act(None, price=3000.0, shares=100), price=FAIR + 10, shares=100)
+    assert one_lot["action"] == "trim_to_half" and one_lot["valuation"]["trim"] is None
+    assert act(one_lot, price=FAIR + 10, shares=100)["action"] == "stop_adding"
+
+
+def test_a_rearm_cancels_an_open_trim_and_a_thesis_sell_outranks_it():
+    fired = act(act(None, price=3000.0, shares=1000), price=FAIR + 10, shares=1000)
+    rearmed = act(fired, price=FAIR * 0.90, shares=1000)
+    assert rearmed["action"] == "hold" and rearmed["valuation"]["trim"] is None
+    assert rearmed["cause"] == "price_cross"
+    sold = act(fired, HARD, Q3, price=FAIR + 10, shares=1000)
+    assert sold["action"] == "sell_all"
+
+
+def test_without_shares_a_trim_lasts_one_run_as_before():
+    fired = act(act(None, price=3000.0), price=FAIR + 10)
+    assert fired["action"] == "trim_to_half" and fired["valuation"]["trim"] is None
+    assert act(fired, price=FAIR + 10)["action"] == "stop_adding"
+
+
+def test_a_trim_fired_before_shares_were_kept_is_carried_from_the_shares_then_held():
+    """A record written before P135 (no `trim` key) whose action was trim_to_half: the trim is
+    rebuilt from the shares held on that record, so a half sold in between counts as done."""
+    old = act(act(None, price=3000.0), price=FAIR + 10)
+    del old["valuation"]["trim"]
+    assert old["action"] == "trim_to_half"
+    unsold = act(old, price=FAIR + 10, shares=1000, prev_shares=1000)
+    assert unsold["action"] == "trim_to_half"
+    assert unsold["valuation"]["trim"] == {"shares_at_fire": 1000, "keep_shares": 500}
+    sold_half = act(old, price=FAIR + 10, shares=500, prev_shares=1000)
+    assert sold_half["action"] == "stop_adding" and sold_half["cause"] == "holdings_change"
+    no_prev = act(old, price=FAIR + 10, shares=1000)  # no shares on the old record: today's
+    assert no_prev["valuation"]["trim"] == {"shares_at_fire": 1000, "keep_shares": 500}
+    past = {**old, "action": "stop_adding"}  # an old record already past its trim stays past
+    assert act(past, price=FAIR + 10, shares=1000, prev_shares=1000)["action"] == "stop_adding"
+
+
 def test_a_thesis_sell_outranks_take_profit():
     a = act(None, HARD, price=5000.0)
     assert a["action"] == "sell_all" and a["valuation"]["state"] == "fired"

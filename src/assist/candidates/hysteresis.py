@@ -23,6 +23,11 @@ today's **acted** verdict and the cause of its change. Pure.
 - **Take-profit** fires when the price reaches the fair price (`state` armed → fired, action
   `trim_to_half`: `exits.TP_ACTION`), then `stop_adding` while fired. It re-arms only once the
   price is `REARM_BELOW_FAIR_PCT` (10%) below fair, so a price hovering at fair trims once.
+  **The trim stays open until it is done** (P135, after BBRI's 11-17 trim was lost to a rerun
+  the next day): on the crossing, `trim` records the shares held and the half to keep (in whole
+  lots); `trim_to_half` stands on every run until the shares held are down to `keep_shares`,
+  then `stop_adding` (cause `holdings_change`). A re-arm cancels it; a thesis sell outranks it.
+  Without share counts (or a half under one lot) the trim lasts its own run only, as before.
   **First record is a baseline** (user 2026-11-13): a name already at or above fair on its first
   record starts `fired` without a trim (`stop_adding`, `baseline` true), so the first run does
   not trim every rich holding at once; it trims only on a later crossing up after re-arming.
@@ -49,11 +54,12 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from assist.candidates import exits
+from assist.candidates.costs import LOT
 
 __all__ = ["ACTIONS", "ACT_ON_VERDICTS", "REARM_BELOW_FAIR_PCT", "REENTRY_MARGIN_PT",
            "SOFT_FAIL_REPORTS", "act", "config", "reenters", "sold"]
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"  # 0.3.0: a take-profit trim stays open until done (P135)
 SOFT_FAIL_REPORTS = 2  # phase P rule 4 (user 2026-11-12)
 REARM_BELOW_FAIR_PCT = 10.0  # rule 4 (user 2026-11-12); may change after a retrospective
 REENTRY_MARGIN_PT = 1.0  # = hurdle risk_off_premium_pt; confirmed by the user 2026-11-13
@@ -66,8 +72,20 @@ def config() -> dict:
             "rearm_below_fair_pct": REARM_BELOW_FAIR_PCT,
             "reentry_margin_pt": REENTRY_MARGIN_PT, "act_on_verdicts": ACT_ON_VERDICTS,
             "first_record": "baseline: above fair stops adding, no trim",
+            "trim": "half the shares held at the crossing, in whole lots; open until sold",
             "rejudged_on": "a new report period or dividend record, or a model change",
             "required_return": "held between reports (set when the thesis is re-judged)"}
+
+
+def _trim(shares: float | None) -> dict | None:
+    """The trim a take-profit owes: half of `shares`, in whole lots, sold down to `keep_shares`.
+    None when the shares are unknown or the half is under one lot (nothing to place)."""
+    if shares is None or not shares > 0:
+        return None
+    sell = int(shares / 2 // LOT) * LOT
+    if sell <= 0:
+        return None
+    return {"shares_at_fire": shares, "keep_shares": shares - sell}
 
 
 def _filing(inputs: Mapping | None) -> dict:
@@ -93,18 +111,31 @@ def _thesis(prev: Mapping | None, raw: Mapping, judged: Mapping, new_report: boo
             "soft_fail_periods": periods, **judged}
 
 
-def act(prev: Mapping | None, thesis: Mapping, inputs: Mapping, *, price: float | None,
-        dv: Mapping | None, required_live: float | None, rejudge: bool = False) -> dict:
-    """The acted verdict for one held name. `prev` is the previous record's `acted` block (None
-    for a first record), `thesis` today's raw `holdings.thesis`, `inputs` the filings judged,
-    `dv` today's dividend assessment (`price`, `legs`), `required_live` today's required return
-    (hurdle + sector shift), `rejudge` true after a model change."""
+def thesis_now(prev: Mapping | None, thesis: Mapping, inputs: Mapping, *,
+               rejudge: bool = False) -> dict:
+    """The acted thesis alone (`act`'s first step): re-judged on a new report or dividend
+    record or a model change, else the previous one. `acts` true means the record sells in
+    full, which `holdings.selling` needs before the candidates payload is built."""
     judged = _filing(inputs)
-    pt, pv = (prev or {}).get("thesis"), (prev or {}).get("valuation") or {}
+    pt = (prev or {}).get("thesis")
     before = _filing(pt)
     filed = prev is None or judged != before
     new_report = pt is None or judged["report_period"] != before["report_period"]
-    th = _thesis(pt, thesis, judged, new_report) if filed or rejudge or pt is None else dict(pt)
+    return _thesis(pt, thesis, judged, new_report) if filed or rejudge or pt is None else dict(pt)
+
+
+def act(prev: Mapping | None, thesis: Mapping, inputs: Mapping, *, price: float | None,
+        dv: Mapping | None, required_live: float | None, rejudge: bool = False,
+        shares: float | None = None, prev_shares: float | None = None) -> dict:
+    """The acted verdict for one held name. `prev` is the previous record's `acted` block (None
+    for a first record), `thesis` today's raw `holdings.thesis`, `inputs` the filings judged,
+    `dv` today's dividend assessment (`price`, `legs`), `required_live` today's required return
+    (hurdle + sector shift), `rejudge` true after a model change, `shares` held today and
+    `prev_shares` held on the previous record (only read for a record written before P135)."""
+    judged = _filing(inputs)
+    pt, pv = (prev or {}).get("thesis"), (prev or {}).get("valuation") or {}
+    filed = prev is None or judged != _filing(pt)
+    th = thesis_now(prev, thesis, inputs, rejudge=rejudge)
 
     relock = filed or rejudge or pv.get("required_pt") is None
     required = required_live if relock else pv["required_pt"]
@@ -118,25 +149,38 @@ def act(prev: Mapping | None, thesis: Mapping, inputs: Mapping, *, price: float 
             state, fired_now = "fired", not baseline
         elif state == "fired" and price <= fair * (1 - REARM_BELOW_FAIR_PCT / 100):
             state = "armed"
+    # P135: the trim stays open until the shares are down to the half kept. A record written
+    # before P135 has no `trim`; one that trimmed on it gets its trim from the shares then held.
+    owed = pv.get("trim")
+    if prev is not None and "trim" not in pv and prev.get("action") == "trim_to_half":
+        owed = _trim(prev_shares if prev_shares is not None else shares)
+    trim = _trim(shares) if fired_now else owed if state == "fired" else None
+    done = trim is not None and shares is not None and shares <= trim["keep_shares"]
+    trim = None if done else trim
     val = {"required_pt": required, "required_live_pt": required_live,
            "required_for": dict(judged) if relock else pv.get("required_for"),
            "fair_price": fair, "take_profit": exits._floor_tick(fair) if fair else None,
            "state": state, "baseline": baseline,
-           "rearm_below": fair * (1 - REARM_BELOW_FAIR_PCT / 100) if fair else None}
-    action = ("sell_all" if th.get("acts") else "trim_to_half" if fired_now
+           "rearm_below": fair * (1 - REARM_BELOW_FAIR_PCT / 100) if fair else None,
+           "trim": trim}
+    action = ("sell_all" if th.get("acts") else "trim_to_half" if fired_now or trim
               else "stop_adding" if state == "fired" else "hold")
 
     if prev is None:
         cause, changed = "first", []
     else:
+        sold_down = owed is not None and done and pv.get("state") == state == "fired"
         changed = [q for q, a, b in (
             ("thesis", (pt or {}).get("status"), th["status"]),
             ("thesis", (pt or {}).get("acts"), th["acts"]),
-            ("valuation", pv.get("state"), state)) if a != b]
+            ("valuation", pv.get("state"), state),
+            ("valuation", False, sold_down)) if a != b]
         changed = list(dict.fromkeys(changed))
         cause = (None if not changed else "rule_version" if rejudge and not filed
-                 else "new_filing" if "thesis" in changed or (filed and fair != pv.get(
-                     "fair_price")) else "price_cross")
+                 else "new_filing" if "thesis" in changed
+                 else "holdings_change" if sold_down and pv.get("state") == state
+                 else "new_filing" if filed and fair != pv.get("fair_price")
+                 else "price_cross")
     return {"thesis": th, "valuation": val, "action": action, "cause": cause, "changed": changed}
 
 
