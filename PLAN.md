@@ -28,7 +28,8 @@ merged; S91 (flip counter, `src/assist/flips.py`, on `/paper` and in the brief) 
 4. **Phase S planned 2026-11-17** (stock picks by money flow, S105–S113; IDN only, context until
    its placebo passes and the user adopts it; methodology = the frameworks document's §8 with
    flow as confirmation: Wyckoff's bandarmology overlay on foreign flow, CAN SLIM's S and I; 8 choices open for the user, defaults stand). Next:
-   S105: the tool is built (`assist flow-inventory`); run it on the Mac to get the live figures.
+   S105 done 2026-11-19: all four legs usable. Next: S106 adapters; KSEI months must be dated
+   month end + a fixed lag, not `loaded_at` (36 of 37 were backfilled on 2026-10-12).
    User 2026-11-17: the flow screen is its own list (choice 1 b).
 
 **Last updated:** 2026-11-13 (**P121-div-recovered**: the dividend cut gate no longer counts a dip the latest 12
@@ -121,7 +122,7 @@ averages, so a pull during trading (15:20 on 2026-11-10) split 33 industries int
 | M. Average down on a held name (cost basis in layer 5, gated rule, dip placebo) | S67–S71 | 5 / 5 |
 | N. Guided UI (this week's steps with amount, date, entry price, TP and SL; plain words) | S72–S80 | 9 / 9 |
 | O. The investing principle as rules (keep the screen's names, no redundant industry and size, rebalance respects it) | S81–S84 | 4 / 4 |
-| S. Stock picks by money flow (per-name foreign flow, ownership shift, insider buying; gated) | S105–S113 | 0 / 9 |
+| S. Stock picks by money flow (per-name foreign flow, ownership shift, insider buying; gated) | S105–S113 | 1 / 9 |
 
 ### Open data gaps (fetcher side)
 
@@ -2048,8 +2049,20 @@ history, and is dropped first if S105 finds the filings unusable.
 7. Telegram: flow picks appear in the Monday message only after adoption (default).
 8. Fetcher asks: send all three in S111 (default), `broker_top` raised from low priority.
 
-- [ ] **S105 Flow inventory** (P126-flow-inventory). **Tool built 2026-11-17, live run
-  pending:** `assist flow-inventory` (`src/assist/flow_inventory.py`, 9 tests, not hashed)
+- [x] **S105 Flow inventory** (P126-flow-inventory). **Done 2026-11-19, all four legs usable**
+  (`docs/results/P126-flow-inventory.md`): accumulation 1,233 trading days (idxscape
+  `stock_summary` 2021-10-01 → 2026-11-18, 982 codes, 938 with foreign trades), cross-check sign
+  agreement 99.7% on 641k name-days (no name below 80%, median |ratio| 1.0); supply and demand
+  1,222 days of idx-method bars; ownership 37 KSEI months (2023-10 → 2026-10, 1,005 codes,
+  `v_stock_composition` present); insider 75,198 market trades (47,172 buys, 28,026 sells) of
+  77,852 rows, all with a parsed share change. Non-regular value is 20% of the total, and 42,553
+  name-days are over half non-regular (rule: flagged, left out of the rank). Register (one
+  report date), `broker_top` (7 days) and the screeners (5 days) stay context, as planned.
+  **Finding for S106/S107 (rule 4):** kseistat `loads.loaded_at` is a backfill date for 36 of
+  the 37 months (all loaded 2026-10-12; median lag 530 days, max 1,077); only 2026-10-30 was
+  loaded live, 3 days after month end. Dating a month by `loaded_at` would make the ownership
+  leg untestable, so the default becomes: a month is known at month end + a fixed lag (7 days)
+  unless `loaded_at` is earlier. The original note: `assist flow-inventory` (`src/assist/flow_inventory.py`, 9 tests, not hashed)
   writes `docs/results/P126-flow-inventory.md` with a verdict per leg (usable / too short /
   check first / no data) against fixed minimums: 750 trading days, 36 KSEI months, 1,000
   insider market trades with a readable share change, 80% sign agreement between the two
@@ -2269,6 +2282,7 @@ Details per slice in `docs/results/<slice-id>.md`; slice ids from `plan.yaml`.
 | T4 Known gaps muted (R4-known-gaps) | done | 2026-11-13 | this commit (branch `phase-r`) | 3 alerts (2420 total) | `config/alerts.yaml` `accepted` keys (satudatascape, openkrx missing; jquantster investor_types); idx-method failures end with a next step (session → `./run.sh session`, else "usually cleared by the next run") |
 | P125 Locked reads retried (P125-locked-retry) | done | 2026-11-17 | this commit (branch `p125-locked-retry`) | 9 locked_retry; conftest `no_locked_waits` (2444 total) | `sources/base.retry_locked`: a `locked` read (HTTP 503 or read timeout, a held DuckDB lock on connect or ATTACH) is tried again after 30, 60 and 120 s, each HTTP retry waiting 30 s for the answer; a source still locked is not waited for again for 10 min; missing and error fail at once. Cause, live 2026-11-17: `usfin serve` runs sec-edgar's own jobs in its process (feed every 15 min 06:00-22:45 ET, reconcile 23:30 ET, each chaining companyfacts / Form 4 drains); during one the FRED routes outlast 5 s and the XBRL ATTACH is refused, so three runs lost the USA list (facts locked) or read the regime as neutral (31 FRED reads timed out); one dbnomics read timed out under memory pressure. Clean `run --no-send` after it: risk_off, dollar up; USA 580 dividend / 371 GARP judged, hurdle 14.95%, no stale input; no retry needed live yet. Model `e5ab77bd…` unchanged (sources/ is not fingerprinted); the journal holds five 2026-11-17 records, the 1st and 5th clean |
 | P134 Live Stockbit portfolio in layer 5 (P134-live-portfolio) | done | 2026-11-18 | `b989d98`, `e33738f` (branches `live-portfolio`, `p126b-sources`; committed as P126/P126b, renumbered: phase S holds P126–P133) | 8 idxmethod_portfolio (2460 total) | `sources/idxmethod_portfolio.LivePortfolioSource` wraps financer for layer 5 and the holdings record: idx-method's `portfolio/<account>/latest.json` (its new `./run.sh portfolio --account NAME`, read-only after the Stockbit PIN login, schema 1) replaces financer's statement of the same `stockbit` account when at least as new (doc_type `live`, `Statement.source` idx-method), an older one is ignored; cash counts unless financer has a loaded `*_rdn` statement of the same owner (then `broker_cash_idr`). Layer 5 notes "live from Stockbit on <date>" and lists idx-method in `sources`. Doctor probe `portfolio priskila (live Stockbit)`, optional, 8 days. Live 2026-11-18: priskila Rp 50.0M (56 positions Rp 40.1M, cash Rp 9.9M), was Rp 36.5M from the 30 Oct confirmations; household Rp 68.9M. Run `--no-send` 2026-11-18 on it (model `sha256:15bf32e1…`, new segment): priskila 9 sell all, 2 sell half; P134b names idx-method in `portfolio.json` sources. Scheduled in idx-method: launchd `com.tommy.stockbiter.portfolio`, Mon 06:30, before the 07:00 weekly |
+| S105 Flow inventory (P126-flow-inventory) | done | 2026-11-19 | this commit | none (2463 total) | Live `assist flow-inventory`: accumulation, supply_demand, ownership, insider all usable (1,233 days; 1,222 days; 37 KSEI months; 75,198 insider market trades); foreign-flow cross-check sign agreement 99.7%; KSEI `loaded_at` is a 2026-10-12 backfill for 36 of 37 months, so S107 dates months at month end + 7 days |
 
 **F5-undervalued notes (2026-10-27).** `assist run` now writes one ranked undervalued list per
 market (`layers/undervalued.py`, IDN only until F6 adds the US) to `out/candidates/IDN.json`
