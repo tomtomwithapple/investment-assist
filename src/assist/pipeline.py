@@ -1058,7 +1058,11 @@ def _undervalued(day: date, sources: Sources, layers: Layers, stances: Sequence[
     for market, fn in gathers:
         try:
             inp = fn(day, layers.regime)
-            payload = _undervalued_one(inp, day, statements, layers, stances, fp)
+            selling = (holdings_mod.selling(
+                inp.judged or {}, undervalued.holdings_from(statements, market), day=day,
+                previous=holdings_mod.load(paths.out, market), stale=bool(inp.data_problems))
+                if market == "IDN" else set())  # P135: the thesis inputs are IDN's
+            payload = _undervalued_one(inp, day, statements, layers, stances, fp, selling)
         except Exception as e:  # noqa: BLE001 - a candidates failure never fails the run
             first = str(e).splitlines()[0][:160] if str(e) else ""
             label = "undervalued" if market == "IDN" else f"undervalued {market}"
@@ -1082,7 +1086,8 @@ def write_holdings(day: date, inp: undervalued.UndervaluedInputs, payload: Mappi
     rec = journal.jsonable(holdings_mod.build(
         payload, inp.judged, day=day, fingerprint=fp,
         holdings=undervalued.holdings_from(statements, inp.market),
-        previous=holdings_mod.load(out_dir, inp.market)))
+        previous=holdings_mod.load(out_dir, inp.market),
+        shares=undervalued.shares_from(statements, inp.market)))
     errors = list(holdings_mod.validator().iter_errors(rec))
     if errors:
         raise ValueError(f"holdings payload fails the schema: {errors[0].message}")
@@ -1106,13 +1111,15 @@ def _journal_holdings(j: journal.Journal, payloads: Sequence[Mapping], fp: str,
 
 
 def _undervalued_one(inp: undervalued.UndervaluedInputs, day: date, statements: Sequence[Any],
-                     layers: Layers, stances: Sequence[Mapping], fp: str) -> dict:
+                     layers: Layers, stances: Sequence[Mapping], fp: str,
+                     selling: Iterable[str] = ()) -> dict:
     held = undervalued.holdings_from(statements, inp.market)
     st = next((s for s in stances if (s["subject"], s["asset"]) == (inp.market, "stocks")), None)
     value = layers.weights.total_idr if layers.weights is not None else None
     payload = undervalued.assemble(inp, day=day, stance=st, portfolio_value_idr=value,
                                    holdings=held, regime=layers.regime, fingerprint=fp,
-                                   cost_basis=undervalued.cost_basis_from(statements, inp.market))
+                                   cost_basis=undervalued.cost_basis_from(statements, inp.market),
+                                   selling=selling)
     payload = journal.jsonable(payload)
     errors = list(undervalued.validator().iter_errors(payload))
     if errors:

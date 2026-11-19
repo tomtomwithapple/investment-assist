@@ -174,6 +174,17 @@ def holdings_from(statements: Iterable[Any], market: str = "IDN") -> dict[str, f
     return dict(sorted(out.items()))
 
 
+def shares_from(statements: Iterable[Any], market: str = "IDN") -> dict[str, float]:
+    """Shares held per ticker of `market`'s stocks over the same lines as `holdings_from`
+    (P135: a take-profit trim stays open until these drop to the half kept)."""
+    out: dict[str, float] = {}
+    for s in statements:
+        for h in s.holdings:
+            if classify(h.symbol, h.currency) == (market, "stocks"):
+                out[h.symbol] = out.get(h.symbol, 0.0) + float(h.quantity)
+    return dict(sorted(out.items()))
+
+
 class CostBasis(NamedTuple):
     """`avg_cost` per share over `quantity` shares: the lines whose cost is known."""
 
@@ -480,10 +491,13 @@ def _watchlist(payload: Mapping, inp: UndervaluedInputs, held: Mapping[str, floa
 def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
              portfolio_value_idr: float | None, holdings: Mapping[str, float],
              regime: Regime | str | None, fingerprint: str,
-             cost_basis: Mapping[str, Any] | None = None) -> dict:
+             cost_basis: Mapping[str, Any] | None = None,
+             selling: Iterable[str] = ()) -> dict:
     """Pure: one market's inputs + its stocks stance + layer 5 → the candidates payload.
     `cost_basis` is `cost_basis_from`'s (sym → (avg_cost, quantity)); without it no held name
-    has a cost and none is called an average down."""
+    has a cost and none is called an average down. `selling` names the held names the acted
+    thesis sells in full (`holdings.selling`, P135): they are in no diversification group, so
+    none is the keeper of the names it would otherwise make redundant."""
     t_passed, sectors, tilt_block = _tilt_view(inp.tilt, inp.tilt_note)
     order = [s for s in STYLES if s in inp.screens] + sorted(set(inp.screens) - set(STYLES))
     styles = [_style(s, inp.screens[s], sectors, inp.plan, inp.order_idr) for s in order]
@@ -504,6 +518,7 @@ def assemble(inp: UndervaluedInputs, *, day: date, stance: Mapping | None,
     # screens ranked but did not keep are sold in full by sizing, so they are in no group.
     kept_margin = {r["symbol"]: r["margin_pt"] for r in rows if r.get("passes")}
     leaving = {sym for sym in held if any_passed and sym in ranking and sym not in kept_margin}
+    leaving |= set(selling) & set(held)  # P135: a name being sold keeps no other name out
     judged = diversify.judge(
         (set(held) | set(kept_margin)) - leaving, inp.profiles, kept=kept_margin,
         ranked={s: r.get("margin_pt") for s, r in ranking.items()}, held=held,

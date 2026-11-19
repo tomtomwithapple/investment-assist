@@ -450,6 +450,19 @@ def test_flag_on_take_profit_trims_to_half_once():
     assert not [s for s in g2["steps"] if s["symbol"] == "BBNI"]  # no trim, no add
 
 
+def test_an_open_trim_sells_only_what_is_left_of_the_half():
+    """P135: the crossing held 1,000 shares (keep 500); 300 were sold since, 200 are left."""
+    r = arec("BBRI", "trim_to_half", above=True, fair=3090.0, price=3100.0)
+    r["acted"]["valuation"]["trim"] = {"shares_at_fire": 1000.0, "keep_shares": 500.0}
+    r["held_shares"] = 700.0
+    s = _sym(_acted([r], names=[name("BBRI", 3100.0, 700)]), "BBRI")
+    assert s["shares"] == 200 and s["question"] == "valuation" and "half" in s["tags"]
+    assert "200 of the 500" in s["why"]
+    r["held_shares"] = 1000.0  # nothing sold yet: the whole half
+    s = _sym(_acted([r], names=[name("BBRI", 3100.0, 1000)]), "BBRI")
+    assert s["shares"] == 500 and "of the 500" not in s["why"]
+
+
 def test_flag_on_a_sold_name_needs_a_margin_to_come_back():
     thin = _acted([], rows=[row("BBNI", margin_pt=0.5)], cur=40.0, sold=["BBNI"])
     assert not [s for s in thin["steps"] if s["symbol"] == "BBNI"]

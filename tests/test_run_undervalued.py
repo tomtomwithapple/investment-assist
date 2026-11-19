@@ -276,6 +276,17 @@ def test_holdings_from_statements_keeps_idx_stocks_per_symbol():
     assert uv.holdings_from([st]) == {"BBCA": 700.0}
 
 
+def test_shares_from_sums_the_same_lines_across_accounts():
+    """P135: the shares a take-profit trim is counted against, over every account."""
+    a = Statement("ajaib", "A", "portfolio", DAY, None, None, 0.0,
+                  (Holding("ASII", "", "500", 2.85e6, "IDR"), Holding("FR0080", "", "1000000",
+                                                                      9.9e5, "IDR")))
+    b = Statement("stockbit", "B", "live", DAY, None, None, 0.0,
+                  (Holding("ASII", "", "200", 1.14e6, "IDR"), Holding("AAPL", "", "3", 5.0,
+                                                                      "USD")))
+    assert uv.shares_from([a, b]) == {"ASII": 700.0}
+
+
 def test_cost_basis_weights_two_accounts_by_quantity():
     """PLAN S67: 100 sh at 9,000 and 300 sh at 7,000 are 400 sh at 7,500."""
     a = Statement("ajaib", "A", "portfolio", DAY, None, None, 0.0,
@@ -533,6 +544,23 @@ def test_a_held_redundant_name_is_not_trimmed_and_unrated_names_keep_the_best_yi
     assert rows["BBNI"]["action"] == "hold"
     assert (names["GGRM"]["redundant"], names["GGRM"]["keeper"], names["GGRM"]["basis"]) == (
         True, "HMSP", "unrated")
+
+
+def test_a_name_being_sold_on_its_thesis_is_never_the_keeper():
+    """P135: JPFA was the keeper of six agri-food names while its own thesis sold it, so the
+    other five were sold as duplicates of a name that was also going. A name the thesis sells
+    is in no group, as a name the screens dropped already is."""
+    held = {"GGRM": 9e6, "HMSP": 8e6}
+    inp = inputs({"dividend_value": screen("dividend_value", cands=BANKS)})
+    inp.profiles = PROFILES
+    p = valid(uv.assemble(inp, day=DAY, stance=stance("overweight", current=10.0, target=15.0),
+                          portfolio_value_idr=1e9, holdings=held, regime=REGIME,
+                          fingerprint=FP, selling={"HMSP"}))
+    names = {v["symbol"]: v for v in p["diversification"]["names"]}
+    assert "HMSP" not in names
+    assert (names["GGRM"]["redundant"], names["GGRM"]["keeper"]) == (False, "GGRM")
+    _, _, before = _div(holdings=held)  # without it HMSP keeps and GGRM is the duplicate
+    assert (before["GGRM"]["redundant"], before["GGRM"]["keeper"]) == (True, "HMSP")
 
 
 def test_without_profiles_nothing_is_redundant():
