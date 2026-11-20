@@ -67,7 +67,7 @@ __all__ = ["CAUSES", "HARD", "SCHEMA", "SCHEMA_VERSION", "answers", "build", "co
            "judge_all", "judge_inputs", "load", "selling", "thesis", "validator", "valuation",
            "write"]
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"  # 0.1.1: a hard fail names its hard gate, not the first gate failed
 SCHEMA = SCHEMA_DIR / "holdings.schema.json"
 SCHEMA_VERSION = "1.4.0"  # 1.1 watchlists (S89); 1.2 acted, sold (S87); 1.3 baseline;
 # 1.4 held_shares, acted.valuation.trim, acted cause holdings_change (P135)
@@ -174,7 +174,10 @@ def thesis(j: Mapping | None) -> dict:
     failed = list(dict.fromkeys(failed))
     hard = any(g in HARD for g in failed)
     items = [{"gate": g, "severity": "hard" if g in HARD else "soft"} for g in failed]
-    return {"status": "fail" if failed else "pass", "gate": failed[0] if failed else None,
+    # The gate named is the one behind the severity: a hard fail names its first hard gate
+    # (ADRO 2026-11-20 read "cfo cover test (hard fail)" when the hard gate was the cut).
+    gate = next((g for g in failed if g in HARD), failed[0]) if failed else None
+    return {"status": "fail" if failed else "pass", "gate": gate,
             "severity": ("hard" if hard else "soft") if failed else None, "failed": items,
             "basis": None if failed else ("dividend_value" if dv["ok"] else "garp"),
             "buy_gate": j.get("buy_gate"), "bank": j.get("bank"), "note": q.get("note")}

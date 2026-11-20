@@ -139,8 +139,16 @@ def test_a_non_bank_ignores_the_bank_f():
 
 def test_a_hard_fail_anywhere_makes_the_whole_fail_hard():
     t = hd.thesis(judged(dividends=divs(2021, 2025, 200.0) + divs(2026, 2026, 100.0), car=10.0))
-    assert t["gate"] == "CAR" and t["severity"] == "hard"
+    assert t["gate"] == "cut" and t["severity"] == "hard"  # the gate behind the severity
     assert [f["gate"] for f in t["failed"]] == ["CAR", "cut"]
+
+
+def test_a_soft_gate_listed_first_does_not_name_a_hard_fail():
+    """ADRO 2026-11-20: cfo cover (soft) then cut (hard) read 'cfo cover test (hard fail)'."""
+    t = hd.thesis(judged("ABCD", row=NONBANK, sector="Industri", piotroski=3,
+                         dividends=divs(2021, 2025, 200.0) + divs(2026, 2026, 100.0)))
+    assert [f["gate"] for f in t["failed"]][0] == "F-score"
+    assert (t["gate"], t["severity"]) == ("cut", "hard")
 
 
 def test_a_structural_gate_blocks_new_money_only():
