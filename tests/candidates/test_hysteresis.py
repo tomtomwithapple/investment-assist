@@ -93,6 +93,20 @@ def test_a_report_less_day_changes_nothing():
     assert act(sold, PASS, Q3)["action"] == "sell_all"  # a sell stands until the next report
 
 
+def test_a_report_less_day_takes_only_the_gate_label_with_the_same_status_and_severity():
+    """holdings 0.1.1 relabels ADRO's hard fail from cfo cover to cut: the kept thesis takes
+    the label between reports; acts, the count and the action do not move."""
+    sold = act(None, t("fail", "cfo cover", "hard"))
+    a = act(sold, HARD, Q2)
+    assert a["thesis"]["gate"] == "cut" and a["thesis"]["acts"] is True
+    assert a["action"] == "sell_all" and a["cause"] is None and a["changed"] == []
+    soft = act(None, SOFT)
+    b = act(soft, t("fail", "Altman Z", "soft"), Q2)
+    assert b["thesis"]["gate"] == "Altman Z"
+    assert b["thesis"]["soft_fail_periods"] == soft["thesis"]["soft_fail_periods"]
+    assert act(soft, HARD, Q2)["thesis"]["gate"] == "F-score"  # severity moved: kept whole
+
+
 def test_unknown_on_a_new_report_keeps_the_previous_thesis():
     first = act(None, SOFT)
     a = act(first, UNKNOWN, Q3)
