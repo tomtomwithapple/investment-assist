@@ -59,7 +59,7 @@ from assist.candidates.costs import LOT
 __all__ = ["ACTIONS", "ACT_ON_VERDICTS", "REARM_BELOW_FAIR_PCT", "REENTRY_MARGIN_PT",
            "SOFT_FAIL_REPORTS", "act", "config", "reenters", "sold"]
 
-VERSION = "0.3.0"  # 0.3.0: a take-profit trim stays open until done (P135)
+VERSION = "0.3.1"  # 0.3.1: a kept thesis takes the raw gate label (same status, severity)
 SOFT_FAIL_REPORTS = 2  # phase P rule 4 (user 2026-11-12)
 REARM_BELOW_FAIR_PCT = 10.0  # rule 4 (user 2026-11-12); may change after a retrospective
 REENTRY_MARGIN_PT = 1.0  # = hurdle risk_off_premium_pt; confirmed by the user 2026-11-13
@@ -121,7 +121,15 @@ def thesis_now(prev: Mapping | None, thesis: Mapping, inputs: Mapping, *,
     before = _filing(pt)
     filed = prev is None or judged != before
     new_report = pt is None or judged["report_period"] != before["report_period"]
-    return _thesis(pt, thesis, judged, new_report) if filed or rejudge or pt is None else dict(pt)
+    if filed or rejudge or pt is None:
+        return _thesis(pt, thesis, judged, new_report)
+    kept = dict(pt)
+    # The label only: with the same status and severity, the gate named follows today's raw
+    # thesis, so a labelling fix (holdings 0.1.1) reaches a record between reports. It never
+    # changes `acts` or the soft-fail count.
+    if (thesis.get("status"), thesis.get("severity")) == (pt.get("status"), pt.get("severity")):
+        kept["gate"] = thesis.get("gate")
+    return kept
 
 
 def act(prev: Mapping | None, thesis: Mapping, inputs: Mapping, *, price: float | None,
